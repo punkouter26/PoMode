@@ -6,8 +6,8 @@ using Xunit;
 
 namespace PoMode.E2EUI;
 
-[Collection("App")]
-public class LargeUploadTests(AppFixture app)
+[Collection("LargeUploadApp")]
+public class LargeUploadTests(LargeUploadAppFixture app)
 {
     [Fact]
     public async Task Upload_over_30mb_is_accepted_by_kestrel()

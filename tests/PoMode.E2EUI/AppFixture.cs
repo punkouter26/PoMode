@@ -4,10 +4,21 @@ using Xunit;
 namespace PoMode.E2EUI;
 
 /// <summary>Boots the real PoMode.API (which hosts the WASM client) for browser tests.</summary>
-public sealed class AppFixture : IAsyncLifetime
+public class AppFixture : IAsyncLifetime
 {
-    public string BaseUrl => "http://127.0.0.1:5199";
+    private readonly int _port;
     private Process? _server;
+
+    public AppFixture() : this(5199)
+    {
+    }
+
+    protected AppFixture(int port)
+    {
+        _port = port;
+    }
+
+    public string BaseUrl => $"http://127.0.0.1:{_port}";
 
     public async Task InitializeAsync()
     {
@@ -62,3 +73,15 @@ public sealed class AppFixture : IAsyncLifetime
 
 [CollectionDefinition("App")]
 public sealed class AppCollection : ICollectionFixture<AppFixture>;
+
+/// <summary>Isolated app instance for the large-upload test so its long-running job cannot
+/// starve the single-worker queue used by the browser tests on the "App" collection.</summary>
+public sealed class LargeUploadAppFixture : AppFixture
+{
+    public LargeUploadAppFixture() : base(5200)
+    {
+    }
+}
+
+[CollectionDefinition("LargeUploadApp")]
+public sealed class LargeUploadAppCollection : ICollectionFixture<LargeUploadAppFixture>;
