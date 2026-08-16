@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PoMode.API/PoMode.API.csproj" />
+    <Project Path="src/PoMode.Client/PoMode.Client.csproj" />
+    <Project Path="src/PoMode.Shared/PoMode.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PoMode.E2EAPI/PoMode.E2EAPI.csproj" />
+    <Project Path="tests/PoMode.E2EUI/PoMode.E2EUI.csproj" />
+    <Project Path="tests/PoMode.Integration/PoMode.Integration.csproj" />
+    <Project Path="tests/PoMode.Unit/PoMode.Unit.csproj" />
+  </Folder>
+</Solution>
