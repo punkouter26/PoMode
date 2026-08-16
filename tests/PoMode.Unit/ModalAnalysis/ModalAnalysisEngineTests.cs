@@ -113,4 +113,32 @@ public class ModalAnalysisEngineTests
     [Fact]
     public void Result_carries_schema_version_one()
         => Assert.Equal(1, ModalAnalysisEngine.Analyze([], []).SchemaVersion);
+
+    [Fact]
+    public void Better_coverage_always_outranks_a_characteristic_bonus()
+    {
+        // Tonic C. Seven distinct sung classes incl. a chromatic b2 and no 7th:
+        // C Db D E F G A -> intervals {0,1,2,4,5,7,9}.
+        // Ionian explains all but the Db; MajorPentatonic leaves both Db and F unexplained.
+        // The mode that explains MORE of what was sung must rank higher.
+        List<NoteEvent> notes =
+        [
+            At(60, 0.0), At(61, 0.2), At(62, 0.4), At(64, 0.6),
+            At(65, 0.8), At(67, 1.0), At(69, 1.2),
+        ];
+        List<ChordSpan> chords = [new("C", "C", "maj", 0, 2)];
+
+        var matches = ModalAnalysisEngine.Analyze(notes, chords).Windows[0].Matches;
+
+        var ionian = matches.SingleOrDefault(m => m.Mode == ScaleMode.Ionian);
+        var pentatonic = matches.SingleOrDefault(m => m.Mode == ScaleMode.MajorPentatonic);
+        Assert.NotNull(ionian);
+        if (pentatonic is not null)
+        {
+            Assert.True(
+                ionian.Confidence > pentatonic.Confidence,
+                $"Ionian {ionian.Confidence} must beat MajorPentatonic {pentatonic.Confidence}");
+        }
+        Assert.True(ionian.OutsideIntervals.Count < 2);
+    }
 }

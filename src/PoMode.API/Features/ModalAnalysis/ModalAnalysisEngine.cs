@@ -8,7 +8,10 @@ public static class ModalAnalysisEngine
 {
     private const int MinimumDistinctPitchClasses = 3;
     private const int MaxMatchesPerWindow = 4;
-    private const double CharacteristicBonus = 0.15;
+    // Must stay strictly below the smallest possible coverage step (1/12 ≈ 0.0833, the
+    // step size when 12 distinct pitch classes are sung) so the bonus can only break ties
+    // within a coverage level and can never invert the ordering between coverage levels.
+    private const double CharacteristicBonus = 0.05;
 
     public static ModalResult Analyze(
         IReadOnlyList<NoteEvent> notes,
