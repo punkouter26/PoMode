@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,14 +37,18 @@ public class FakeAuthTests
     }
 
     [Fact]
-    public async Task FakeAuth_throws_InvalidOperationException_in_production()
+    public void FakeAuth_throws_InvalidOperationException_in_production()
     {
-        await using var factory = new WebApplicationFactory<Program>()
+        using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b => b.UseEnvironment("Production"));
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Fake-User", "mallory");
 
-        // TestServer rethrows unhandled server exceptions to the caller.
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetAsync("/api/session"));
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("FakeAuthHandler must never run in Production",
+            FlattenMessages(exception));
     }
+
+    private static string FlattenMessages(Exception ex) =>
+        ex is AggregateException agg
+            ? string.Join(" | ", agg.InnerExceptions.Select(FlattenMessages))
+            : ex.Message + (ex.InnerException is { } inner ? " | " + FlattenMessages(inner) : "");
 }

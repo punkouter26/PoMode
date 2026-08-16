@@ -21,6 +21,7 @@ public class JobStorageHealthCheckTests
             var check = new JobStorageHealthCheck(ConfigWith(dir));
             var result = await check.CheckHealthAsync(new HealthCheckContext());
             Assert.Equal(HealthStatus.Healthy, result.Status);
+            Assert.Empty(Directory.GetFiles(dir));
         }
         finally
         {
@@ -31,8 +32,17 @@ public class JobStorageHealthCheckTests
     [Fact]
     public async Task Unwritable_path_is_unhealthy()
     {
-        var check = new JobStorageHealthCheck(ConfigWith("Z:\\pomode-does-not-exist\\<>|invalid"));
-        var result = await check.CheckHealthAsync(new HealthCheckContext());
-        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        var blockingFile = Path.Combine(Path.GetTempPath(), $"pomode-blocker-{Guid.NewGuid():N}");
+        File.WriteAllText(blockingFile, "block");
+        try
+        {
+            var check = new JobStorageHealthCheck(ConfigWith(Path.Combine(blockingFile, "jobs")));
+            var result = await check.CheckHealthAsync(new HealthCheckContext());
+            Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        }
+        finally
+        {
+            File.Delete(blockingFile);
+        }
     }
 }

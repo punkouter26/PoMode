@@ -13,6 +13,12 @@ builder.Services.AddSingleton(secretSource);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, PoModeJsonContext.Default));
 
+if (builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "FakeAuthHandler must never run in Production. Configure a real authentication provider.");
+}
+
 builder.Services.AddAuthentication(FakeAuthHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
 builder.Services.AddAuthorization();
