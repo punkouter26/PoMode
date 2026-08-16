@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Hardware;
+using PoMode.API.Features.MidiExport;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Session;
@@ -75,6 +76,7 @@ app.MapDiagnostics();
 
 app.MapSession();
 app.MapAnalysis();
+app.MapMidiExport();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 app.MapFallbackToFile("index.html");

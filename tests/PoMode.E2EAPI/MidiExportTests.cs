@@ -1,0 +1,61 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+using PoMode.Shared.Analysis;
+using PoMode.TestCommon;
+using Xunit;
+
+namespace PoMode.E2EAPI;
+
+public sealed class MidiExportTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"pomode-midi-{Guid.NewGuid():N}");
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
+        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+
+    [Fact]
+    public async Task Completed_job_exports_a_playable_midi_file()
+    {
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        var content = new ByteArrayContent(TestAudio.MakeWav());
+        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        using var form = new MultipartFormDataContent { { content, "file", "test.wav" } };
+        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            var status = await client.GetFromJsonAsync<JobStatusDto>($"/api/analysis/{created!.JobId}");
+            if (status!.Stage is JobStage.Complete or JobStage.Failed) break;
+            await Task.Delay(200);
+        }
+
+        var response = await client.GetAsync($"/api/analysis/{created!.JobId}/midi");
+
+        response.EnsureSuccessStatusCode();
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        Assert.Equal("MThd"u8.ToArray(), bytes.Take(4).ToArray());
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public async Task Unknown_job_midi_is_404()
+    {
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/midi")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await client.GetAsync("/api/analysis/00000000000000000000000000000000/midi")).StatusCode);
+    }
+}
