@@ -53,7 +53,19 @@ public static class AnalysisEndpoints
             // Plan synchronously so the response DTO already reflects the execution plan — the
             // background pipeline runs on a separate JobState instance loaded from disk, so it
             // can never retroactively populate the DTO already handed back to the caller.
-            state.Plan = await planner.PlanAsync(ct);
+            try
+            {
+                state.Plan = await planner.PlanAsync(ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // No executor is available for some stage: report a Failed job (the pipeline's
+                // own graceful-failure shape) instead of letting this surface as a 500 upload.
+                state.Stage = JobStage.Failed;
+                state.Error = ex.Message;
+                await store.SaveAsync(state, ct);
+                return TypedResults.Ok(state.ToDto());
+            }
             await store.SaveAsync(state, ct);
             await queue.EnqueueAsync(state.JobId, ct);
             return TypedResults.Ok(state.ToDto());

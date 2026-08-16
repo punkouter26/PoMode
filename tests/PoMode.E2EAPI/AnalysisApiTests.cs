@@ -3,6 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PoMode.Shared.Analysis;
 using PoMode.TestCommon;
 using Xunit;
@@ -110,5 +113,32 @@ public sealed class AnalysisApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/analysis/nope")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/notes")).StatusCode);
+    }
+
+    private sealed class UnavailableStemSeparator : PoMode.API.Pipeline.IStemSeparator
+    {
+        public string Name => nameof(UnavailableStemSeparator);
+        public PoMode.Shared.Analysis.ExecutionTier Tier => PoMode.Shared.Analysis.ExecutionTier.Local;
+        public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(false);
+        public Task SeparateAsync(PoMode.API.Pipeline.StageContext context, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Upload_with_no_available_executor_returns_failed_job_not_500()
+    {
+        await using var factory = Factory().WithWebHostBuilder(b => b.ConfigureServices(services =>
+        {
+            services.RemoveAll<PoMode.API.Pipeline.IStemSeparator>();
+            services.AddSingleton<PoMode.API.Pipeline.IStemSeparator, UnavailableStemSeparator>();
+        }));
+        using var client = factory.CreateClient();
+
+        using var form = WavForm();
+        var response = await client.PostAsync("/api/analysis", form);
+
+        response.EnsureSuccessStatusCode(); // NOT a 500
+        var status = await response.Content.ReadFromJsonAsync<JobStatusDto>();
+        Assert.Equal(JobStage.Failed, status!.Stage);
+        Assert.Contains("Separating", status.Error);
     }
 }

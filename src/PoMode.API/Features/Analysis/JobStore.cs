@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace PoMode.API.Features.Analysis;
@@ -6,6 +7,12 @@ namespace PoMode.API.Features.Analysis;
 public sealed class JobStore(IConfiguration configuration, TimeProvider time)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
+    // The API and worker share one process, so an in-process, per-job lock is sufficient to stop
+    // a status-poll read (GET /{jobId}) from colliding with the pipeline's write of the same
+    // job.json — without it, one side's File I/O throws IOException ("used by another process"),
+    // which the pipeline's catch-all then reports as a hard job failure.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
     public string RootPath
     {
@@ -25,6 +32,8 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
 
     private string StatePath(string jobId) => Path.Combine(JobDir(jobId), "job.json");
 
+    private SemaphoreSlim LockFor(string jobId) => _locks.GetOrAdd(jobId, _ => new SemaphoreSlim(1, 1));
+
     public async Task<JobState> CreateAsync(string fileName, Stream content, CancellationToken ct)
     {
         var state = new JobState
@@ -43,16 +52,39 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
     }
 
     public async Task SaveAsync(JobState state, CancellationToken ct)
-        => await File.WriteAllTextAsync(StatePath(state.JobId), JsonSerializer.Serialize(state, JsonOptions), ct);
+    {
+        var gate = LockFor(state.JobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var path = StatePath(state.JobId);
+            var tempPath = path + ".tmp";
+            await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(state, JsonOptions), ct);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
     public async Task<JobState?> LoadAsync(string jobId, CancellationToken ct)
     {
-        var path = StatePath(jobId);
-        if (!File.Exists(path))
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
         {
-            return null;
+            var path = StatePath(jobId);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            return JsonSerializer.Deserialize<JobState>(await File.ReadAllTextAsync(path, ct), JsonOptions);
         }
-        return JsonSerializer.Deserialize<JobState>(await File.ReadAllTextAsync(path, ct), JsonOptions);
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public int PurgeOlderThan(TimeSpan maxAge)
