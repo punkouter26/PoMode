@@ -1,6 +1,13 @@
 @inject MockDataState MockData
+@implements IDisposable
 
 @if (MockData.IsMockData)
 {
     <div class="mock-banner" role="alert">USING MOCK DATA</div>
+}
+
+@code {
+    protected override void OnInitialized() => MockData.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => MockData.Changed -= OnChanged;
 }

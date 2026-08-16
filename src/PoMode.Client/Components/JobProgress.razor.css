@@ -1,0 +1,36 @@
+.stages {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+}
+
+.stage {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.25rem 0;
+    color: var(--pm-fg-muted);
+}
+
+.stage.active {
+    color: var(--pm-fg);
+    font-weight: 600;
+}
+
+.stage.completed {
+    color: var(--pm-fg);
+}
+
+.executor {
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+}
+
+.done {
+    color: var(--pm-accent);
+    font-weight: 700;
+}
+
+.error-text {
+    color: var(--pm-warn-bg);
+}

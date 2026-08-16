@@ -1,8 +1,125 @@
 @page "/"
+@using System.Text.Json
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject MockDataState MockData
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
 
 <RadzenCard>
     <RadzenText TextStyle="TextStyle.H5" Text="Audio Modal Analyzer" />
-    <RadzenText Text="Upload a track to analyze its melody, chords, and scale modes. (Coming in Phase 2.)" />
+    <RadzenText Text="Upload an .mp3 or .wav track (max 100 MB) to analyze its melody, chords, and scale modes." />
+    <RadzenUpload Url="api/analysis" Accept=".mp3,.wav" Auto="true"
+                  Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+    @if (_uploadError is not null)
+    {
+        <RadzenText class="upload-error" Text="@_uploadError" />
+    }
 </RadzenCard>
+
+@if (_status is not null)
+{
+    <JobProgress Status="_status" />
+}
+
+@if (_notes is not null && _chords is not null)
+{
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Text="@($"{_notes.Count} notes · {_chords.Count} chords")" />
+        <div class="results">
+            <ul class="result-list">
+                @foreach (var note in _notes)
+                {
+                    <li>MIDI @note.MidiPitch at @note.StartSec.ToString("0.00")s (@note.DurationSec.ToString("0.00")s)</li>
+                }
+            </ul>
+            <ul class="result-list">
+                @foreach (var chord in _chords)
+                {
+                    <li>@chord.Symbol (@chord.StartSec.ToString("0")–@chord.EndSec.ToString("0")s)</li>
+                }
+            </ul>
+        </div>
+    </RadzenCard>
+}
+
+@code {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    private JobStatusDto? _status;
+    private List<NoteEvent>? _notes;
+    private List<ChordSpan>? _chords;
+    private string? _uploadError;
+    private HubConnection? _hub;
+
+    private async Task OnUploadComplete(UploadCompleteEventArgs args)
+    {
+        _uploadError = null;
+        _notes = null;
+        _chords = null;
+        if (args.RawResponse is not { } rawResponse)
+        {
+            _uploadError = "Unexpected server response.";
+            return;
+        }
+        var status = JsonSerializer.Deserialize<JobStatusDto>(rawResponse, WebJson);
+        if (status is null)
+        {
+            _uploadError = "Unexpected server response.";
+            return;
+        }
+        _status = status;
+
+        if (_hub is null)
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/analysis"))
+                .Build();
+            _hub.On<JobStatusDto>("JobStatusChanged", OnStatusChanged); // register once, not per upload
+        }
+        if (_hub.State == HubConnectionState.Disconnected)
+        {
+            await _hub.StartAsync();
+        }
+        await _hub.InvokeAsync("Subscribe", status.JobId);
+
+        // The fake pipeline can finish before Subscribe lands — reconcile once.
+        var current = await Analysis.GetStatusAsync(status.JobId);
+        if (current is not null)
+        {
+            await OnStatusChanged(current);
+        }
+    }
+
+    private async Task OnStatusChanged(JobStatusDto status)
+    {
+        if (_status?.JobId != status.JobId)
+        {
+            return;
+        }
+        _status = status;
+        if (status.Stage == JobStage.Complete && _notes is null)
+        {
+            _notes = await Analysis.GetNotesAsync(status.JobId);
+            _chords = await Analysis.GetChordsAsync(status.JobId);
+            MockData.SetLive();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnUploadError(UploadErrorEventArgs args)
+    {
+        _uploadError = string.IsNullOrWhiteSpace(args.Message) ? "Upload failed." : args.Message;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub is not null)
+        {
+            await _hub.DisposeAsync();
+        }
+    }
+}

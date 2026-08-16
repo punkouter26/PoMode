@@ -1,0 +1,50 @@
+@using PoMode.Shared.Analysis
+
+<RadzenCard class="job-progress">
+    <RadzenText TextStyle="TextStyle.H6" Text="Analysis progress" />
+    <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
+    <ul class="stages">
+        @foreach (var stage in Status.Plan)
+        {
+            <li class="@StageClass(stage)">
+                <span class="tier">@TierBadge(stage.Tier)</span>
+                <span class="name">@stage.Stage</span>
+                <span class="executor">@stage.Executor</span>
+                @if (Status.CompletedStages.Contains(stage.Stage))
+                {
+                    <span class="done">✓</span>
+                }
+            </li>
+        }
+    </ul>
+    @if (Status.Stage == JobStage.Complete)
+    {
+        <RadzenText class="complete-text" Text="Analysis complete" />
+    }
+    else if (Status.Stage == JobStage.Failed)
+    {
+        <RadzenText class="error-text" Text="@($"Analysis failed: {Status.Error}")" />
+    }
+    else if (Status.Stage == JobStage.Cancelled)
+    {
+        <RadzenText Text="Analysis cancelled" />
+    }
+</RadzenCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public required JobStatusDto Status { get; set; }
+
+    private string StageClass(StagePlan stage)
+        => Status.CompletedStages.Contains(stage.Stage) ? "stage completed"
+            : Status.Stage.ToString() == stage.Stage ? "stage active"
+            : "stage";
+
+    private static string TierBadge(ExecutionTier tier) => tier switch
+    {
+        ExecutionTier.Local => "💻",
+        ExecutionTier.ClientDelegated => "🌐",
+        ExecutionTier.Cloud => "☁️💰",
+        _ => "?",
+    };
+}
