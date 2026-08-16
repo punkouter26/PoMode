@@ -1,0 +1,8 @@
+.mock-banner {
+    background: var(--pm-warn-bg);
+    color: var(--pm-warn-fg);
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 0.25rem;
+}

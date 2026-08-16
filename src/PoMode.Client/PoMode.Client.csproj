@@ -4,5 +4,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Radzen.Blazor" />
   </ItemGroup>
 </Project>

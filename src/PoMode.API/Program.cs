@@ -28,6 +28,9 @@ if (secretSource.FellBack)
     app.Logger.LogWarning("Key Vault unreachable — secrets are coming from environment variables this run.");
 }
 
+app.UseBlazorFrameworkFiles();
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -35,6 +38,7 @@ app.MapOpenApi();
 app.MapScalarApiReference(); // serves /scalar
 app.MapHealthChecks("/health");
 app.MapDiagnostics();
+app.MapFallbackToFile("index.html");
 
 app.MapSession();
 
