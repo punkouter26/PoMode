@@ -115,6 +115,17 @@ public sealed class AnalysisApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/notes")).StatusCode);
     }
 
+    [Fact]
+    public async Task Traversal_style_job_ids_are_rejected_with_404()
+    {
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/..%2F..%2Fsecrets/notes")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/C%3Afoo")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/analysis/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")).StatusCode);
+    }
+
     private sealed class UnavailableStemSeparator : PoMode.API.Pipeline.IStemSeparator
     {
         public string Name => nameof(UnavailableStemSeparator);

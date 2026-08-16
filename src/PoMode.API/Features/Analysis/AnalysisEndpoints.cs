@@ -74,6 +74,10 @@ public static class AnalysisEndpoints
         group.MapGet("/{jobId}", async Task<Results<Ok<JobStatusDto>, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
         {
+            if (!IsValidJobId(jobId))
+            {
+                return TypedResults.NotFound();
+            }
             var state = await store.LoadAsync(jobId, ct);
             return state is null ? TypedResults.NotFound() : TypedResults.Ok(state.ToDto());
         });
@@ -81,6 +85,10 @@ public static class AnalysisEndpoints
         group.MapDelete("/{jobId}", async Task<Results<Ok, NotFound>> (
             string jobId, JobStore store, JobCancellationRegistry cancellations, CancellationToken ct) =>
         {
+            if (!IsValidJobId(jobId))
+            {
+                return TypedResults.NotFound();
+            }
             var state = await store.LoadAsync(jobId, ct);
             if (state is null)
             {
@@ -103,9 +111,16 @@ public static class AnalysisEndpoints
     private static void MapArtifact(RouteGroupBuilder group, string route, string fileName)
         => group.MapGet($"/{{jobId}}/{route}", Results<PhysicalFileHttpResult, NotFound> (string jobId, JobStore store) =>
         {
+            if (!IsValidJobId(jobId))
+            {
+                return TypedResults.NotFound();
+            }
             var path = Path.Combine(store.JobDir(jobId), fileName);
             return File.Exists(path)
                 ? TypedResults.PhysicalFile(path, "application/json")
                 : TypedResults.NotFound();
         });
+
+    private static bool IsValidJobId(string jobId)
+        => jobId.Length == 32 && jobId.All(char.IsAsciiHexDigitLower);
 }

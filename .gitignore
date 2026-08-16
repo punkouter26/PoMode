@@ -5,3 +5,6 @@ obj/
 models/
 jobs/
 TestResults/
+*.mp3
+*.wav
+!tests/**/*.wav

@@ -61,5 +61,9 @@ public static partial class NvmlInterop
         {
             return null;
         }
+        catch (BadImageFormatException)
+        {
+            return null;
+        }
     }
 }

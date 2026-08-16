@@ -7,14 +7,12 @@ namespace PoMode.API.Features.Hardware;
 /// <summary>Runtime capability probe feeding /diag and (in later phases) executor availability.</summary>
 public sealed class HardwareProbe(IConfiguration configuration, IHttpClientFactory httpClientFactory)
 {
-    private static readonly string[] ProviderKeyNames = ["ReplicateApiToken", "SonicApiKey", "LalalApiKey"];
-
     public async Task<HardwareReport> ProbeAsync(CancellationToken ct)
     {
         var isAzure = EnvironmentDetector.IsAzureHosted();
         var gpu = isAzure ? null : NvmlInterop.TryProbe();
         var ollamaModels = isAzure ? [] : await ProbeOllamaAsync(ct);
-        var providers = ProviderKeyNames
+        var providers = ProviderKeys.All
             .Where(key => !string.IsNullOrEmpty(configuration[key]))
             .ToArray();
         return new HardwareReport(isAzure, gpu, ollamaModels, providers);

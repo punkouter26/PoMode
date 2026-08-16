@@ -13,6 +13,9 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = AudioFormatValidator.MaxBytes);
+
 var secretSource = SecretsBootstrap.Configure(builder);
 builder.Services.AddSingleton(secretSource);
 

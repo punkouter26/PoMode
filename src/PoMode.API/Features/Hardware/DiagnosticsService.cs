@@ -10,14 +10,12 @@ public sealed class DiagnosticsService(
     SecretSourceInfo secretSource,
     HardwareProbe hardwareProbe)
 {
-    private static readonly string[] ProviderKeyNames = ["ReplicateApiToken", "SonicApiKey", "LalalApiKey"];
-
     public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
         EnvironmentName: environment.EnvironmentName,
         IsAzureHosted: EnvironmentDetector.IsAzureHosted(),
         SecretSource: secretSource.Source.ToString(),
         SecretFellBack: secretSource.FellBack,
-        ProviderKeys: ProviderKeyNames
+        ProviderKeys: ProviderKeys.All
             .Select(name => new ProviderKeyStatus(name, !string.IsNullOrEmpty(configuration[name])))
             .ToArray(),
         Hardware: await hardwareProbe.ProbeAsync(ct));
