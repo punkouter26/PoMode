@@ -103,4 +103,41 @@ public class JsonContextTests
         Assert.Equal(6000, back.Hardware.Gpu.FreeVramMb);
         Assert.Equal(["qwen2.5:7b"], back.Hardware.OllamaModels);
     }
+
+    [Fact]
+    public void ModalResult_round_trips_via_source_gen_context()
+    {
+        var result = new ModalResult(
+            SchemaVersion: 1,
+            TonicPitchClass: 2,
+            TonicName: "D",
+            TonicConfidence: 0.82,
+            PrimaryMode: ScaleMode.Dorian,
+            PrimaryConfidence: 0.9,
+            TempoBpm: 120.0,
+            TempoEstimated: true,
+            Windows:
+            [
+                new ModalWindow(
+                    Index: 0,
+                    StartSec: 0,
+                    EndSec: 2,
+                    ChordSymbol: "Dm7",
+                    MeasureNumber: 1,
+                    VocalMask: 0b011010101101,
+                    SungIntervals: [0, 2, 3, 5, 7, 9, 10],
+                    InsufficientEvidence: false,
+                    Matches: [new ModalMatch(ScaleMode.Dorian, 1.0, [0, 2, 3], [])])
+            ]);
+
+        var json = JsonSerializer.Serialize(result, PoModeJsonContext.Default.ModalResult);
+        var back = JsonSerializer.Deserialize(json, PoModeJsonContext.Default.ModalResult);
+
+        Assert.NotNull(back);
+        Assert.Equal(ScaleMode.Dorian, back.PrimaryMode);
+        Assert.Equal("D", back.TonicName);
+        Assert.Equal(1, back.Windows[0].MeasureNumber);
+        Assert.Equal(ScaleMode.Dorian, back.Windows[0].Matches[0].Mode);
+        Assert.True(back.TempoEstimated);
+    }
 }
