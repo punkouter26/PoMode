@@ -3,25 +3,22 @@ using PoMode.Shared.Diagnostics;
 
 namespace PoMode.API.Features.Hardware;
 
-/// <summary>Builds the /diag report. Reports secret PRESENCE only — never values. Phase 2 adds the GPU probe.</summary>
+/// <summary>Builds the /diag report. Reports secret PRESENCE only — never values.</summary>
 public sealed class DiagnosticsService(
     IConfiguration configuration,
     IHostEnvironment environment,
-    SecretSourceInfo secretSource)
+    SecretSourceInfo secretSource,
+    HardwareProbe hardwareProbe)
 {
     private static readonly string[] ProviderKeyNames = ["ReplicateApiToken", "SonicApiKey", "LalalApiKey"];
 
-    public DiagnosticsReport BuildReport() => new(
+    public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
         EnvironmentName: environment.EnvironmentName,
-        IsAzureHosted: IsAzureHosted(),
+        IsAzureHosted: EnvironmentDetector.IsAzureHosted(),
         SecretSource: secretSource.Source.ToString(),
         SecretFellBack: secretSource.FellBack,
         ProviderKeys: ProviderKeyNames
             .Select(name => new ProviderKeyStatus(name, !string.IsNullOrEmpty(configuration[name])))
             .ToArray(),
-        Hardware: null);
-
-    private static bool IsAzureHosted() =>
-        Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID") is not null
-        || Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+        Hardware: await hardwareProbe.ProbeAsync(ct));
 }

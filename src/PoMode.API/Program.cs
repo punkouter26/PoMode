@@ -24,6 +24,8 @@ builder.Services.AddAuthentication(FakeAuthHandler.SchemeName)
 builder.Services.AddAuthorization();
 
 builder.Services.AddOpenApi();
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<HardwareProbe>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddHealthChecks().AddCheck<JobStorageHealthCheck>("job-storage");
 

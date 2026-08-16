@@ -40,6 +40,9 @@ public class DiagnosticsTests
             Assert.False(report.ProviderKeys.Single(k => k.Provider == "LalalApiKey").Configured);
             Assert.False(report.IsAzureHosted);
             Assert.Equal("EnvironmentVariables", report.SecretSource);
+            Assert.NotNull(report.Hardware);
+            Assert.False(report.Hardware.IsAzureHosted);
+            Assert.NotNull(report.Hardware.OllamaModels);
         }
         finally
         {
