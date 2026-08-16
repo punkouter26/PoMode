@@ -18,7 +18,8 @@ public sealed class DiagnosticsService(
         SecretFellBack: secretSource.FellBack,
         ProviderKeys: ProviderKeyNames
             .Select(name => new ProviderKeyStatus(name, !string.IsNullOrEmpty(configuration[name])))
-            .ToArray());
+            .ToArray(),
+        Hardware: null);
 
     private static bool IsAzureHosted() =>
         Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID") is not null

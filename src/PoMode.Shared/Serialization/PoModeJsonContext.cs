@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
+using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
+using PoMode.Shared.Hardware;
 using PoMode.Shared.Session;
 
 namespace PoMode.Shared.Serialization;
@@ -7,4 +9,8 @@ namespace PoMode.Shared.Serialization;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiagnosticsReport))]
 [JsonSerializable(typeof(SessionInfo))]
+[JsonSerializable(typeof(JobStatusDto))]
+[JsonSerializable(typeof(HardwareReport))]
+[JsonSerializable(typeof(List<NoteEvent>))]
+[JsonSerializable(typeof(List<ChordSpan>))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

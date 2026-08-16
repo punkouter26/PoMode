@@ -1,0 +1,14 @@
+namespace PoMode.Shared.Hardware;
+
+public sealed record GpuReport(
+    string Vendor,
+    long TotalVramMb,
+    long FreeVramMb,
+    bool CudaAvailable,
+    bool DmlAvailable);
+
+public sealed record HardwareReport(
+    bool IsAzureHosted,
+    GpuReport? Gpu,
+    IReadOnlyList<string> OllamaModels,
+    IReadOnlyList<string> ConfiguredProviders);
