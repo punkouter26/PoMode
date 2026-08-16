@@ -86,7 +86,7 @@ public sealed class AnalysisPipelineTests : IDisposable
             _store,
             new ExecutionPlanner(separators, trackers, chords),
             separators, trackers, chords,
-            new PlaceholderModalAnalyzer(),
+            new ArtifactModalAnalyzer(),
             _notifier,
             NullLogger<AnalysisPipeline>.Instance);
     }

@@ -45,7 +45,7 @@ builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
 builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
-builder.Services.AddSingleton<IModalAnalyzer, PlaceholderModalAnalyzer>();
+builder.Services.AddSingleton<IModalAnalyzer, ArtifactModalAnalyzer>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();

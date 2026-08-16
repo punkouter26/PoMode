@@ -105,6 +105,7 @@ public static class AnalysisEndpoints
 
         MapArtifact(group, "notes", "notes.json");
         MapArtifact(group, "chords", "chords.json");
+        MapArtifact(group, "result", "result.json");
         return app;
     }
 

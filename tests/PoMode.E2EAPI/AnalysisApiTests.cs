@@ -152,4 +152,22 @@ public sealed class AnalysisApiTests : IDisposable
         Assert.Equal(JobStage.Failed, status!.Stage);
         Assert.Contains("Separating", status.Error);
     }
+
+    [Fact]
+    public async Task Completed_job_exposes_a_modal_result()
+    {
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        using var form = WavForm();
+        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+        await WaitForTerminalAsync(client, created!.JobId, new TaskCompletionSource<JobStatusDto>().Task);
+
+        var result = await client.GetFromJsonAsync<ModalResult>($"/api/analysis/{created.JobId}/result");
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.SchemaVersion);
+        Assert.Equal(4, result.Windows.Count); // FakeChordRecognizer emits four chords
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/result")).StatusCode);
+    }
 }

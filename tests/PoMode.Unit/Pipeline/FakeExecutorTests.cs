@@ -58,15 +58,6 @@ public sealed class FakeExecutorTests : IDisposable
     }
 
     [Fact]
-    public async Task PlaceholderModalAnalyzer_writes_result_json()
-    {
-        await new PlaceholderModalAnalyzer().AnalyzeAsync(Context(), CancellationToken.None);
-
-        var text = await File.ReadAllTextAsync(Path.Combine(_jobDir, "result.json"));
-        Assert.Contains("Phase 3", text);
-    }
-
-    [Fact]
     public async Task All_fakes_are_local_tier_and_available()
     {
         IStageExecutor[] executors = [new FakeStemSeparator(), new FakePitchTracker(), new FakeChordRecognizer()];
