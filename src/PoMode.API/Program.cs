@@ -1,6 +1,32 @@
+using Microsoft.AspNetCore.Authentication;
+using PoMode.API.Features.Session;
+using PoMode.API.Infrastructure;
+using PoMode.Shared.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var secretSource = SecretsBootstrap.Configure(builder);
+builder.Services.AddSingleton(secretSource);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, PoModeJsonContext.Default));
+
+builder.Services.AddAuthentication(FakeAuthHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
-app.MapGet("/", () => TypedResults.Ok("PoMode API"));
+
+if (secretSource.FellBack)
+{
+    app.Logger.LogWarning("Key Vault unreachable — secrets are coming from environment variables this run.");
+}
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapSession();
+
 app.Run();
 
 public partial class Program;
