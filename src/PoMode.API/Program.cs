@@ -33,6 +33,7 @@ app.UseAuthorization();
 
 app.MapOpenApi();
 app.MapScalarApiReference(); // serves /scalar
+app.MapHealthChecks("/health");
 app.MapDiagnostics();
 
 app.MapSession();
