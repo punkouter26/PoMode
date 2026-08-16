@@ -1,7 +1,7 @@
 # PoMode — Audio Modal Analyzer: Design Specification
 
 **Date:** 2026-08-16
-**Status:** Approved pending user review
+**Status:** Approved. Phases 1–2 implemented and merged; see §13 for corrections discovered during implementation.
 **Source:** PRD v1.0.0 ("Audio Modal Analyzer") + brainstorming session decisions
 
 ---
@@ -21,7 +21,7 @@ PoMode is a music information retrieval (MIR) application. It accepts a polyphon
 | Cloud providers | All three: Replicate, Sonic API, LALAL.AI (user holds keys for each) |
 | Secrets | **Azure Key Vault (`PoShared` RG) via `DefaultAzureCredential`, with environment-variable fallback** when the vault is unreachable (offline dev), logged as a startup warning. Never in `appsettings.json`, never sent to the client |
 | Naming | `PoMode` — solution, projects, root namespaces |
-| Dev hardware | NVIDIA GPU ≥ 6 GB VRAM; Ollama installed. Full Tier 1 is locally testable |
+| Dev hardware | ~~NVIDIA GPU ≥ 6 GB VRAM~~ **Superseded — see §13.1.** Actual: Windows-on-ARM, Qualcomm Adreno GPU, Ollama installed |
 | Architecture approach | **A — server-orchestrated job pipeline with client compute delegation** (chosen over client-centric and synchronous-per-stage alternatives) |
 | Copilot | Local Ollama only; no cloud LLM fallback (card degrades to "Copilot unavailable") |
 
@@ -187,8 +187,38 @@ Three typed `HttpClient`s with retry/backoff (standard resilience handler): **Re
 
 ## 12. Out of Scope for v1
 
+
 - User accounts / persistence beyond job folders (7-day retention)
 - Real (non-fake) authentication provider
 - Cloud LLM copilot fallback
 - Batch/multi-file analysis; live microphone input
 - Non-Windows local GPU tier testing (DirectML path is code-complete but validated only via CI fakes)
+
+---
+
+## 13. Corrections Discovered During Implementation
+
+Recorded as they were found; each supersedes the corresponding statement above.
+
+### 13.1 Dev hardware is Windows-on-ARM with a Qualcomm Adreno GPU (found in Phase 2, Task 6)
+
+The §2 assumption of an NVIDIA GPU ≥ 6 GB was wrong. The NVML probe returns `null` on this machine (no `nvml.dll`), so `GpuReport` is absent from `/diag` here, and the installed Ollama model is `gemma4:26b` — not the `qwen2.5:7b` / `llama3.3:8b` / `llama3.2:3b` list in §5.
+
+Consequences for **Phase 4 (local ONNX tier)**, which must be re-planned before it starts:
+- **CUDA is not testable locally.** The §4 execution table's "CUDA→DML" ordering still holds as code, but only the DirectML and CPU paths can be exercised on this box — and DirectML on ARM64 is unproven for these models.
+- The §4 "free VRAM ≥ 6 GB" gate for local stem separation will never pass here, so the planner will route stem separation to the cloud tier by default on this machine.
+- Options to decide with the user: target DirectML/CPU on ARM, use a different machine for Tier-1 validation, or accept cloud-first locally and treat Tier 1 as CI/other-hardware only.
+- §5's Copilot model preference list must include whatever is actually installed (`gemma4:26b`) or fall back to "first available model".
+
+### 13.2 Deferred from Phase 2 into Phase 4 (agreed scope moves)
+
+- **Startup re-enqueue of interrupted jobs.** Persistence and stage-skip resumption are implemented and tested, but nothing re-enqueues a job left mid-stage by a hard crash. Deliberately deferred: with instant fake executors the crash window is negligible; it becomes real once stages take minutes.
+- **Optimistic concurrency on `job.json`.** A `DELETE` on a still-queued job can be overwritten by the worker's first write (last-writer-wins). Per-job locking and atomic writes are in place, but there is no versioning, so cancel remains best-effort until Phase 4.
+- **Intra-stage progress** (`StageProgress(pct)` in §4) and **DXGI adapter enumeration** in the hardware probe.
+
+### 13.3 Phase 2 additions not in the original spec
+
+- Kestrel's `MaxRequestBodySize` must be raised explicitly to 100 MB; `FormOptions.MultipartBodyLengthLimit` alone leaves a ~28.6 MB effective cap (§11's "request size limits configured explicitly" now covers both).
+- `jobId` route parameters are validated as 32 lowercase hex characters before reaching `Path.Combine`/`PhysicalFile`.
+- The SignalR contract is a single `JobStatusChanged(JobStatusDto)` event rather than §4's five named events; the DTO carries stage, tier plan, progress, and error.
+- The solution file is `PoMode.slnx` (current SDK format), not `PoMode.sln` as written in §3.
