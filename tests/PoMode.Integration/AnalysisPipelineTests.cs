@@ -174,4 +174,19 @@ public sealed class AnalysisPipelineTests : IDisposable
         var final = await _store.LoadAsync(job.JobId, CancellationToken.None);
         Assert.Equal(JobStage.Cancelled, final!.Stage);
     }
+
+    [Fact]
+    public async Task Retry_after_failure_completes_and_clears_error()
+    {
+        var job = await NewJobAsync();
+        await Pipeline([new ThrowingStemSeparator()]).RunAsync(job.JobId, CancellationToken.None);
+        var failed = await _store.LoadAsync(job.JobId, CancellationToken.None);
+        Assert.Equal(JobStage.Failed, failed!.Stage);
+
+        await Pipeline([new FakeStemSeparator()]).RunAsync(job.JobId, CancellationToken.None);
+
+        var final = await _store.LoadAsync(job.JobId, CancellationToken.None);
+        Assert.Equal(JobStage.Complete, final!.Stage);
+        Assert.Null(final.Error);
+    }
 }

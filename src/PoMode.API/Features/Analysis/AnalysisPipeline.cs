@@ -19,7 +19,10 @@ public sealed class AnalysisPipeline(
 
     public async Task RunAsync(string jobId, CancellationToken ct)
     {
-        var state = await store.LoadAsync(jobId, ct)
+        // CancellationToken.None: this is a small local file read, and honoring a cancellation
+        // here would throw OperationCanceledException before the try block below can catch it,
+        // leaving the job stuck without a terminal state.
+        var state = await store.LoadAsync(jobId, CancellationToken.None)
             ?? throw new InvalidOperationException($"Job {jobId} not found.");
         if (state.Stage is JobStage.Complete or JobStage.Cancelled)
         {
@@ -29,6 +32,7 @@ public sealed class AnalysisPipeline(
         }
         try
         {
+            state.Error = null;
             if (state.Plan.Count == 0)
             {
                 state.Plan = await planner.PlanAsync(ct);
