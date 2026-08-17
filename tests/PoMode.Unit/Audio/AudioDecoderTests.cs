@@ -74,6 +74,30 @@ public sealed class AudioDecoderTests : IDisposable
         Assert.Contains("audio", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Audio_longer_than_the_limit_is_rejected_before_decoding()
+    {
+        var path = WriteTemp("long.wav", TestAudio.MakeTone(seconds: 3.0, frequencyHz: 440, sampleRate: 8000));
+
+        var ex = Assert.Throws<InvalidDataException>(() => AudioDecoder.Decode(path, maxDurationSeconds: 1.0));
+
+        Assert.Contains("limit", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Audio_within_the_limit_still_decodes()
+    {
+        var path = WriteTemp("short.wav", TestAudio.MakeTone(seconds: 1.0, frequencyHz: 440, sampleRate: 8000));
+
+        var buffer = AudioDecoder.Decode(path, maxDurationSeconds: 10.0);
+
+        Assert.InRange(buffer.DurationSeconds, 0.9, 1.1);
+    }
+
+    [Fact]
+    public void The_default_limit_is_fifteen_minutes()
+        => Assert.Equal(900, AudioDecoder.MaxDurationSecondsDefault);
+
     /// <summary>
     /// The brief's tests only exercise the WAV path. This decodes a real MP3 (the NLayer-backed
     /// path) using the user's own local file, which is git-ignored and never touched or committed.

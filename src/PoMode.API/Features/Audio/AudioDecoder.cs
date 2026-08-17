@@ -7,7 +7,10 @@ namespace PoMode.API.Features.Audio;
 /// <summary>Decodes uploads to normalised float PCM. Format is sniffed from content, never the extension.</summary>
 public static class AudioDecoder
 {
-    public static AudioBuffer Decode(string path)
+    /// <summary>15 minutes — generous for a song, ~318 MB decoded worst case at stereo 44.1 kHz.</summary>
+    public const double MaxDurationSecondsDefault = 900;
+
+    public static AudioBuffer Decode(string path, double maxDurationSeconds = MaxDurationSecondsDefault)
     {
         var header = new byte[12];
         using (var probe = File.OpenRead(path))
@@ -20,6 +23,13 @@ public static class AudioDecoder
         }
 
         using var reader = OpenReader(path, header);
+
+        var totalSeconds = reader.TotalTime.TotalSeconds;
+        if (totalSeconds > maxDurationSeconds)
+        {
+            throw new InvalidDataException($"Audio is {totalSeconds:0} s long; the limit is {maxDurationSeconds:0} s.");
+        }
+
         var provider = reader.ToSampleProvider();
         var format = provider.WaveFormat;
 
