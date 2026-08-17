@@ -16,7 +16,8 @@ public static class ModalAnalysisEngine
     public static ModalResult Analyze(
         IReadOnlyList<NoteEvent> notes,
         IReadOnlyList<ChordSpan> chords,
-        double tempoBpm = 120.0)
+        double tempoBpm = 120.0,
+        bool tempoEstimated = true)
     {
         var bpm = tempoBpm <= 0 ? 120.0 : tempoBpm;
         var tonic = TonicDetector.Detect(notes, chords);
@@ -59,7 +60,7 @@ public static class ModalAnalysisEngine
             PrimaryMode: primaryMode,
             PrimaryConfidence: primaryConfidence,
             TempoBpm: bpm,
-            TempoEstimated: true,
+            TempoEstimated: tempoEstimated,
             Windows: windows);
     }
 

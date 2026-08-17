@@ -115,6 +115,24 @@ public class ModalAnalysisEngineTests
         => Assert.Equal(1, ModalAnalysisEngine.Analyze([], []).SchemaVersion);
 
     [Fact]
+    public void Real_tempo_is_reported_as_not_estimated()
+    {
+        var result = ModalAnalysisEngine.Analyze([], [], tempoBpm: 96.0, tempoEstimated: false);
+
+        Assert.Equal(96.0, result.TempoBpm);
+        Assert.False(result.TempoEstimated);
+    }
+
+    [Fact]
+    public void Default_still_reports_an_estimated_120()
+    {
+        var result = ModalAnalysisEngine.Analyze([], []);
+
+        Assert.Equal(120.0, result.TempoBpm);
+        Assert.True(result.TempoEstimated);
+    }
+
+    [Fact]
     public void Better_coverage_always_outranks_a_characteristic_bonus()
     {
         // Tonic C. Seven distinct sung classes incl. a chromatic b2 and no 7th:

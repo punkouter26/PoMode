@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
+using PoMode.TestCommon;
 using Xunit;
 
 namespace PoMode.Integration;
@@ -37,7 +39,7 @@ public sealed class ArtifactModalAnalyzerTests : IDisposable
             [new(62, 0.0, 0.4, 96), new(65, 0.5, 0.4, 96), new(69, 1.0, 0.4, 96), new(71, 1.5, 0.4, 96)],
             [new("Dm7", "D", "min7", 0, 2)]);
 
-        await new ArtifactModalAnalyzer(store).AnalyzeAsync(Context(), CancellationToken.None);
+        await new ArtifactModalAnalyzer(store, NullLogger<ArtifactModalAnalyzer>.Instance).AnalyzeAsync(Context(), CancellationToken.None);
 
         var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
 
@@ -51,12 +53,30 @@ public sealed class ArtifactModalAnalyzerTests : IDisposable
     public async Task Missing_artifacts_produce_an_empty_result_rather_than_throwing()
     {
         var store = Store;
-        await new ArtifactModalAnalyzer(store).AnalyzeAsync(Context(), CancellationToken.None);
+        await new ArtifactModalAnalyzer(store, NullLogger<ArtifactModalAnalyzer>.Instance).AnalyzeAsync(Context(), CancellationToken.None);
 
         var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Empty(result.Windows);
         Assert.Null(result.PrimaryMode);
+    }
+
+    [Fact]
+    public async Task Real_tempo_from_the_instrumental_stem_is_reported_as_not_estimated()
+    {
+        var store = Store;
+        await WriteArtifactsAsync(store, [], []);
+        File.WriteAllBytes(
+            Path.Combine(_root, JobId, "instrumental.wav"),
+            TestAudio.MakeClickTrack(seconds: 20.0, bpm: 120.0));
+
+        await new ArtifactModalAnalyzer(store, NullLogger<ArtifactModalAnalyzer>.Instance).AnalyzeAsync(Context(), CancellationToken.None);
+
+        var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.TempoEstimated);
+        Assert.InRange(result.TempoBpm, 117.0, 123.0);
     }
 }
