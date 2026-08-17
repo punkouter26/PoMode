@@ -26,7 +26,7 @@ public class AppFixture : IAsyncLifetime
         _server = Process.Start(new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"run --project src/PoMode.API --urls {BaseUrl}",
+            Arguments = $"run --no-build --project src/PoMode.API --urls {BaseUrl}",
             WorkingDirectory = repoRoot,
             UseShellExecute = false,
             CreateNoWindow = true,
