@@ -46,7 +46,7 @@ public sealed class ModelRegistry(
         }
 
         var partPath = finalPath + ".part";
-        var client = httpClientFactory.CreateClient(nameof(ModelRegistry));
+        using var client = httpClientFactory.CreateClient(nameof(ModelRegistry));
 
         using (var response = await client.GetAsync(descriptor.Url, HttpCompletionOption.ResponseHeadersRead, ct))
         {
