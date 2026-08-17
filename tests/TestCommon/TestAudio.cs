@@ -60,6 +60,37 @@ public static class TestAudio
         return stream.ToArray();
     }
 
+    /// <summary>A two-tone stereo mix (different frequency per channel) — synthetic input for stem separation tests.</summary>
+    public static byte[] MakeTwoToneStereo(double seconds, double frequencyHzLeft, double frequencyHzRight, int sampleRate = 44100, double amplitude = 0.3)
+    {
+        var count = (int)(seconds * sampleRate);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        var dataSize = count * 4; // stereo PCM16 = 4 bytes/frame
+        writer.Write("RIFF"u8);
+        writer.Write(36 + dataSize);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)2); // stereo
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * 4); // byte rate
+        writer.Write((short)4);       // block align
+        writer.Write((short)16);
+        writer.Write("data"u8);
+        writer.Write(dataSize);
+        for (var i = 0; i < count; i++)
+        {
+            var left = amplitude * Math.Sin(2 * Math.PI * frequencyHzLeft * i / sampleRate);
+            var right = amplitude * Math.Sin(2 * Math.PI * frequencyHzRight * i / sampleRate);
+            writer.Write((short)(left * short.MaxValue));
+            writer.Write((short)(right * short.MaxValue));
+        }
+        writer.Flush();
+        return stream.ToArray();
+    }
+
     /// <summary>Clicks at a fixed BPM — ground truth for the tempo estimator.</summary>
     public static byte[] MakeClickTrack(double seconds, double bpm, int sampleRate = 22050)
     {
