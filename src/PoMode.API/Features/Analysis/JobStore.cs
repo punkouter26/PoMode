@@ -87,6 +87,65 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
         }
     }
 
+    public async Task WriteArtifactAsync<T>(string jobId, string fileName, T payload, CancellationToken ct)
+    {
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var path = Path.Combine(JobDir(jobId), fileName);
+            var tempPath = path + ".tmp";
+            await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(payload, JsonOptions), ct);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<T>> ReadArtifactListAsync<T>(string jobId, string fileName, CancellationToken ct)
+        => await ReadArtifactAsync<List<T>>(jobId, fileName, ct) ?? [];
+
+    public async Task<T?> ReadArtifactAsync<T>(string jobId, string fileName, CancellationToken ct)
+    {
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var path = Path.Combine(JobDir(jobId), fileName);
+            if (!File.Exists(path))
+            {
+                return default;
+            }
+            return JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(path, ct), JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return default; // a torn or corrupt artifact is "not available", never a 500
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Reads an artifact as bytes under the per-job lock so endpoints never stream a file mid-write.</summary>
+    public async Task<byte[]?> ReadArtifactBytesAsync(string jobId, string fileName, CancellationToken ct)
+    {
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var path = Path.Combine(JobDir(jobId), fileName);
+            return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public int PurgeOlderThan(TimeSpan maxAge)
     {
         if (!Directory.Exists(RootPath))

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
@@ -7,8 +6,6 @@ namespace PoMode.API.Features.MidiExport;
 
 public static class MidiExportEndpoints
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
     public static IEndpointRouteBuilder MapMidiExport(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/analysis/{jobId}/midi", async Task<Results<FileContentHttpResult, NotFound>> (
@@ -19,29 +16,14 @@ public static class MidiExportEndpoints
                 return TypedResults.NotFound();
             }
 
-            var jobDir = store.JobDir(jobId);
-            var resultPath = Path.Combine(jobDir, "result.json");
-            if (!File.Exists(resultPath))
-            {
-                return TypedResults.NotFound();
-            }
-
-            ModalResult? result;
-            try
-            {
-                result = JsonSerializer.Deserialize<ModalResult>(await File.ReadAllTextAsync(resultPath, ct), Json);
-            }
-            catch (JsonException)
-            {
-                return TypedResults.NotFound();
-            }
+            var result = await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct);
             if (result is null)
             {
                 return TypedResults.NotFound();
             }
 
-            var notes = await ReadAsync<NoteEvent>(jobDir, "notes.json", ct);
-            var chords = await ReadAsync<ChordSpan>(jobDir, "chords.json", ct);
+            var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
+            var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
 
             return TypedResults.File(
                 MidiFileBuilder.Build(notes, chords, result),
@@ -50,15 +32,5 @@ public static class MidiExportEndpoints
         });
 
         return app;
-    }
-
-    private static async Task<IReadOnlyList<T>> ReadAsync<T>(string jobDir, string fileName, CancellationToken ct)
-    {
-        var path = Path.Combine(jobDir, fileName);
-        if (!File.Exists(path))
-        {
-            return [];
-        }
-        return JsonSerializer.Deserialize<List<T>>(await File.ReadAllTextAsync(path, ct), Json) ?? [];
     }
 }

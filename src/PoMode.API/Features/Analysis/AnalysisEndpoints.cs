@@ -110,16 +110,17 @@ public static class AnalysisEndpoints
     }
 
     private static void MapArtifact(RouteGroupBuilder group, string route, string fileName)
-        => group.MapGet($"/{{jobId}}/{route}", Results<PhysicalFileHttpResult, NotFound> (string jobId, JobStore store) =>
+        => group.MapGet($"/{{jobId}}/{route}", async Task<Results<FileContentHttpResult, NotFound>> (
+            string jobId, JobStore store, CancellationToken ct) =>
         {
             if (!IsValidJobId(jobId))
             {
                 return TypedResults.NotFound();
             }
-            var path = Path.Combine(store.JobDir(jobId), fileName);
-            return File.Exists(path)
-                ? TypedResults.PhysicalFile(path, "application/json")
-                : TypedResults.NotFound();
+            var bytes = await store.ReadArtifactBytesAsync(jobId, fileName, ct);
+            return bytes is null
+                ? TypedResults.NotFound()
+                : TypedResults.File(bytes, "application/json");
         });
 
     private static bool IsValidJobId(string jobId)

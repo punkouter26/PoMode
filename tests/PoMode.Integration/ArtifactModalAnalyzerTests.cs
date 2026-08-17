@@ -1,4 +1,5 @@
-using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -8,32 +9,37 @@ namespace PoMode.Integration;
 
 public sealed class ArtifactModalAnalyzerTests : IDisposable
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private readonly string _jobDir = Path.Combine(Path.GetTempPath(), $"pomode-modal-{Guid.NewGuid():N}");
+    private const string JobId = "job1";
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"pomode-modal-{Guid.NewGuid():N}");
 
-    public ArtifactModalAnalyzerTests() => Directory.CreateDirectory(_jobDir);
+    private JobStore Store => new(
+        new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Jobs:RootPath"] = _root }).Build(),
+        TimeProvider.System);
 
-    public void Dispose() => Directory.Delete(_jobDir, recursive: true);
+    public ArtifactModalAnalyzerTests() => Directory.CreateDirectory(Path.Combine(_root, JobId));
 
-    private StageContext Context() => new("job1", _jobDir, Path.Combine(_jobDir, "input.wav"));
+    public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    private async Task WriteArtifactsAsync(IReadOnlyList<NoteEvent> notes, IReadOnlyList<ChordSpan> chords)
+    private StageContext Context() => new(JobId, Path.Combine(_root, JobId), Path.Combine(_root, JobId, "input.wav"));
+
+    private static async Task WriteArtifactsAsync(JobStore store, IReadOnlyList<NoteEvent> notes, IReadOnlyList<ChordSpan> chords)
     {
-        await File.WriteAllTextAsync(Path.Combine(_jobDir, "notes.json"), JsonSerializer.Serialize(notes, Json));
-        await File.WriteAllTextAsync(Path.Combine(_jobDir, "chords.json"), JsonSerializer.Serialize(chords, Json));
+        await store.WriteArtifactAsync(JobId, "notes.json", notes, CancellationToken.None);
+        await store.WriteArtifactAsync(JobId, "chords.json", chords, CancellationToken.None);
     }
 
     [Fact]
     public async Task Writes_result_json_from_the_note_and_chord_artifacts()
     {
-        await WriteArtifactsAsync(
+        var store = Store;
+        await WriteArtifactsAsync(store,
             [new(62, 0.0, 0.4, 96), new(65, 0.5, 0.4, 96), new(69, 1.0, 0.4, 96), new(71, 1.5, 0.4, 96)],
             [new("Dm7", "D", "min7", 0, 2)]);
 
-        await new ArtifactModalAnalyzer().AnalyzeAsync(Context(), CancellationToken.None);
+        await new ArtifactModalAnalyzer(store).AnalyzeAsync(Context(), CancellationToken.None);
 
-        var text = await File.ReadAllTextAsync(Path.Combine(_jobDir, "result.json"));
-        var result = JsonSerializer.Deserialize<ModalResult>(text, Json);
+        var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal(1, result.SchemaVersion);
@@ -44,10 +50,10 @@ public sealed class ArtifactModalAnalyzerTests : IDisposable
     [Fact]
     public async Task Missing_artifacts_produce_an_empty_result_rather_than_throwing()
     {
-        await new ArtifactModalAnalyzer().AnalyzeAsync(Context(), CancellationToken.None);
+        var store = Store;
+        await new ArtifactModalAnalyzer(store).AnalyzeAsync(Context(), CancellationToken.None);
 
-        var result = JsonSerializer.Deserialize<ModalResult>(
-            await File.ReadAllTextAsync(Path.Combine(_jobDir, "result.json")), Json);
+        var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Empty(result.Windows);

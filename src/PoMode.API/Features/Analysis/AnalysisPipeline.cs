@@ -1,4 +1,3 @@
-using System.Text.Json;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 
@@ -15,8 +14,6 @@ public sealed class AnalysisPipeline(
     IAnalysisNotifier notifier,
     ILogger<AnalysisPipeline> logger)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
-
     public async Task RunAsync(string jobId, CancellationToken ct)
     {
         // CancellationToken.None: this is a small local file read, and honoring a cancellation
@@ -54,7 +51,7 @@ public sealed class AnalysisPipeline(
                 await EnterStageAsync(state, JobStage.PitchTracking, 1, ct);
                 var notes = await RunWithFallbackAsync(state, StageNames.PitchTracking, pitchTrackers,
                     (executor, token) => executor.TrackAsync(context, token), ct);
-                await WriteArtifactAsync(context.JobDir, "notes.json", notes, ct);
+                await store.WriteArtifactAsync(jobId, "notes.json", notes, ct);
                 await CompleteStageAsync(state, StageNames.PitchTracking, 1, ct);
             }
 
@@ -63,7 +60,7 @@ public sealed class AnalysisPipeline(
                 await EnterStageAsync(state, JobStage.ChordDetecting, 2, ct);
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
-                await WriteArtifactAsync(context.JobDir, "chords.json", chords, ct);
+                await store.WriteArtifactAsync(jobId, "chords.json", chords, ct);
                 await CompleteStageAsync(state, StageNames.ChordDetecting, 2, ct);
             }
 
@@ -156,7 +153,4 @@ public sealed class AnalysisPipeline(
         await store.SaveAsync(state, ct);
         await notifier.PublishAsync(state.ToDto(), ct);
     }
-
-    private static Task WriteArtifactAsync<T>(string jobDir, string fileName, T payload, CancellationToken ct)
-        => File.WriteAllTextAsync(Path.Combine(jobDir, fileName), JsonSerializer.Serialize(payload, JsonOptions), ct);
 }
