@@ -128,6 +128,48 @@ public static class AnalysisEndpoints
             return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result));
         });
 
+        // Stem audio for the Web Audio mixer (spec §7). The caller's {name} selects from a fixed
+        // allow-list and never becomes part of a path, so there is no traversal surface here at all.
+        group.MapGet("/{jobId}/stems/{name}", async Task<Results<FileContentHttpResult, NotFound>> (
+            string jobId, string name, JobStore store, CancellationToken ct) =>
+        {
+            if (!IsValidJobId(jobId))
+            {
+                return TypedResults.NotFound();
+            }
+
+            string fileName;
+            string contentType;
+            switch (name)
+            {
+                case "vocals":
+                case "instrumental":
+                    fileName = $"{name}.wav";
+                    contentType = "audio/wav";
+                    break;
+                case "mix":
+                    // The original upload. Its extension came from the uploaded file name, so it is
+                    // derived rather than fixed — but Path.GetExtension can never return a value
+                    // containing a directory separator, and Path.GetFileName strips any path part,
+                    // so the result is still confined to this job's directory.
+                    var state = await store.LoadAsync(jobId, ct);
+                    if (state is null)
+                    {
+                        return TypedResults.NotFound();
+                    }
+                    fileName = Path.GetFileName(store.InputPath(state));
+                    contentType = Path.GetExtension(fileName).ToLowerInvariant() == ".mp3"
+                        ? "audio/mpeg"
+                        : "audio/wav";
+                    break;
+                default:
+                    return TypedResults.NotFound();
+            }
+
+            var bytes = await store.ReadArtifactBytesAsync(jobId, fileName, ct);
+            return bytes is null ? TypedResults.NotFound() : TypedResults.File(bytes, contentType);
+        });
+
         return app;
     }
 

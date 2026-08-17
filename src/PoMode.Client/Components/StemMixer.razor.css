@@ -1,0 +1,23 @@
+.mixer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 0.5rem 0 0;
+}
+
+.mixer-play {
+    min-width: 5rem;
+}
+
+.mixer-modes {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.mixer-note {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+}

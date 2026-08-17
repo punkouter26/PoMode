@@ -29,8 +29,13 @@
 {
     <RadzenCard>
         <RadzenText TextStyle="TextStyle.H6" Text="@($"{_visual.Notes.Count} notes · {_visual.Chords.Count} chords")" />
-        <AnalysisCanvas Model="_visual" SelectedWindowIndex="_selectedWindow" PlayheadSec="_playheadSec"
-                        OnSeek="OnSeek" />
+        <AnalysisCanvas Model="_visual" SelectedWindowIndex="_selectedWindow"
+                        PlayheadSec="_playheadSec" OnSeek="OnSeek"
+                        OnReady="@(element => _canvasElement = element)" />
+        @if (_canvasElement is { } canvasElement)
+        {
+            <StemMixer JobId="@_status!.JobId" CanvasElement="canvasElement" SeekToSec="_playheadSec" />
+        }
     </RadzenCard>
 }
 
@@ -50,6 +55,7 @@
     private HubConnection? _hub;
     private int? _selectedWindow;
     private double _playheadSec;
+    private ElementReference? _canvasElement;
 
     /// <summary>Canvas click. The window scan is a plain time-range lookup, not analysis — the
     /// musical decisions all happened server-side in VisualizationBuilder.</summary>
@@ -79,6 +85,9 @@
         _result = null;
         _selectedWindow = null;
         _playheadSec = 0;
+        // Clearing _visual removes the canvas, so the next analysis builds a fresh one. Drop the old
+        // element too, or the mixer would initialise against a canvas that no longer exists.
+        _canvasElement = null;
         if (args.RawResponse is not { } rawResponse)
         {
             _uploadError = "Unexpected server response.";

@@ -36,6 +36,14 @@
 
     [Parameter] public EventCallback<double> OnSeek { get; set; }
 
+    /// <summary>
+    /// Raised once the canvas element exists and its module is initialised, handing the element to the
+    /// parent so the mixer can drive the playhead straight from the Web Audio clock (see mixer.js)
+    /// instead of pushing 60 updates a second back through Blazor. An <c>@@ref</c> cannot be used for
+    /// this: it is assigned *during* render, so a parent gating on it would never re-render.
+    /// </summary>
+    [Parameter] public EventCallback<ElementReference> OnReady { get; set; }
+
     private ElementReference _canvas;
     private IJSObjectReference? _module;
     private DotNetObjectReference<AnalysisCanvas>? _self;
@@ -56,6 +64,10 @@
             await _module.InvokeVoidAsync("init", _canvas, _self);
         }
         await PushStateAsync();
+        if (firstRender)
+        {
+            await OnReady.InvokeAsync(_canvas);
+        }
     }
 
     /// <summary>Only pushes what actually changed — the model payload is the expensive one.</summary>
