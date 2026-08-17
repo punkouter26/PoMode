@@ -1,3 +1,36 @@
 .upload-error {
     color: var(--pm-warn-bg);
 }
+
+.url-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.5rem;
+}
+
+.url-row ::deep .rz-textbox {
+    flex: 1;
+    min-width: 0;
+}
+
+.record-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 0.5rem;
+}
+
+.recording-hint {
+    color: var(--pm-note-outside);
+}
+
+.debug-toggle {
+    margin-top: 0.5rem;
+}
+
+.export-links {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}

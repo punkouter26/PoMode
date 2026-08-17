@@ -12,9 +12,12 @@ public static class AnalysisEndpoints
     public static IEndpointRouteBuilder MapAnalysis(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/analysis");
+        group.AddEndpointFilter<JobIdEndpointFilter>();
 
+        // Stays anonymous: RadzenUpload posts the file itself from the browser and cannot attach
+        // the FakeAuth headers the C# HttpClient carries. Every other write endpoint requires auth.
         group.MapPost("", async Task<Results<Ok<JobStatusDto>, BadRequest<string>>> (
-            HttpRequest request, JobStore store, JobQueue queue, ExecutionPlanner planner, CancellationToken ct) =>
+            HttpRequest request, AnalysisIntake intake, CancellationToken ct) =>
         {
             if (!request.HasFormContentType)
             {
@@ -52,39 +55,17 @@ public static class AnalysisEndpoints
             }
 
             await using var fresh = file.OpenReadStream();
-            var state = await store.CreateAsync(file.FileName, fresh, ct);
-            // Plan synchronously so the response DTO already reflects the execution plan — the
-            // background pipeline runs on a separate JobState instance loaded from disk, so it
-            // can never retroactively populate the DTO already handed back to the caller.
             // Tier 2 availability is a per-job property of the uploading browser (spec §4): the
             // client probes for onnxruntime-web support and declares it here. Absent or false, the
             // browser tier is simply invisible and planning behaves exactly as before.
             var clientCanInfer = bool.TryParse(request.Query["clientCanInfer"], out var canInfer) && canInfer;
-            try
-            {
-                state.Plan = await planner.PlanAsync(clientCanInfer, ct);
-            }
-            catch (InvalidOperationException ex)
-            {
-                // No executor is available for some stage: report a Failed job (the pipeline's
-                // own graceful-failure shape) instead of letting this surface as a 500 upload.
-                state.Stage = JobStage.Failed;
-                state.Error = ex.Message;
-                await store.SaveAsync(state, ct);
-                return TypedResults.Ok(state.ToDto());
-            }
-            await store.SaveAsync(state, ct);
-            await queue.EnqueueAsync(state.JobId, ct);
+            var state = await intake.StartAsync(file.FileName, fresh, clientCanInfer, ct);
             return TypedResults.Ok(state.ToDto());
         }).DisableAntiforgery();
 
         group.MapGet("/{jobId}", async Task<Results<Ok<JobStatusDto>, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
         {
-            if (!IsValidJobId(jobId))
-            {
-                return TypedResults.NotFound();
-            }
             var state = await store.LoadAsync(jobId, ct);
             return state is null ? TypedResults.NotFound() : TypedResults.Ok(state.ToDto());
         });
@@ -92,10 +73,6 @@ public static class AnalysisEndpoints
         group.MapDelete("/{jobId}", async Task<Results<Ok, NotFound>> (
             string jobId, JobStore store, JobCancellationRegistry cancellations, CancellationToken ct) =>
         {
-            if (!IsValidJobId(jobId))
-            {
-                return TypedResults.NotFound();
-            }
             var state = await store.LoadAsync(jobId, ct);
             if (state is null)
             {
@@ -108,7 +85,7 @@ public static class AnalysisEndpoints
                 await store.SaveAsync(state, ct);
             }
             return TypedResults.Ok();
-        });
+        }).RequireAuthorization();
 
         MapArtifact(group, "notes", "notes.json");
         MapArtifact(group, "chords", "chords.json");
@@ -120,10 +97,6 @@ public static class AnalysisEndpoints
         group.MapGet("/{jobId}/visual", async Task<Results<Ok<VisualizationPayload>, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
         {
-            if (!IsValidJobId(jobId))
-            {
-                return TypedResults.NotFound();
-            }
             var result = await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct);
             if (result is null)
             {
@@ -144,7 +117,7 @@ public static class AnalysisEndpoints
             JobStore store,
             ClientWorkRegistry registry) =>
         {
-            if (!IsValidJobId(jobId) || !registry.IsWaiting(jobId))
+            if (!registry.IsWaiting(jobId))
             {
                 return TypedResults.NotFound();
             }
@@ -166,18 +139,13 @@ public static class AnalysisEndpoints
             return registry.TryComplete(jobId, notes)
                 ? TypedResults.Ok()
                 : TypedResults.NotFound();
-        });
+        }).RequireAuthorization();
 
         // Stem audio for the Web Audio mixer (spec §7). The caller's {name} selects from a fixed
         // allow-list and never becomes part of a path, so there is no traversal surface here at all.
         group.MapGet("/{jobId}/stems/{name}", async Task<Results<FileContentHttpResult, NotFound>> (
             string jobId, string name, JobStore store, CancellationToken ct) =>
         {
-            if (!IsValidJobId(jobId))
-            {
-                return TypedResults.NotFound();
-            }
-
             string fileName;
             string contentType;
             switch (name)
@@ -217,16 +185,9 @@ public static class AnalysisEndpoints
         => group.MapGet($"/{{jobId}}/{route}", async Task<Results<FileContentHttpResult, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
         {
-            if (!IsValidJobId(jobId))
-            {
-                return TypedResults.NotFound();
-            }
             var bytes = await store.ReadArtifactBytesAsync(jobId, fileName, ct);
             return bytes is null
                 ? TypedResults.NotFound()
                 : TypedResults.File(bytes, "application/json");
         });
-
-    private static bool IsValidJobId(string jobId)
-        => jobId.Length == 32 && jobId.All(char.IsAsciiHexDigitLower);
 }

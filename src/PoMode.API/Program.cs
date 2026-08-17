@@ -1,14 +1,18 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Features.Batch;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Features.Copilot;
 using PoMode.API.Features.Hardware;
 using PoMode.API.Features.MidiExport;
 using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Session;
 using PoMode.API.Features.StemSeparation;
+using PoMode.API.Features.UrlIngest;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Serialization;
@@ -40,11 +44,18 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ModelRegistry>();
 builder.Services.AddSingleton<HardwareProbe>();
 builder.Services.AddSingleton<DiagnosticsService>();
-builder.Services.AddHealthChecks().AddCheck<JobStorageHealthCheck>("job-storage");
+builder.Services.AddHealthChecks()
+    .AddCheck<JobStorageHealthCheck>("job-storage")
+    .AddCheck<OllamaHealthCheck>("ollama")
+    .AddCheck<CloudProvidersHealthCheck>("cloud-providers");
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<JobBlobStorage>();
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton<BatchStore>();
 builder.Services.AddSingleton<JobQueue>();
+builder.Services.AddSingleton<AnalysisIntake>();
+builder.Services.AddSingleton<UrlAudioService>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
@@ -63,6 +74,7 @@ builder.Services.AddSingleton<OllamaCopilotClient>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
+builder.Services.AddHostedService<JobRecoveryService>();
 builder.Services.AddHostedService<JobCleanupService>();
 builder.Services.AddHostedService<ModelWarmupService>();
 builder.Services.AddSignalR();
@@ -85,12 +97,18 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapScalarApiReference(); // serves /scalar
 app.MapHealthChecks("/health");
+// Liveness runs no checks (is the process serving requests at all); readiness runs them all.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready");
 app.MapDiagnostics();
 
 app.MapSession();
 app.MapAnalysis();
+app.MapBatch();
+app.MapUrlIngest();
 app.MapWebRuntime();
 app.MapMidiExport();
+app.MapMusicXmlExport();
 app.MapCopilot();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 

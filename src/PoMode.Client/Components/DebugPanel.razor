@@ -1,0 +1,43 @@
+@using PoMode.Shared.Analysis
+
+<RadzenCard class="debug-panel">
+    <RadzenText TextStyle="TextStyle.H6" Text="Job debug" />
+    <div class="artifact-links">
+        <RadzenLink Path="@Artifact("")" Text="status" Target="_blank" />
+        <RadzenLink Path="@Artifact("/notes")" Text="notes.json" Target="_blank" />
+        <RadzenLink Path="@Artifact("/chords")" Text="chords.json" Target="_blank" />
+        <RadzenLink Path="@Artifact("/result")" Text="result.json" Target="_blank" />
+        <RadzenLink Path="@Artifact("/visual")" Text="visual.json" Target="_blank" />
+    </div>
+    @if (Status.StageHistory is { Count: > 0 } history)
+    {
+        <table class="history">
+            <thead>
+                <tr><th>Stage</th><th>Executor</th><th>Tier</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var record in history)
+                {
+                    <tr>
+                        <td>@record.Stage</td>
+                        <td>@record.Executor</td>
+                        <td><TierBadge Tier="record.Tier" /></td>
+                        <td>@Duration(record)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</RadzenCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public required JobStatusDto Status { get; set; }
+
+    private string Artifact(string suffix) => $"api/analysis/{Status.JobId}{suffix}";
+
+    private static string Duration(StageRecord record)
+        => record.CompletedAt is { } end
+            ? $"{(end - record.StartedAt).TotalSeconds:0.0}s"
+            : "running…";
+}

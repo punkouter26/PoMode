@@ -11,11 +11,6 @@ public static class MidiExportEndpoints
         app.MapGet("/api/analysis/{jobId}/midi", async Task<Results<FileContentHttpResult, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
         {
-            if (jobId.Length != 32 || !jobId.All(char.IsAsciiHexDigitLower))
-            {
-                return TypedResults.NotFound();
-            }
-
             var result = await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct);
             if (result is null)
             {
@@ -29,7 +24,7 @@ public static class MidiExportEndpoints
                 MidiFileBuilder.Build(notes, chords, result),
                 contentType: "audio/midi",
                 fileDownloadName: $"pomode-{jobId}.mid");
-        });
+        }).AddEndpointFilter<JobIdEndpointFilter>();
 
         return app;
     }

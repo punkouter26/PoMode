@@ -25,15 +25,18 @@ public sealed class DiagnosticsTests : IDisposable
             .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
-    public async Task Health_returns_healthy()
+    public async Task Health_returns_success()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/health");
 
+        // Degraded is a 200 too: it means an optional dependency (Ollama, the blob mirror)
+        // is absent — a normal local state that must never read as an outage.
         response.EnsureSuccessStatusCode();
-        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(body, (string[])["Healthy", "Degraded"]);
     }
 
     [Fact]

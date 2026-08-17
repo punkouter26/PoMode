@@ -1,0 +1,82 @@
+@using System.Text.Json
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+
+<div class="batch-panel">
+    <RadzenText Text="Analyze up to 20 tracks in one go. When every track finishes, download one ZIP with JSON, MIDI and MusicXML per track." />
+    <RadzenUpload Url="api/analysis/batch" Multiple="true" Accept=".mp3,.wav" Auto="true"
+                  Complete="@OnComplete" Error="@OnError" ChooseText="Choose audio files" />
+    @if (_error is not null)
+    {
+        <RadzenText class="batch-error" Text="@_error" />
+    }
+    @if (_batch is not null)
+    {
+        <ul class="batch-tracks">
+            @foreach (var track in _batch.Tracks)
+            {
+                <li>
+                    <span class="file">@track.FileName</span>
+                    <span class="stage">@track.Stage</span>
+                    <RadzenProgressBar Value="@(track.Progress * 100)" ShowValue="false" />
+                </li>
+            }
+        </ul>
+        @if (AllDone)
+        {
+            <RadzenLink Path="@($"api/analysis/batch/{_batch.BatchId}/zip")" Text="Download batch ZIP" Target="_blank" />
+        }
+        else
+        {
+            <RadzenText class="batch-waiting" Text="Processing… the ZIP link appears when every track finishes." />
+        }
+    }
+</div>
+
+@code {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    private BatchStatusDto? _batch;
+    private string? _error;
+    private bool _polling;
+
+    private bool AllDone => _batch is not null && _batch.Tracks.All(
+        t => t.Stage is JobStage.Complete or JobStage.Failed or JobStage.Cancelled);
+
+    private async Task OnComplete(UploadCompleteEventArgs args)
+    {
+        _error = null;
+        if (args.RawResponse is not { } raw
+            || JsonSerializer.Deserialize<BatchStatusDto>(raw, WebJson) is not { } batch)
+        {
+            _error = "Unexpected server response.";
+            return;
+        }
+        _batch = batch;
+        if (!_polling)
+        {
+            _polling = true;
+            await PollAsync();
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (_batch is not null && !AllDone)
+            {
+                await Task.Delay(2000);
+                _batch = await Analysis.GetBatchAsync(_batch.BatchId) ?? _batch;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
+        {
+            _polling = false;
+        }
+    }
+
+    private void OnError(UploadErrorEventArgs args)
+        => _error = string.IsNullOrWhiteSpace(args.Message) ? "Batch upload failed." : args.Message;
+}

@@ -23,7 +23,7 @@ public sealed class AnalysisApiTests : IDisposable
         if (Directory.Exists(_modelsRoot)) Directory.Delete(_modelsRoot, recursive: true);
     }
 
-    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
+    private WebApplicationFactory<Program> Factory() => new AuthedFactory()
         .WithWebHostBuilder(b => b
             .UseSetting("Jobs:RootPath", _root)
             .UseSetting("Models:RootPath", _modelsRoot)

@@ -20,6 +20,6 @@ public class ShellSmokeTests(AppFixture app)
         var expectOptions = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
         await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(expectOptions);
         await Assertions.Expect(page.GetByText("PoMode").First).ToBeVisibleAsync(expectOptions);
-        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Export MIDI" })).ToBeVisibleAsync(expectOptions);
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Diagnostics" })).ToBeVisibleAsync(expectOptions);
     }
 }

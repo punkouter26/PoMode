@@ -12,7 +12,8 @@ public sealed class JobState
     public double Progress { get; set; }
     public List<StagePlan> Plan { get; set; } = [];
     public List<string> CompletedStages { get; set; } = [];
+    public List<StageRecord> StageHistory { get; set; } = [];
     public string? Error { get; set; }
 
-    public JobStatusDto ToDto() => new(JobId, Stage, Progress, Plan, CompletedStages, Error, CreatedAt);
+    public JobStatusDto ToDto() => new(JobId, Stage, Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory);
 }

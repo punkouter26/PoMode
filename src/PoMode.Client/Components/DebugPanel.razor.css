@@ -1,0 +1,28 @@
+.debug-panel {
+    margin-top: 0.75rem;
+}
+
+.artifact-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 0.5rem 0;
+}
+
+.history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.history th,
+.history td {
+    text-align: left;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--pm-border);
+}
+
+.history th {
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+}

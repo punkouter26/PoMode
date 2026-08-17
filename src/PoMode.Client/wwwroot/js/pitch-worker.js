@@ -60,7 +60,8 @@ export async function runDelegated(jobId) {
 
         const response = await fetch(`api/analysis/${jobId}/client-result`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // X-Fake-User: dev/test auth — the endpoint requires an authenticated caller.
+            headers: { 'Content-Type': 'application/json', 'X-Fake-User': 'guest' },
             body: JSON.stringify(notes),
         });
         if (!response.ok) {

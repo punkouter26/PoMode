@@ -10,3 +10,4 @@ TestResults/
 !tests/**/*.wav
 .claude/
 .superpowers/
+.azurite_data/

@@ -23,7 +23,7 @@ public sealed class CopilotEndpointTests : IDisposable
     /// Points the copilot at a loopback port with nothing listening, so these tests exercise the
     /// "no Ollama installed" path deterministically whether or not the dev box happens to run one.
     /// </summary>
-    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
+    private WebApplicationFactory<Program> Factory() => new AuthedFactory()
         .WithWebHostBuilder(b => b
             .UseSetting("Jobs:RootPath", _root)
             .UseSetting("Models:RootPath", _modelsRoot)
@@ -106,7 +106,7 @@ public sealed class CopilotEndpointTests : IDisposable
     [Fact]
     public async Task A_remote_copilot_address_is_refused_by_the_endpoint_too()
     {
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = new AuthedFactory()
             .WithWebHostBuilder(b => b
                 .UseSetting("Jobs:RootPath", _root)
                 .UseSetting("Models:RootPath", _modelsRoot)

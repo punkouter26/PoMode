@@ -1,7 +1,10 @@
 namespace PoMode.API.Features.Analysis;
 
-/// <summary>Hourly sweep deleting job folders older than 7 days.</summary>
-public sealed class JobCleanupService(JobStore store, ILogger<JobCleanupService> logger) : BackgroundService
+/// <summary>Hourly sweep deleting job folders and batch manifests older than 7 days.</summary>
+public sealed class JobCleanupService(
+    JobStore store,
+    Batch.BatchStore batches,
+    ILogger<JobCleanupService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -10,10 +13,11 @@ public sealed class JobCleanupService(JobStore store, ILogger<JobCleanupService>
         {
             try
             {
-                var purged = store.PurgeOlderThan(TimeSpan.FromDays(7));
+                var purged = store.PurgeOlderThan(TimeSpan.FromDays(7))
+                    + batches.PurgeOlderThan(TimeSpan.FromDays(7));
                 if (purged > 0)
                 {
-                    logger.LogInformation("Purged {Count} expired job folder(s).", purged);
+                    logger.LogInformation("Purged {Count} expired job folder(s) / batch manifest(s).", purged);
                 }
             }
             catch (Exception ex)

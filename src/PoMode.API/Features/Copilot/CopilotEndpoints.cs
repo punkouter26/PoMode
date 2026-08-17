@@ -15,7 +15,7 @@ public static class CopilotEndpoints
         group.MapPost("/explain", async Task<Results<Ok<CopilotReply>, NotFound>> (
             CopilotRequest request, JobStore store, OllamaCopilotClient copilot, CancellationToken ct) =>
         {
-            if (!IsValidJobId(request.JobId))
+            if (!JobId.IsValid(request.JobId))
             {
                 return TypedResults.NotFound();
             }
@@ -31,11 +31,8 @@ public static class CopilotEndpoints
 
             return TypedResults.Ok(
                 await copilot.ExplainAsync(result, result.Windows[request.WindowIndex], ct));
-        });
+        }).RequireAuthorization();
 
         return app;
     }
-
-    private static bool IsValidJobId(string jobId)
-        => jobId.Length == 32 && jobId.All(char.IsAsciiHexDigitLower);
 }

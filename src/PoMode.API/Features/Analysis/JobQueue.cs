@@ -10,4 +10,7 @@ public sealed class JobQueue
     public ValueTask EnqueueAsync(string jobId, CancellationToken ct) => _channel.Writer.WriteAsync(jobId, ct);
 
     public IAsyncEnumerable<string> DequeueAllAsync(CancellationToken ct) => _channel.Reader.ReadAllAsync(ct);
+
+    /// <summary>Jobs waiting for the single-concurrency worker — surfaced by /diag.</summary>
+    public int Depth => _channel.Reader.Count;
 }

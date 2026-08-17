@@ -1,0 +1,66 @@
+.diag-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.diag-error {
+    color: var(--pm-note-outside);
+}
+
+.diag-grid {
+    display: grid;
+    grid-template-columns: minmax(10rem, max-content) 1fr;
+    gap: 0.25rem 1rem;
+    margin: 0.5rem 0 0;
+}
+
+.diag-grid dt {
+    color: var(--pm-fg-muted);
+}
+
+.diag-grid dd {
+    margin: 0;
+}
+
+.diag-plan {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.diag-plan li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.diag-plan .stage {
+    min-width: 8rem;
+}
+
+.diag-plan .executor {
+    color: var(--pm-fg-muted);
+}
+
+.diag-models {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.diag-models th,
+.diag-models td {
+    text-align: left;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--pm-border);
+}
+
+.diag-models th {
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+}

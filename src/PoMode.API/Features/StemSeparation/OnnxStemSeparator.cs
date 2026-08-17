@@ -141,6 +141,7 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
             logger.LogInformation(
                 "Stem separation: chunk {ChunkIndex} of {ChunkCount} complete (job {JobId}).",
                 chunkIndex + 1, starts.Count, context.JobId);
+            context.OnProgress?.Invoke((chunkIndex + 1) / (double)starts.Count);
         }
 
         var vocalsInterleaved = new float[totalFrames * 2];

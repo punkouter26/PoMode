@@ -11,6 +11,13 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<MockDataState>();
 builder.Services.AddScoped<AnalysisClient>();
-builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+builder.Services.AddScoped(_ =>
+{
+    var http = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
+    // Dev/test FakeAuth: the API's write endpoints (cancel, client-result, copilot, from-url)
+    // require an authenticated caller. Production replaces this with a real auth provider.
+    http.DefaultRequestHeaders.Add("X-Fake-User", "guest");
+    return http;
+});
 
 await builder.Build().RunAsync();

@@ -1,0 +1,121 @@
+@page "/diagnostics"
+@using PoMode.Shared.Analysis
+@using PoMode.Shared.Diagnostics
+@using PoMode.Shared.Hardware
+@inject AnalysisClient Analysis
+
+<PageTitle>PoMode</PageTitle>
+
+<RadzenCard>
+    <div class="diag-header">
+        <RadzenText TextStyle="TextStyle.H5" Text="Diagnostics" />
+        <RadzenButton Text="Refresh" Click="@LoadAsync" ButtonStyle="ButtonStyle.Secondary" />
+    </div>
+    @if (_error is not null)
+    {
+        <RadzenText class="diag-error" Text="@_error" />
+    }
+    else if (_report is null)
+    {
+        <RadzenText Text="Loading…" />
+    }
+</RadzenCard>
+
+@if (_report is { } report)
+{
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Text="Environment" />
+        <dl class="diag-grid">
+            <dt>Environment</dt><dd>@report.EnvironmentName</dd>
+            <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
+            <dt>Secret source</dt><dd>@report.SecretSource @(report.SecretFellBack ? "(fell back)" : "")</dd>
+            <dt>Cloud tier enabled</dt><dd>@YesNo(report.CloudEnabled)</dd>
+            <dt>Jobs queued</dt><dd>@report.QueueDepth</dd>
+        </dl>
+    </RadzenCard>
+
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Text="Execution plan (defaults)" />
+        @if (report.DefaultPlan is { Count: > 0 } plan)
+        {
+            <ul class="diag-plan">
+                @foreach (var stage in plan)
+                {
+                    <li>
+                        <span class="stage">@stage.Stage</span>
+                        <TierBadge Tier="stage.Tier" />
+                        <span class="executor">@stage.Executor</span>
+                    </li>
+                }
+            </ul>
+        }
+        else
+        {
+            <RadzenText Text="No executor set is available." />
+        }
+    </RadzenCard>
+
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Text="Provider keys (presence only)" />
+        <dl class="diag-grid">
+            @foreach (var key in report.ProviderKeys)
+            {
+                <dt>@key.Provider</dt><dd>@(key.Configured ? "configured" : "not set")</dd>
+            }
+        </dl>
+    </RadzenCard>
+
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Text="Hardware" />
+        @if (report.Hardware is { } hardware)
+        {
+            <dl class="diag-grid">
+                <dt>GPU</dt>
+                <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
+                <dt>Ollama models</dt>
+                <dd>@(hardware.OllamaModels.Count > 0 ? string.Join(", ", hardware.OllamaModels) : "none")</dd>
+                <dt>Configured providers</dt>
+                <dd>@(hardware.ConfiguredProviders.Count > 0 ? string.Join(", ", hardware.ConfiguredProviders) : "none")</dd>
+            </dl>
+            <table class="diag-models">
+                <thead><tr><th>Model</th><th>Available</th><th>Size</th></tr></thead>
+                <tbody>
+                    @foreach (var model in hardware.Models)
+                    {
+                        <tr>
+                            <td>@model.Key</td>
+                            <td>@YesNo(model.Available)</td>
+                            <td>@(model.SizeBytes > 0 ? $"{model.SizeBytes / (1024.0 * 1024):0.0} MB" : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <RadzenText Text="Hardware probe returned nothing." />
+        }
+    </RadzenCard>
+}
+
+@code {
+    private DiagnosticsReport? _report;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _report = await Analysis.GetDiagnosticsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = $"Could not load diagnostics: {ex.Message}";
+        }
+    }
+
+    private static string YesNo(bool value) => value ? "yes" : "no";
+}

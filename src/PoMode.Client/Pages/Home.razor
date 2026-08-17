@@ -12,13 +12,52 @@
 
 <RadzenCard>
     <RadzenText TextStyle="TextStyle.H5" Text="Audio Modal Analyzer" />
-    <RadzenText Text="Upload an .mp3 or .wav track (max 100 MB) to analyze its melody, chords, and scale modes." />
-    <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
-                  Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
-    @if (_uploadError is not null)
-    {
-        <RadzenText class="upload-error" Text="@_uploadError" />
-    }
+    <RadzenTabs>
+        <Tabs>
+            <RadzenTabsItem Text="Upload">
+                <RadzenText Text="Upload an .mp3 or .wav track (max 100 MB) to analyze its melody, chords, and scale modes." />
+                <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
+                              Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+                @if (_uploadError is not null)
+                {
+                    <RadzenText class="upload-error" Text="@_uploadError" />
+                }
+            </RadzenTabsItem>
+            <RadzenTabsItem Text="From URL">
+                <RadzenText Text="Paste a page URL (YouTube, SoundCloud, …). The server fetches the audio with yt-dlp." />
+                <div class="url-row">
+                    <RadzenTextBox @bind-Value="_url" Placeholder="https://…" Disabled="@_fetchingUrl" />
+                    <RadzenButton Text="@(_fetchingUrl ? "Fetching…" : "Analyze")" Click="@OnAnalyzeUrl"
+                                  Disabled="@_fetchingUrl" ButtonStyle="ButtonStyle.Primary" />
+                </div>
+                @if (_urlError is not null)
+                {
+                    <RadzenText class="upload-error" Text="@_urlError" />
+                }
+            </RadzenTabsItem>
+            <RadzenTabsItem Text="Record">
+                <RadzenText Text="Record from your microphone, then analyze the recording like an upload." />
+                <div class="record-row">
+                    @if (!_recording)
+                    {
+                        <RadzenButton Text="Start recording" Click="@OnStartRecording" ButtonStyle="ButtonStyle.Primary" />
+                    }
+                    else
+                    {
+                        <RadzenButton Text="Stop and analyze" Click="@OnStopRecording" ButtonStyle="ButtonStyle.Danger" />
+                        <RadzenText class="recording-hint" Text="Recording…" />
+                    }
+                </div>
+                @if (_recordError is not null)
+                {
+                    <RadzenText class="upload-error" Text="@_recordError" />
+                }
+            </RadzenTabsItem>
+            <RadzenTabsItem Text="Batch">
+                <BatchPanel />
+            </RadzenTabsItem>
+        </Tabs>
+    </RadzenTabs>
     @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
        declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
     <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
@@ -27,6 +66,12 @@
 @if (_status is not null)
 {
     <JobProgress Status="_status" />
+    <RadzenButton class="debug-toggle" Text="@(_showDebug ? "Hide debug" : "Show debug")"
+                  Click="@(() => _showDebug = !_showDebug)" ButtonStyle="ButtonStyle.Light" />
+    @if (_showDebug)
+    {
+        <DebugPanel Status="_status" />
+    }
 }
 
 @if (_visual is not null)
@@ -47,7 +92,10 @@
 {
     <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow"
               JobId="@_status!.JobId" />
-    <RadzenLink Path="@($"api/analysis/{_status!.JobId}/midi")" Text="Download MIDI" Target="_blank" />
+    <div class="export-links">
+        <RadzenLink Path="@($"api/analysis/{_status!.JobId}/midi")" Text="Download MIDI" Target="_blank" />
+        <RadzenLink Path="@($"api/analysis/{_status!.JobId}/musicxml")" Text="Download MusicXML" Target="_blank" />
+    </div>
 }
 
 @code {
@@ -62,8 +110,15 @@
     private double _playheadSec;
     private ElementReference? _canvasElement;
     private IJSObjectReference? _pitchWorker;
+    private IJSObjectReference? _recorder;
     private string? _clientCapability;
     private bool _probed;
+    private bool _showDebug;
+    private string _url = "";
+    private bool _fetchingUrl;
+    private string? _urlError;
+    private bool _recording;
+    private string? _recordError;
     private readonly HashSet<string> _delegatedJobs = [];
 
     /// <summary>
@@ -109,6 +164,81 @@
     private async Task OnUploadComplete(UploadCompleteEventArgs args)
     {
         _uploadError = null;
+        if (args.RawResponse is not { } rawResponse
+            || JsonSerializer.Deserialize<JobStatusDto>(rawResponse, WebJson) is not { } status)
+        {
+            _uploadError = "Unexpected server response.";
+            return;
+        }
+        await TrackJobAsync(status);
+    }
+
+    private async Task OnAnalyzeUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_url))
+        {
+            return;
+        }
+        _urlError = null;
+        _fetchingUrl = true;
+        try
+        {
+            var (status, error) = await Analysis.AnalyzeFromUrlAsync(_url.Trim());
+            if (status is null)
+            {
+                _urlError = error ?? "Could not fetch that URL.";
+                return;
+            }
+            await TrackJobAsync(status);
+        }
+        finally
+        {
+            _fetchingUrl = false;
+        }
+    }
+
+    private async Task OnStartRecording()
+    {
+        _recordError = null;
+        try
+        {
+            _recorder ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/audio-recorder.js");
+            await _recorder.InvokeVoidAsync("startRecording");
+            _recording = true;
+        }
+        catch (JSException)
+        {
+            _recordError = "Microphone access was denied or is unavailable.";
+        }
+    }
+
+    private async Task OnStopRecording()
+    {
+        if (_recorder is null)
+        {
+            return;
+        }
+        _recording = false;
+        await _recorder.InvokeVoidAsync("stopRecording");
+        var wavBytes = await _recorder.InvokeAsync<byte[]>("getRecordedWavBytes");
+        if (wavBytes.Length <= 44) // header-only WAV: nothing was captured
+        {
+            _recordError = "Nothing was recorded.";
+            return;
+        }
+        var status = await Analysis.UploadAsync(wavBytes, "recording.wav", _clientCapability is not null);
+        if (status is null)
+        {
+            _recordError = "The recording upload failed.";
+            return;
+        }
+        await TrackJobAsync(status);
+    }
+
+    /// <summary>Shared by every intake path (upload, URL, recording): reset the result panels,
+    /// connect the hub once, subscribe to the job, and reconcile against the current status.</summary>
+    private async Task TrackJobAsync(JobStatusDto status)
+    {
         _visual = null;
         _result = null;
         _selectedWindow = null;
@@ -116,17 +246,6 @@
         // Clearing _visual removes the canvas, so the next analysis builds a fresh one. Drop the old
         // element too, or the mixer would initialise against a canvas that no longer exists.
         _canvasElement = null;
-        if (args.RawResponse is not { } rawResponse)
-        {
-            _uploadError = "Unexpected server response.";
-            return;
-        }
-        var status = JsonSerializer.Deserialize<JobStatusDto>(rawResponse, WebJson);
-        if (status is null)
-        {
-            _uploadError = "Unexpected server response.";
-            return;
-        }
         _status = status;
 
         if (_hub is null)
@@ -195,6 +314,10 @@
         if (_pitchWorker is not null)
         {
             await _pitchWorker.DisposeAsync();
+        }
+        if (_recorder is not null)
+        {
+            await _recorder.DisposeAsync();
         }
     }
 }

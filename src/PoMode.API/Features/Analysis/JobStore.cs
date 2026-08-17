@@ -3,8 +3,10 @@ using System.Text.Json;
 
 namespace PoMode.API.Features.Analysis;
 
-/// <summary>Per-job folder persistence under Jobs:RootPath. The folder is the source of truth (no database).</summary>
-public sealed class JobStore(IConfiguration configuration, TimeProvider time)
+/// <summary>Per-job folder persistence under Jobs:RootPath. The folder is the working copy;
+/// when <see cref="JobBlobStorage"/> is connected (Azurite in dev, Azure Storage in prod) every
+/// write is mirrored to blob storage and reads fall back to it when the local file is gone.</summary>
+public sealed class JobStore(IConfiguration configuration, TimeProvider time, JobBlobStorage? blobs = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -47,6 +49,10 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
         {
             await content.CopyToAsync(file, ct);
         }
+        if (blobs is not null)
+        {
+            await blobs.MirrorFileAsync(state.JobId, Path.GetFileName(InputPath(state)), InputPath(state), ct);
+        }
         await SaveAsync(state, ct);
         return state;
     }
@@ -61,6 +67,10 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
             var tempPath = path + ".tmp";
             await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(state, JsonOptions), ct);
             File.Move(tempPath, path, overwrite: true);
+            if (blobs is not null)
+            {
+                await blobs.MirrorFileAsync(state.JobId, "job.json", path, ct);
+            }
         }
         finally
         {
@@ -75,7 +85,7 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
         try
         {
             var path = StatePath(jobId);
-            if (!File.Exists(path))
+            if (!File.Exists(path) && !await TryRestoreFromBlobAsync(jobId, "job.json", path, ct))
             {
                 return null;
             }
@@ -97,6 +107,10 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
             var tempPath = path + ".tmp";
             await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(payload, JsonOptions), ct);
             File.Move(tempPath, path, overwrite: true);
+            if (blobs is not null)
+            {
+                await blobs.MirrorFileAsync(jobId, fileName, path, ct);
+            }
         }
         finally
         {
@@ -114,7 +128,7 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
         try
         {
             var path = Path.Combine(JobDir(jobId), fileName);
-            if (!File.Exists(path))
+            if (!File.Exists(path) && !await TryRestoreFromBlobAsync(jobId, fileName, path, ct))
             {
                 return default;
             }
@@ -138,12 +152,52 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
         try
         {
             var path = Path.Combine(JobDir(jobId), fileName);
-            return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+            if (!File.Exists(path) && !await TryRestoreFromBlobAsync(jobId, fileName, path, ct))
+            {
+                return null;
+            }
+            return await File.ReadAllBytesAsync(path, ct);
         }
         finally
         {
             gate.Release();
         }
+    }
+
+    /// <summary>Mirrors every file in the job folder to blob storage. Stem executors write
+    /// .wav files straight into the folder, bypassing WriteArtifactAsync's own mirroring.</summary>
+    public async Task MirrorToBlobAsync(string jobId, CancellationToken ct)
+    {
+        if (blobs is null || !Directory.Exists(JobDir(jobId)))
+        {
+            return;
+        }
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            await blobs.MirrorDirectoryAsync(jobId, JobDir(jobId), ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<bool> TryRestoreFromBlobAsync(string jobId, string fileName, string path, CancellationToken ct)
+    {
+        if (blobs is null)
+        {
+            return false;
+        }
+        var bytes = await blobs.TryDownloadAsync(jobId, fileName, ct);
+        if (bytes is null)
+        {
+            return false;
+        }
+        Directory.CreateDirectory(JobDir(jobId));
+        await File.WriteAllBytesAsync(path, bytes, ct);
+        return true;
     }
 
     public int PurgeOlderThan(TimeSpan maxAge)
@@ -174,6 +228,7 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time)
             if (createdAt < cutoff)
             {
                 Directory.Delete(dir, recursive: true);
+                blobs?.DeleteJobBlobs(Path.GetFileName(dir));
                 purged++;
             }
         }
