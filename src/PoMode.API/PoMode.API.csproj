@@ -12,6 +12,8 @@
     <PackageReference Include="Melanchall.DryWetMidi" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="NAudio" />
+    <PackageReference Include="NLayer.NAudioSupport" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 </Project>
