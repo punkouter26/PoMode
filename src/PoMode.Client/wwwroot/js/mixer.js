@@ -3,7 +3,8 @@
 //
 // This module also owns the transport clock. It drives the canvas playhead directly through
 // canvas.js rather than round-tripping 60 times a second through Blazor, so playback costs no
-// component renders. Blazor only hears about discrete events (loaded, mode changed, failed).
+// component renders. Blazor only hears about discrete events (loaded, mode changed, failed, and
+// keyboard-driven play/pause so the button label can follow).
 
 import { setPlayhead } from './canvas.js';
 
@@ -12,23 +13,15 @@ const states = new Map();
 const STEMS = ['mix', 'vocals', 'instrumental'];
 
 /// Which stem is audible in each mode. Everything keeps playing; only the gains change.
-/// The three "notes*" modes mute all stems and synthesise transcribed notes instead — the muted
-/// stems keep running so the transport clock, playhead and seek behave identically in every mode.
 const MODE_GAINS = {
     full: { mix: 1, vocals: 0, instrumental: 0 },
     vocals: { mix: 0, vocals: 1, instrumental: 0 },
     backing: { mix: 0, vocals: 0, instrumental: 1 },
-    'notes': { mix: 0, vocals: 0, instrumental: 0 },
-    'notes-backing': { mix: 0, vocals: 0, instrumental: 0 },
-    'notes-both': { mix: 0, vocals: 0, instrumental: 0 },
 };
 
-/// Which transcribed note lists sound in each notes mode.
-const NOTE_SOURCES = {
-    'notes': ['vocal'],
-    'notes-backing': ['backing'],
-    'notes-both': ['vocal', 'backing'],
-};
+/// The two synthesized note overlays. Each one toggles independently of the stem mode and of the
+/// other overlay, so "Vocal Notes" and "Music Notes" only ever add or remove their own notes.
+const NOTE_SOURCE_NAMES = ['vocal', 'backing'];
 
 const RAMP_SECONDS = 0.05;
 
@@ -94,8 +87,15 @@ function stopSources(state) {
     state.sources = {};
 }
 
-function stopSynthVoices(state) {
+/// Stops scheduled voices. With a source ('vocal', 'backing', 'click') only that layer's voices
+/// are silenced; without one, everything is — pause and seek use the latter.
+function stopSynthVoices(state, source) {
+    const kept = [];
     for (const osc of state.synthVoices) {
+        if (source !== undefined && osc.pmSource !== source) {
+            kept.push(osc);
+            continue;
+        }
         try {
             osc.stop();
         } catch {
@@ -103,7 +103,7 @@ function stopSynthVoices(state) {
         }
         osc.disconnect();
     }
-    state.synthVoices = [];
+    state.synthVoices = kept;
 }
 
 /// One synthesized note: a detuned oscillator pair through a lowpass and an ADSR envelope (the
@@ -141,6 +141,7 @@ function scheduleVoice(state, note, when, source) {
     env.connect(state.synthGain);
 
     for (const osc of [osc1, osc2]) {
+        osc.pmSource = source;
         osc.start(when);
         osc.stop(when + duration + 0.1);
         osc.onended = () => {
@@ -158,7 +159,10 @@ function scheduleVoice(state, note, when, source) {
 /// clock at its exact song position, then advances the cursor so nothing is scheduled twice.
 function scheduleSynth(state) {
     const windowEnd = currentSeconds(state) + SYNTH_LOOKAHEAD_SECONDS;
-    for (const source of NOTE_SOURCES[state.mode] ?? []) {
+    for (const source of NOTE_SOURCE_NAMES) {
+        if (!state.noteSources[source]) {
+            continue;
+        }
         for (const note of state.notes[source]) {
             if (note.startSec >= state.synthCursor && note.startSec < windowEnd) {
                 const when = state.startedAt + (note.startSec - state.offset);
@@ -169,12 +173,57 @@ function scheduleSynth(state) {
     state.synthCursor = windowEnd;
 }
 
+/// One metronome click: a short 1 kHz sine blip with a fast decay. Clicks are tagged like synth
+/// voices so pause, seek and the metronome toggle can silence pending ones without touching the
+/// note overlays.
+function scheduleClick(state, when) {
+    const ctx = state.context;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, when);
+    env.gain.exponentialRampToValueAtTime(0.9, when + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+
+    osc.connect(env);
+    env.connect(state.clickGain);
+    osc.pmSource = 'click';
+    osc.start(when);
+    osc.stop(when + 0.08);
+    osc.onended = () => {
+        const index = state.synthVoices.indexOf(osc);
+        if (index >= 0) {
+            state.synthVoices.splice(index, 1);
+        }
+        osc.disconnect();
+    };
+    state.synthVoices.push(osc);
+}
+
+/// Commits every beat between the click cursor and the lookahead horizon. The grid is regular
+/// (beats.json: firstBeatSec + k·60/bpm — one tempo for the whole song), so beat times are
+/// generated on the fly rather than looked up.
+function scheduleClicks(state) {
+    const grid = state.beatGrid;
+    const windowEnd = currentSeconds(state) + SYNTH_LOOKAHEAD_SECONDS;
+    const period = 60 / grid.bpm;
+    const k = Math.max(0, Math.ceil(((state.clickCursor - grid.firstBeatSec) / period) - 1e-9));
+    for (let t = grid.firstBeatSec + (k * period); t < windowEnd; t += period) {
+        const when = state.startedAt + (t - state.offset);
+        scheduleClick(state, Math.max(when, state.context.currentTime));
+    }
+    state.clickCursor = windowEnd;
+}
+
 /// AudioBufferSourceNodes are single-use, so every play and every seek builds a fresh set. They are
 /// all started with the same `when`, which is what keeps the three stems sample-synchronised.
 function startSources(state, offsetSeconds) {
     stopSources(state);
     stopSynthVoices(state);
     state.synthCursor = offsetSeconds;
+    state.clickCursor = offsetSeconds;
     const when = state.context.currentTime + 0.02; // a beat of headroom so all three share a start
     for (const stem of STEMS) {
         const buffer = state.buffers[stem];
@@ -204,8 +253,11 @@ function tick(state) {
             report(state, 'ended');
             return;
         }
-        if (state.mode in NOTE_SOURCES) {
+        if (NOTE_SOURCE_NAMES.some(source => state.noteSources[source])) {
             scheduleSynth(state);
+        }
+        if (state.metronome && state.beatGrid) {
+            scheduleClicks(state);
         }
     }
     state.frame = requestAnimationFrame(() => tick(state));
@@ -218,13 +270,73 @@ function pauseInternal(state, atSeconds) {
     stopSynthVoices(state);
 }
 
+async function playInternal(state) {
+    if (state.duration === 0 || state.playing) {
+        return;
+    }
+    // Called from a click or a key press, so the autoplay policy lets the context resume here.
+    if (state.context.state === 'suspended') {
+        await state.context.resume();
+    }
+    startSources(state, state.offset >= state.duration ? 0 : state.offset);
+    state.playing = true;
+    applyGains(state, false);
+    report(state, 'playing');
+}
+
+function seekInternal(state, seconds) {
+    if (state.duration === 0) {
+        return;
+    }
+    const target = Math.min(Math.max(seconds, 0), state.duration);
+    if (state.playing) {
+        startSources(state, target);
+    } else {
+        state.offset = target;
+    }
+    setPlayhead(state.canvas, target);
+    refresh(state);
+}
+
+/// Global transport keys: Space toggles play/pause, comma jumps back to the start. Skipped while
+/// the user is typing. preventDefault on Space stops the page scrolling and stops a focused
+/// button firing its own click on keyup, which would undo the toggle.
+function onKeyDown(state, event) {
+    const target = event.target;
+    if (event.repeat
+        || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))) {
+        return;
+    }
+    if (event.code === 'Space') {
+        event.preventDefault();
+        togglePlayback(state);
+    } else if (event.key === ',') {
+        seekInternal(state, 0);
+    }
+}
+
+async function togglePlayback(state) {
+    if (state.duration === 0) {
+        return;
+    }
+    if (state.playing) {
+        pauseInternal(state, currentSeconds(state));
+        report(state, 'paused');
+    } else {
+        await playInternal(state);
+    }
+    // Keeps the Blazor play button's label in sync; playback itself never waits on this.
+    state.dotNet?.invokeMethodAsync('OnTransportKey', state.playing);
+}
+
 // ---- exports ----
 
-export function init(root, canvas) {
+export function init(root, canvas, dotNetRef) {
     dispose(root);
-    states.set(root, {
+    const state = {
         root,
         canvas,
+        dotNet: dotNetRef ?? null,
         context: null,
         buffers: {},
         gains: {},
@@ -236,11 +348,19 @@ export function init(root, canvas) {
         playing: false,
         frame: null,
         notes: { vocal: [], backing: [] },
+        noteSources: { vocal: false, backing: false },
         synthGain: null,
         synthVoices: [],
         synthCursor: 0,
-    });
-    report(states.get(root), 'idle');
+        metronome: false,
+        beatGrid: null,
+        clickGain: null,
+        clickCursor: 0,
+    };
+    state.onKeyDown = event => onKeyDown(state, event);
+    document.addEventListener('keydown', state.onKeyDown);
+    states.set(root, state);
+    report(state, 'idle');
 }
 
 /// Fetches and decodes the stems. Returns the decoded duration, or 0 if nothing could be loaded.
@@ -289,10 +409,19 @@ export async function load(root, urls) {
         state.synthGain.gain.value = 0.35; // master synth level, below the stems' full-scale audio
         state.synthGain.connect(state.context.destination);
     }
+    if (!state.clickGain) {
+        state.clickGain = state.context.createGain();
+        state.clickGain.gain.value = 0.5; // clicks sit under the stems but stay audible over them
+        state.clickGain.connect(state.context.destination);
+    }
 
     state.duration = Math.max(0, ...Object.values(state.buffers).map(buffer => buffer.duration));
     state.offset = 0;
     state.playing = false;
+    // A new job starts with every overlay off, matching the Blazor toggles' reset.
+    state.noteSources = { vocal: false, backing: false };
+    state.metronome = false;
+    state.beatGrid = null;
     if (state.duration === 0) {
         report(state, 'unavailable');
         return 0;
@@ -329,17 +458,10 @@ export async function loadNotes(root, urls) {
 
 export async function play(root) {
     const state = states.get(root);
-    if (!state || state.duration === 0 || state.playing) {
+    if (!state) {
         return;
     }
-    // Called from a real click, so the autoplay policy lets the context resume here.
-    if (state.context.state === 'suspended') {
-        await state.context.resume();
-    }
-    startSources(state, state.offset >= state.duration ? 0 : state.offset);
-    state.playing = true;
-    applyGains(state, false);
-    report(state, 'playing');
+    await playInternal(state);
 }
 
 export function pause(root) {
@@ -353,17 +475,10 @@ export function pause(root) {
 
 export function seek(root, seconds) {
     const state = states.get(root);
-    if (!state || state.duration === 0) {
+    if (!state) {
         return;
     }
-    const target = Math.min(Math.max(seconds, 0), state.duration);
-    if (state.playing) {
-        startSources(state, target);
-    } else {
-        state.offset = target;
-    }
-    setPlayhead(state.canvas, target);
-    refresh(state);
+    seekInternal(state, seconds);
 }
 
 /// Switches which stem is audible. Deliberately does NOT restart the sources, so the position is
@@ -373,20 +488,66 @@ export function setMode(root, mode) {
     if (!state || !(mode in MODE_GAINS)) {
         return;
     }
-    const wasNotes = state.mode in NOTE_SOURCES;
     state.mode = mode;
     if (state.context) {
         applyGains(state, false);
-        if (wasNotes) {
-            // A source-set change must not leave voices from the previous set ringing.
-            stopSynthVoices(state);
-        }
-        if (mode in NOTE_SOURCES && state.playing) {
-            // Start synthesising from the current position; notes already sounding are skipped.
-            state.synthCursor = currentSeconds(state);
-        }
     }
     refresh(state);
+}
+
+/// Fetches the beat grid (beats.json). Returns the BPM when the grid is usable, 0 otherwise — a
+/// missing artifact or a low-confidence estimate means "no usable beats", and the caller keeps
+/// the metronome unavailable.
+export async function loadBeats(root, url) {
+    const state = states.get(root);
+    if (!state) {
+        return 0;
+    }
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return 0;
+        }
+        const grid = await response.json();
+        if (!grid || !(grid.bpm > 0) || !(grid.confidence > 0)) {
+            return 0;
+        }
+        state.beatGrid = grid;
+        return grid.bpm;
+    } catch {
+        return 0;
+    }
+}
+
+/// Shows or hides one note overlay ('vocal' or 'backing'). Only that overlay's voices are
+/// touched; the stems, the other overlay and the metronome keep playing untouched.
+export function setNoteSource(root, source, enabled) {
+    const state = states.get(root);
+    if (!state || !NOTE_SOURCE_NAMES.includes(source)) {
+        return;
+    }
+    const anyBefore = NOTE_SOURCE_NAMES.some(name => state.noteSources[name]);
+    state.noteSources[source] = enabled;
+    if (!enabled) {
+        stopSynthVoices(state, source);
+    } else if (state.playing && !anyBefore) {
+        // The shared cursor stalled while both overlays were off; restart it at the playhead.
+        state.synthCursor = currentSeconds(state);
+    }
+}
+
+/// Turns the metronome click on or off without touching anything else.
+export function setMetronome(root, enabled) {
+    const state = states.get(root);
+    if (!state) {
+        return;
+    }
+    state.metronome = enabled;
+    if (!enabled) {
+        stopSynthVoices(state, 'click');
+    } else if (state.playing) {
+        state.clickCursor = currentSeconds(state);
+    }
 }
 
 export function currentTime(root) {
@@ -402,6 +563,7 @@ export function dispose(root) {
     if (state.frame !== null) {
         cancelAnimationFrame(state.frame);
     }
+    document.removeEventListener('keydown', state.onKeyDown);
     stopSources(state);
     stopSynthVoices(state);
     states.delete(root);

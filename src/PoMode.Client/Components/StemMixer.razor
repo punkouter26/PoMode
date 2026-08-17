@@ -3,7 +3,11 @@
 
 @* Transport and stem selector (spec §7). The Web Audio clock lives in mixer.js, which drives the
    canvas playhead directly; this component only issues commands and shows status. State is mirrored
-   onto data-mixer-* attributes by the module, so it is inspectable and assertable. *@
+   onto data-mixer-* attributes by the module, so it is inspectable and assertable.
+
+   The stem modes stay mutually exclusive; the note overlays and the metronome are independent
+   toggles, so each button only ever shows or hides its own layer. Space and comma work globally
+   (play/pause, back to start) via mixer.js's document key handler. *@
 
 <div class="mixer" @ref="_root">
     @if (_status is "unavailable")
@@ -18,10 +22,24 @@
             @foreach (var (mode, label) in Modes)
             {
                 <RadzenButton Click="@(() => SetModeAsync(mode))"
-                              Disabled="@(_status is "idle" or "loading" || !HasNotesFor(mode))"
+                              Disabled="@(_status is "idle" or "loading")"
                               ButtonStyle="@(_mode == mode ? ButtonStyle.Primary : ButtonStyle.Light)"
                               Text="@label" />
             }
+        </div>
+        <div class="mixer-toggles" role="group" aria-label="Note overlays and metronome">
+            <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetNotesAsync("vocal", on))"
+                                Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                Text="Vocal Notes" />
+            <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetNotesAsync("backing", on))"
+                                Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
+                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                Text="Music Notes" />
+            <RadzenToggleButton Value="@_metronomeOn" Change="@SetMetronomeAsync"
+                                Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                Text="@MetronomeLabel" />
         </div>
         <RadzenText class="mixer-note" Text="@StatusText" />
     }
@@ -33,9 +51,6 @@
         ("full", "Full Mix"),
         ("vocals", "Solo Vocals"),
         ("backing", "Solo Backing"),
-        ("notes", "Vocal Notes"),
-        ("notes-backing", "Music Notes"),
-        ("notes-both", "All Notes"),
     ];
 
     /// <summary>Job whose stems to play. Changing it reloads the mixer.</summary>
@@ -49,40 +64,32 @@
 
     private ElementReference _root;
     private IJSObjectReference? _module;
+    private DotNetObjectReference<StemMixer>? _selfRef;
     private string _status = "idle";
     private string _mode = "full";
     private double _duration;
     private int _vocalNoteCount;
     private int _backingNoteCount;
+    private bool _vocalNotesOn;
+    private bool _backingNotesOn;
+    private bool _metronomeOn;
+    private double _beatBpm;
     private string? _loadedJobId;
     private double? _sentSeek;
 
     private string StatusText => _duration <= 0
         ? "Loading stems…"
-        : _mode switch
-        {
-            "notes" => $"Vocal Notes · {_vocalNoteCount} synthesized notes",
-            "notes-backing" => $"Music Notes · {_backingNoteCount} synthesized notes",
-            "notes-both" => $"All Notes · {_vocalNoteCount + _backingNoteCount} synthesized notes",
-            _ => $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio",
-        };
+        : $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio · Space = play/pause · , = restart";
 
-    /// <summary>A notes mode with nothing to play stays disabled — older jobs analyzed before the
-    /// backing transcription existed have no notes-backing.json.</summary>
-    private bool HasNotesFor(string mode) => mode switch
-    {
-        "notes" => _vocalNoteCount > 0,
-        "notes-backing" => _backingNoteCount > 0,
-        "notes-both" => _vocalNoteCount > 0 || _backingNoteCount > 0,
-        _ => true,
-    };
+    private string MetronomeLabel => _beatBpm > 0 ? $"Click · {_beatBpm:0} BPM" : "Click";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/mixer.js");
-            await _module.InvokeVoidAsync("init", _root, CanvasElement);
+            _selfRef = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("init", _root, CanvasElement, _selfRef);
         }
         if (_module is null)
         {
@@ -101,10 +108,14 @@
             });
             _status = _duration > 0 ? "ready" : "unavailable";
             _sentSeek = null;
+            _vocalNotesOn = false;
+            _backingNotesOn = false;
+            _metronomeOn = false;
+            _beatBpm = 0;
             if (_status == "ready")
             {
-                // The transcriptions feed the notes modes; a missing artifact keeps its mode
-                // disabled via HasNotesFor rather than failing the mixer.
+                // The transcriptions feed the note overlays; a missing artifact keeps its toggle
+                // disabled rather than failing the mixer. Same for the beat grid and the metronome.
                 var counts = await _module.InvokeAsync<int[]>("loadNotes", _root, new
                 {
                     vocal = $"api/analysis/{JobId}/notes",
@@ -112,6 +123,7 @@
                 });
                 _vocalNoteCount = counts.Length > 0 ? counts[0] : 0;
                 _backingNoteCount = counts.Length > 1 ? counts[1] : 0;
+                _beatBpm = await _module.InvokeAsync<double>("loadBeats", _root, $"api/analysis/{JobId}/beats");
             }
             StateHasChanged();
             return;
@@ -122,6 +134,19 @@
             _sentSeek = SeekToSec;
             await _module.InvokeVoidAsync("seek", _root, SeekToSec);
         }
+    }
+
+    /// <summary>mixer.js reports keyboard-driven transport changes so the Play button's label
+    /// stays truthful; playback itself already happened on the JS side.</summary>
+    [JSInvokable]
+    public void OnTransportKey(bool playing)
+    {
+        if (_status is "idle" or "loading" or "unavailable")
+        {
+            return;
+        }
+        _status = playing ? "playing" : "paused";
+        StateHasChanged();
     }
 
     private async Task TogglePlayAsync()
@@ -152,6 +177,33 @@
         await _module.InvokeVoidAsync("setMode", _root, mode);
     }
 
+    private async Task SetNotesAsync(string source, bool on)
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        if (source == "vocal")
+        {
+            _vocalNotesOn = on;
+        }
+        else
+        {
+            _backingNotesOn = on;
+        }
+        await _module.InvokeVoidAsync("setNoteSource", _root, source, on);
+    }
+
+    private async Task SetMetronomeAsync(bool on)
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        _metronomeOn = on;
+        await _module.InvokeVoidAsync("setMetronome", _root, on);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_module is not null)
@@ -166,5 +218,6 @@
                 // The circuit is already gone during teardown.
             }
         }
+        _selfRef?.Dispose();
     }
 }

@@ -1,3 +1,4 @@
+using PoMode.API.Features.Audio;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -82,6 +83,7 @@ public sealed class AnalysisPipeline(
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "chords.json", chords, ct);
+                await WriteBeatGridAsync(state, ct);
                 await CompleteStageAsync(state, StageNames.ChordDetecting, 2, ct);
             }
 
@@ -136,6 +138,32 @@ public sealed class AnalysisPipeline(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Backing transcription failed for job {JobId}; continuing without it.", state.JobId);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort beat grid for the client metronome, written alongside chords.json. Prefers the
+    /// instrumental stem (same choice ChromaChordRecognizer makes — drums live there); falls back
+    /// to the original upload. A failure only costs the metronome, never the job, and a
+    /// low-confidence grid is written as-is so the client can gate on it.
+    /// </summary>
+    private async Task WriteBeatGridAsync(JobState state, CancellationToken ct)
+    {
+        try
+        {
+            var instrumentalPath = Path.Combine(store.JobDir(state.JobId), "instrumental.wav");
+            var audioPath = File.Exists(instrumentalPath) ? instrumentalPath : store.InputPath(state);
+            var grid = TempoEstimator.EstimateGrid(AudioDecoder.Decode(audioPath));
+            await store.WriteArtifactAsync(
+                state.JobId, "beats.json", new BeatGridDto(grid.Bpm, grid.FirstBeatSec, grid.Confidence), ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Beat grid estimation failed for job {JobId}; continuing without it.", state.JobId);
         }
     }
 

@@ -90,6 +90,7 @@ public static class AnalysisEndpoints
         MapArtifact(group, "notes", "notes.json");
         MapArtifact(group, "notes-backing", "notes-backing.json");
         MapArtifact(group, "chords", "chords.json");
+        MapArtifact(group, "beats", "beats.json");
         MapArtifact(group, "result", "result.json");
 
         // The canvas payload is derived, not stored: one request instead of three, and every colouring

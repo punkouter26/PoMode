@@ -10,7 +10,8 @@
     min-width: 5rem;
 }
 
-.mixer-modes {
+.mixer-modes,
+.mixer-toggles {
     display: flex;
     gap: 0.35rem;
     flex-wrap: wrap;
