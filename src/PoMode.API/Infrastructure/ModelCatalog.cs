@@ -7,16 +7,22 @@ namespace PoMode.API.Infrastructure;
 public static class ModelCatalog
 {
     /// <summary>
-    /// Spotify Basic Pitch (pitch tracking). URL and file confirmed working in the
-    /// 2026-08-16 ONNX/ARM64 feasibility spike (real inference benchmarked there). The spike did not
-    /// record a SHA-256 for this download, so <see cref="ModelDescriptor.Sha256"/> is left empty here;
-    /// <see cref="ModelRegistry.EnsureAsync"/> skips hash verification whenever the hash is empty.
+    /// Spotify Basic Pitch (pitch tracking). File confirmed working in the 2026-08-16 ONNX/ARM64
+    /// feasibility spike (real inference benchmarked there). The URL is pinned to the commit that added
+    /// the file (<c>dfb20ef559dff1792e11e022f3f0c7008c1dee6d</c>, "Add onnx serialized model") rather
+    /// than <c>raw/main</c>, so the bytes behind this URL cannot change under us. The SHA-256 below was
+    /// computed from a fresh download of that exact pinned URL (230,444 bytes) during the Task 4 fix
+    /// round and cross-checked by loading the file with <c>Microsoft.ML.OnnxRuntime</c> and confirming
+    /// its input/output metadata matches the spike report
+    /// (<c>.superpowers/spikes/2026-08-16-onnx-arm64-spike.md</c> §4) — see
+    /// <c>.superpowers/sdd/2026-08-16-phase4-local-inference/task-4-report.md</c> "Fix Round 1" for the
+    /// full verification trail.
     /// </summary>
     public static readonly ModelDescriptor BasicPitch = new(
         Key: "basic-pitch",
         FileName: "nmp.onnx",
-        Url: "https://github.com/spotify/basic-pitch/raw/main/basic_pitch/saved_models/icassp_2022/nmp.onnx",
-        Sha256: "");
+        Url: "https://github.com/spotify/basic-pitch/raw/dfb20ef559dff1792e11e022f3f0c7008c1dee6d/basic_pitch/saved_models/icassp_2022/nmp.onnx",
+        Sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec");
 
     /// <summary>
     /// HTDemucs stem separation model. URL and SHA-256 established as the real feasibility-gate values

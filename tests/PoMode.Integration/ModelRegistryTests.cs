@@ -31,6 +31,12 @@ public sealed class ModelRegistryTests : IAsyncLifetime
                 try { context = await _listener.GetContextAsync(); }
                 catch (HttpListenerException) { return; }
                 catch (ObjectDisposedException) { return; }
+                if (context.Request.Url?.AbsolutePath.Contains("does-not-exist") == true)
+                {
+                    context.Response.StatusCode = 404;
+                    context.Response.Close();
+                    continue;
+                }
                 await context.Response.OutputStream.WriteAsync(_payload);
                 context.Response.Close();
             }
@@ -109,5 +115,40 @@ public sealed class ModelRegistryTests : IAsyncLifetime
         Assert.Equal("test", status.Key);
         Assert.False(status.Available);
         Assert.Equal(0, status.SizeBytes);
+    }
+
+    [Fact]
+    public async Task Empty_hash_descriptor_is_rejected()
+    {
+        var descriptor = new ModelDescriptor("nohash", "nohash.onnx", _baseUrl + "nohash.onnx", "");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Registry().EnsureAsync(descriptor, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Concurrent_ensure_calls_download_once_and_do_not_throw()
+    {
+        var descriptor = new ModelDescriptor("test", "test.onnx", _baseUrl + "test.onnx", Sha256Hex);
+        var registry = Registry();
+
+        var paths = await Task.WhenAll(Enumerable.Range(0, 6)
+            .Select(_ => registry.EnsureAsync(descriptor, CancellationToken.None)));
+
+        Assert.All(paths, p => Assert.Equal(paths[0], p));
+        Assert.True(File.Exists(paths[0]));
+        Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
+    }
+
+    [Fact]
+    public async Task Failed_download_leaves_no_part_file()
+    {
+        // 404 from the fixture server -> EnsureSuccessStatusCode throws
+        var descriptor = new ModelDescriptor("missing", "missing.onnx", _baseUrl + "does-not-exist", new string('b', 64));
+        var registry = Registry();
+
+        await Assert.ThrowsAnyAsync<Exception>(() => registry.EnsureAsync(descriptor, CancellationToken.None));
+
+        Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
     }
 }
