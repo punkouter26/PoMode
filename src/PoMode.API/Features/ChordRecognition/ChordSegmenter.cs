@@ -1,3 +1,4 @@
+using PoMode.API.Features.Audio;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.ChordRecognition;
@@ -16,6 +17,103 @@ public static class ChordSegmenter
     /// shorter than <paramref name="minDurationSec"/> into the longer neighbour → drop "N"
     /// (no chord) spans from the output.
     /// </summary>
+    /// <summary>
+    /// Beat-synchronous segmentation (§13.6 fix b): chord changes land on beats, so each beat
+    /// interval takes the majority label of its frames and boundaries fall exactly on the grid —
+    /// no arbitrary duration floor absorbing flicker. When the grid's confidence is below
+    /// <paramref name="minBeatConfidence"/> there are no beats worth trusting (sustained pads,
+    /// silence), and this falls back to the duration-floor overload unchanged.
+    /// </summary>
+    public static IReadOnlyList<ChordSpan> Segment(
+        IReadOnlyList<(ChordCandidate Chord, double Score)> frames,
+        double framesPerSecond,
+        BeatGrid? grid,
+        double minDurationSec = 0.5,
+        int medianWindow = 9,
+        double minBeatConfidence = 0.2)
+    {
+        if (frames.Count == 0)
+        {
+            return [];
+        }
+        if (grid is null || grid.Confidence < minBeatConfidence || grid.Bpm <= 0)
+        {
+            return Segment(frames, framesPerSecond, minDurationSec, medianWindow);
+        }
+
+        var smoothed = MedianSmooth(frames, medianWindow);
+        var duration = frames.Count / framesPerSecond;
+        var period = 60.0 / grid.Bpm;
+
+        // Beat boundaries covering [0, duration]: the grid phase, then every period; 0 and the
+        // track end close the partial intervals at the edges.
+        var boundaries = new List<double> { 0.0 };
+        var epsilon = period * 0.25;
+        for (var t = grid.FirstBeatSec % period; t < duration - epsilon; t += period)
+        {
+            if (t > epsilon)
+            {
+                boundaries.Add(t);
+            }
+        }
+        boundaries.Add(duration);
+
+        // Majority label per beat interval; an interval too short to contain a frame centre
+        // inherits its left neighbour so it merges away instead of inventing a label.
+        var labels = new ChordCandidate?[boundaries.Count - 1];
+        for (var interval = 0; interval < labels.Length; interval++)
+        {
+            var start = boundaries[interval];
+            var end = boundaries[interval + 1];
+            var counts = new Dictionary<ChordCandidate, int>();
+            var firstSeen = new List<ChordCandidate>();
+            for (var i = 0; i < smoothed.Count; i++)
+            {
+                var centre = (i + 0.5) / framesPerSecond;
+                if (centre < start || centre >= end)
+                {
+                    continue;
+                }
+                if (!counts.ContainsKey(smoothed[i]))
+                {
+                    counts[smoothed[i]] = 0;
+                    firstSeen.Add(smoothed[i]);
+                }
+                counts[smoothed[i]]++;
+            }
+            labels[interval] = counts.Count > 0
+                ? firstSeen.MaxBy(c => counts[c])
+                : interval > 0 ? labels[interval - 1] : null;
+        }
+        // A frameless leading interval takes the first real label so it merges forward.
+        for (var interval = labels.Length - 2; interval >= 0; interval--)
+        {
+            labels[interval] ??= labels[interval + 1];
+        }
+
+        var spans = new List<(ChordCandidate Chord, double Start, double End)>();
+        for (var interval = 0; interval < labels.Length; interval++)
+        {
+            if (labels[interval] is not { } label)
+            {
+                continue;
+            }
+            if (spans.Count > 0 && spans[^1].Chord.Equals(label))
+            {
+                spans[^1] = (label, spans[^1].Start, boundaries[interval + 1]);
+            }
+            else
+            {
+                spans.Add((label, boundaries[interval], boundaries[interval + 1]));
+            }
+        }
+
+        return spans
+            .Where(s => s.Chord.Symbol != "N")
+            .Select(s => new ChordSpan(s.Chord.Symbol, s.Chord.Root, s.Chord.Quality, s.Start, s.End))
+            .ToArray();
+    }
+
     public static IReadOnlyList<ChordSpan> Segment(
         IReadOnlyList<(ChordCandidate Chord, double Score)> frames,
         double framesPerSecond,

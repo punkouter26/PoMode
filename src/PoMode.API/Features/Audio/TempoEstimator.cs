@@ -4,6 +4,13 @@ namespace PoMode.API.Features.Audio;
 public sealed record TempoEstimate(double Bpm, double Confidence);
 
 /// <summary>
+/// A regular beat grid: beats fall at <see cref="FirstBeatSec"/> + k·(60/<see cref="Bpm"/>).
+/// <see cref="Confidence"/> is the underlying tempo estimate's confidence — a caller should treat
+/// a low-confidence grid as "no usable beats" rather than snapping anything to it.
+/// </summary>
+public sealed record BeatGrid(double Bpm, double FirstBeatSec, double Confidence);
+
+/// <summary>
 /// Deterministic tempo estimation via onset-envelope autocorrelation — no model, no network.
 /// Frames the (mono) signal, tracks frame-to-frame energy rises (onsets), detrends the
 /// resulting envelope, then autocorrelates it over the lags that correspond to the requested
@@ -108,6 +115,64 @@ public static class TempoEstimator
 
         var estimatedBpm = Math.Clamp(frameRate * 60.0 / refinedLag, minBpm, maxBpm);
         return new TempoEstimate(estimatedBpm, confidence);
+    }
+
+    /// <summary>
+    /// Extends <see cref="Estimate"/> with a beat *phase*: the offset (within one period) whose
+    /// beat-spaced comb best aligns with the detrended onset envelope. Autocorrelation alone gives
+    /// the period but not where beats fall; §13.6's beat-synchronous chord segmentation needs both.
+    /// When the tempo estimate itself has zero confidence the phase is meaningless and 0 is
+    /// returned — callers gate on <see cref="BeatGrid.Confidence"/>.
+    /// </summary>
+    public static BeatGrid EstimateGrid(AudioBuffer buffer, double minBpm = 60, double maxBpm = 200)
+    {
+        var estimate = Estimate(buffer, minBpm, maxBpm);
+        if (estimate.Confidence <= 0)
+        {
+            return new BeatGrid(estimate.Bpm, 0.0, estimate.Confidence);
+        }
+
+        var mono = AudioDecoder.ToMono(buffer);
+        var samples = mono.Samples;
+        var frameCount = samples.Length >= WindowSize ? ((samples.Length - WindowSize) / HopSize) + 1 : 0;
+        if (frameCount < 2)
+        {
+            return new BeatGrid(estimate.Bpm, 0.0, 0.0);
+        }
+
+        var energy = ComputeFrameEnergy(samples, frameCount);
+        var detrended = BuildDetrendedOnsetEnvelope(energy, frameCount);
+
+        var frameRate = mono.SampleRate / (double)HopSize;
+        var periodFrames = frameRate * 60.0 / estimate.Bpm;
+        var offsetCount = Math.Max(1, (int)Math.Floor(periodFrames));
+
+        var bestOffset = 0;
+        var bestScore = double.NegativeInfinity;
+        for (var offset = 0; offset < offsetCount; offset++)
+        {
+            var sum = 0.0;
+            var count = 0;
+            // Fractional stepping, so a period that is not an integer frame count cannot drift.
+            for (var beat = offset + 0.0; ; beat += periodFrames)
+            {
+                var frame = (int)Math.Round(beat);
+                if (frame >= frameCount)
+                {
+                    break;
+                }
+                sum += detrended[frame];
+                count++;
+            }
+            var score = count > 0 ? sum / count : double.NegativeInfinity;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestOffset = offset;
+            }
+        }
+
+        return new BeatGrid(estimate.Bpm, bestOffset / frameRate, estimate.Confidence);
     }
 
     private static double[] ComputeFrameEnergy(float[] samples, int frameCount)
