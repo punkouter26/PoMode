@@ -16,19 +16,31 @@ public sealed class ExecutionPlanner(
         _ => int.MaxValue,
     };
 
-    public async Task<List<StagePlan>> PlanAsync(CancellationToken ct) =>
+    /// <summary>Plans with no browser help — the browser tier is invisible.</summary>
+    public Task<List<StagePlan>> PlanAsync(CancellationToken ct)
+        => PlanAsync(browserCanInfer: false, ct);
+
+    /// <summary>
+    /// Plans for one job. <paramref name="browserCanInfer"/> comes from what that job's browser said it
+    /// could do, because Tier 2's availability is a property of the *client*, not of the server —
+    /// <see cref="IStageExecutor.IsAvailableAsync"/> has no job to inspect, so the filtering happens here.
+    /// </summary>
+    public async Task<List<StagePlan>> PlanAsync(bool browserCanInfer, CancellationToken ct) =>
     [
-        await PlanStageAsync(StageNames.Separating, stemSeparators, ct),
-        await PlanStageAsync(StageNames.PitchTracking, pitchTrackers, ct),
-        await PlanStageAsync(StageNames.ChordDetecting, chordRecognizers, ct),
+        await PlanStageAsync(StageNames.Separating, stemSeparators, browserCanInfer, ct),
+        await PlanStageAsync(StageNames.PitchTracking, pitchTrackers, browserCanInfer, ct),
+        await PlanStageAsync(StageNames.ChordDetecting, chordRecognizers, browserCanInfer, ct),
         new StagePlan(StageNames.ModalAnalysis, ExecutionTier.Local, "ModalAnalysisEngine"),
     ];
 
     private static async Task<StagePlan> PlanStageAsync<TExecutor>(
-        string stage, IEnumerable<TExecutor> candidates, CancellationToken ct)
+        string stage, IEnumerable<TExecutor> candidates, bool browserCanInfer, CancellationToken ct)
         where TExecutor : IStageExecutor
     {
-        foreach (var candidate in candidates.OrderBy(c => TierRank(c.Tier)))
+        var eligible = candidates
+            .Where(c => browserCanInfer || c.Tier != ExecutionTier.ClientDelegated);
+
+        foreach (var candidate in eligible.OrderBy(c => TierRank(c.Tier)))
         {
             if (await candidate.IsAvailableAsync(ct))
             {

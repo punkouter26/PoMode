@@ -81,4 +81,33 @@ public class ExecutionPlannerTests
         Assert.True(ExecutionPlanner.TierRank(ExecutionTier.ClientDelegated)
             < ExecutionPlanner.TierRank(ExecutionTier.Cloud));
     }
+
+    [Fact]
+    public async Task The_browser_tier_is_invisible_unless_that_jobs_browser_can_run_inference()
+    {
+        // Tier 2 availability is a property of the client, not the server, so a registered browser
+        // executor must not be planned for a job whose browser never said it could help.
+        var planner = Planner(
+            new StubExecutor("CloudX", ExecutionTier.Cloud, available: true),
+            new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true));
+
+        var withoutBrowser = await planner.PlanAsync(CancellationToken.None);
+        var withBrowser = await planner.PlanAsync(browserCanInfer: true, CancellationToken.None);
+
+        Assert.Equal("CloudX", withoutBrowser[1].Executor);
+        Assert.Equal("BrowserX", withBrowser[1].Executor);
+    }
+
+    [Fact]
+    public async Task A_capable_browser_still_loses_to_a_working_local_executor()
+    {
+        var planner = Planner(
+            new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true),
+            new StubExecutor("LocalX", ExecutionTier.Local, available: true));
+
+        var plan = await planner.PlanAsync(browserCanInfer: true, CancellationToken.None);
+
+        Assert.Equal("LocalX", plan[1].Executor);
+        Assert.Equal(ExecutionTier.Local, plan[1].Tier);
+    }
 }
