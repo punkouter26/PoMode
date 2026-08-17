@@ -25,6 +25,16 @@ public sealed class ModelRegistry(
     public string RootPath { get; } =
         configuration["Models:RootPath"] ?? Path.Combine(AppContext.BaseDirectory, "models");
 
+    /// <summary>
+    /// A bare <see cref="File.Exists(string)"/> check against <see cref="RootPath"/> — deliberately not
+    /// gated by <c>Models:AutoDownload</c>. That config only controls whether this process will *fetch* a
+    /// missing model on startup (see <c>ModelWarmupService</c>); it says nothing about whether a model
+    /// already present should be *used*. An operator may pre-install models and disable auto-download and
+    /// still expect the local tier to be selected. The corollary: any test host that boots the real app
+    /// must set its own <c>Models:RootPath</c> (never share the default <c>AppContext.BaseDirectory</c>
+    /// location) — otherwise a stray model file left by an earlier run silently makes this return
+    /// <c>true</c> regardless of <c>Models:AutoDownload</c>.
+    /// </summary>
     public bool IsDownloaded(ModelDescriptor descriptor) =>
         File.Exists(Path.Combine(RootPath, descriptor.FileName));
 

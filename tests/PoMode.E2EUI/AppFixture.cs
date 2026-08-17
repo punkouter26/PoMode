@@ -8,6 +8,7 @@ public class AppFixture : IAsyncLifetime
 {
     private readonly int _port;
     private readonly string _jobsRoot = Path.Combine(Path.GetTempPath(), $"pomode-e2eui-{Guid.NewGuid():N}");
+    private readonly string _modelsRoot = Path.Combine(Path.GetTempPath(), $"pomode-e2eui-models-{Guid.NewGuid():N}");
     private Process? _server;
 
     public AppFixture() : this(5199)
@@ -40,8 +41,12 @@ public class AppFixture : IAsyncLifetime
                 ["Jobs__RootPath"] = _jobsRoot,
                 // Browser tests assert on FakePitchTracker's deterministic output; a real model download
                 // completing mid-suite would flip ExecutionPlanner onto the (non-deterministic here) local
-                // tier and also make these tests depend on network access.
+                // tier and also make these tests depend on network access. Models:RootPath is isolated
+                // too (not just AutoDownload=false) so a stray .onnx file already sitting in the shared
+                // build output from an earlier run can never make IsAvailableAsync see it and flip
+                // ExecutionPlanner regardless of the auto-download setting.
                 ["Models__AutoDownload"] = "false",
+                ["Models__RootPath"] = _modelsRoot,
             },
         }) ?? throw new InvalidOperationException("Failed to start PoMode.API");
 
@@ -73,6 +78,19 @@ public class AppFixture : IAsyncLifetime
         try
         {
             if (Directory.Exists(_jobsRoot)) Directory.Delete(_jobsRoot, recursive: true);
+        }
+        catch (IOException)
+        {
+            // best-effort cleanup — a leaked temp dir must never fail a test
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // best-effort cleanup — a leaked temp dir must never fail a test
+        }
+
+        try
+        {
+            if (Directory.Exists(_modelsRoot)) Directory.Delete(_modelsRoot, recursive: true);
         }
         catch (IOException)
         {

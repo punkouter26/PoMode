@@ -151,4 +151,33 @@ public sealed class ModelRegistryTests : IAsyncLifetime
 
         Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
     }
+
+    /// <summary>
+    /// Regression test for the Fix Round 1 finding: a registry configured with an explicit
+    /// <c>Models:RootPath</c> (exactly what every test host now does) must never see a model file that
+    /// happens to sit at the *default* location (<c>AppContext.BaseDirectory/models</c>) — e.g. left
+    /// behind by a run that predates a test's isolation, a stale CI cache, or someone invoking
+    /// <see cref="ModelRegistry.EnsureAsync"/> while debugging. <see cref="ModelRegistry.IsDownloaded"/>
+    /// is a bare <c>File.Exists</c> against <see cref="ModelRegistry.RootPath"/> with no fallback to the
+    /// default location, so an isolated <c>RootPath</c> alone is sufficient — this test proves that
+    /// holds even when a decoy with the real catalog filename exists at the default location.
+    /// </summary>
+    [Fact]
+    public async Task Isolated_RootPath_ignores_a_decoy_file_in_the_default_location()
+    {
+        var decoyPath = Path.Combine(AppContext.BaseDirectory, "models", ModelCatalog.BasicPitch.FileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(decoyPath)!);
+        await File.WriteAllBytesAsync(decoyPath, _payload);
+        try
+        {
+            // Registry() points Models:RootPath at this test's isolated _root, not the default location.
+            var isolated = Registry();
+
+            Assert.False(isolated.IsDownloaded(ModelCatalog.BasicPitch));
+        }
+        finally
+        {
+            File.Delete(decoyPath);
+        }
+    }
 }
