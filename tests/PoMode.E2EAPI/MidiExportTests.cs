@@ -58,4 +58,20 @@ public sealed class MidiExportTests : IDisposable
             HttpStatusCode.NotFound,
             (await client.GetAsync("/api/analysis/00000000000000000000000000000000/midi")).StatusCode);
     }
+
+    [Fact]
+    public async Task Corrupt_result_json_is_404_not_500()
+    {
+        const string validJobId = "0123456789abcdef0123456789abcdef";
+        var jobDir = Path.Combine(_root, validJobId);
+        Directory.CreateDirectory(jobDir);
+        await File.WriteAllTextAsync(Path.Combine(jobDir, "result.json"), "{ not json");
+
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/analysis/{validJobId}/midi");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }

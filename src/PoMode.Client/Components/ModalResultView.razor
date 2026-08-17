@@ -2,7 +2,7 @@
 
 <RadzenCard>
     <RadzenText TextStyle="TextStyle.H6" Text="@($"Key: {Result.TonicName} · {PrimaryText}")" />
-    <RadzenText class="tempo-note" Text="@($"Tempo {Result.TempoBpm:0} BPM (estimated) · {Result.Windows.Count} windows")" />
+    <RadzenText class="tempo-note" Text="@($"Tempo {Result.TempoBpm:0} BPM{(Result.TempoEstimated ? " (estimated)" : "")} · {Result.Windows.Count} windows")" />
     <ul class="windows">
         @foreach (var window in Result.Windows)
         {

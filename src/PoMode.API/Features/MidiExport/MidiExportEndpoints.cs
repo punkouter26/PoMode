@@ -26,7 +26,15 @@ public static class MidiExportEndpoints
                 return TypedResults.NotFound();
             }
 
-            var result = JsonSerializer.Deserialize<ModalResult>(await File.ReadAllTextAsync(resultPath, ct), Json);
+            ModalResult? result;
+            try
+            {
+                result = JsonSerializer.Deserialize<ModalResult>(await File.ReadAllTextAsync(resultPath, ct), Json);
+            }
+            catch (JsonException)
+            {
+                return TypedResults.NotFound();
+            }
             if (result is null)
             {
                 return TypedResults.NotFound();

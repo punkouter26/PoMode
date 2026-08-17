@@ -19,7 +19,7 @@ public class UploadFlowTests(AppFixture app)
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
         try
         {
-            var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = 30000f };
+            var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
             await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(visible);
 
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
@@ -27,7 +27,7 @@ public class UploadFlowTests(AppFixture app)
             await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(visible);
             await Assertions.Expect(page.GetByText("8 notes · 4 chords")).ToBeVisibleAsync(visible);
             await Assertions.Expect(page.GetByText("USING MOCK DATA"))
-                .ToBeHiddenAsync(new() { Timeout = 30000f });
+                .ToBeHiddenAsync(new() { Timeout = AppFixture.ExpectTimeoutMs });
         }
         finally
         {

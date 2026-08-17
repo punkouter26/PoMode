@@ -17,7 +17,7 @@ public class ShellSmokeTests(AppFixture app)
 
         // First WASM load downloads the framework and can be slow; raise only the assertion
         // timeout (not a Task.Delay) so Playwright's auto-wait tolerates it.
-        var expectOptions = new LocatorAssertionsToBeVisibleOptions { Timeout = 30000f };
+        var expectOptions = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
         await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(expectOptions);
         await Assertions.Expect(page.GetByText("PoMode").First).ToBeVisibleAsync(expectOptions);
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Export MIDI" })).ToBeVisibleAsync(expectOptions);

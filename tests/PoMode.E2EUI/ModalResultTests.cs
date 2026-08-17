@@ -19,7 +19,7 @@ public class ModalResultTests(AppFixture app)
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
         try
         {
-            var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = 30000f };
+            var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
 
             await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(visible);

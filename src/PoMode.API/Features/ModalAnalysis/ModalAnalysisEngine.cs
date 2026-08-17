@@ -18,8 +18,9 @@ public static class ModalAnalysisEngine
         IReadOnlyList<ChordSpan> chords,
         double tempoBpm = 120.0)
     {
+        var bpm = tempoBpm <= 0 ? 120.0 : tempoBpm;
         var tonic = TonicDetector.Detect(notes, chords);
-        var secondsPerMeasure = 4.0 * 60.0 / (tempoBpm <= 0 ? 120.0 : tempoBpm);
+        var secondsPerMeasure = 4.0 * 60.0 / bpm;
 
         var windows = new List<ModalWindow>(chords.Count);
         for (var index = 0; index < chords.Count; index++)
@@ -57,7 +58,7 @@ public static class ModalAnalysisEngine
             TonicConfidence: tonic.Confidence,
             PrimaryMode: primaryMode,
             PrimaryConfidence: primaryConfidence,
-            TempoBpm: tempoBpm,
+            TempoBpm: bpm,
             TempoEstimated: true,
             Windows: windows);
     }
@@ -72,7 +73,7 @@ public static class ModalAnalysisEngine
             var modeMask = ModeDefinitions.Mask(mode);
             var matched = intervals.Where(i => (modeMask & (1 << i)) != 0).ToArray();
             var outside = intervals.Where(i => (modeMask & (1 << i)) == 0).ToArray();
-            var coverage = sungCount == 0 ? 0 : (double)matched.Length / sungCount;
+            var coverage = (double)matched.Length / sungCount;
 
             var characteristic = ModeDefinitions.CharacteristicIntervals(mode);
             var present = characteristic.Count(i => (vocalMask & (1 << i)) != 0);

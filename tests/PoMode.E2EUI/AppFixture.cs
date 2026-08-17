@@ -20,6 +20,9 @@ public class AppFixture : IAsyncLifetime
 
     public string BaseUrl => $"http://127.0.0.1:{_port}";
 
+    /// <summary>Blazor WASM cold-boot can exceed 30 s when the whole solution's test assemblies run in parallel.</summary>
+    public const float ExpectTimeoutMs = 60000f;
+
     public async Task InitializeAsync()
     {
         var repoRoot = FindRepoRoot();
