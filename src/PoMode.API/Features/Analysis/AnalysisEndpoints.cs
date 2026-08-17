@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using PoMode.API.Features.Audio;
+using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Visualization;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -126,6 +128,40 @@ public static class AnalysisEndpoints
             var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
             var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
             return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result));
+        });
+
+        // Tier 2's return path (spec §4 step 3). The notes come from a browser, so they are untrusted:
+        // 404 when nothing is waiting (unknown job, already timed out, or a duplicated post) and 400
+        // with a reason when the payload fails validation. Accepting bad notes here would put them in
+        // notes.json, the modal engine and the MIDI export.
+        group.MapPost("/{jobId}/client-result", Results<Ok, BadRequest<string>, NotFound> (
+            string jobId,
+            IReadOnlyList<NoteEvent> notes,
+            JobStore store,
+            ClientWorkRegistry registry) =>
+        {
+            if (!IsValidJobId(jobId) || !registry.IsWaiting(jobId))
+            {
+                return TypedResults.NotFound();
+            }
+
+            // The job folder can be gone — purged by the nightly sweep, or deleted mid-flight — so a
+            // missing directory must degrade to "duration unknown" rather than throwing a 500. The
+            // validator then bounds times by the upload path's own ceiling instead.
+            var jobDir = store.JobDir(jobId);
+            var inputPath = Directory.Exists(jobDir)
+                ? Directory.EnumerateFiles(jobDir, "input.*").FirstOrDefault()
+                : null;
+            var duration = inputPath is null ? null : AudioDecoder.TryReadDurationSeconds(inputPath);
+
+            if (ClientResultValidator.Validate(notes, duration) is { } problem)
+            {
+                return TypedResults.BadRequest(problem);
+            }
+            // Racing another post: whoever completes the waiter first wins, the loser gets a 404.
+            return registry.TryComplete(jobId, notes)
+                ? TypedResults.Ok()
+                : TypedResults.NotFound();
         });
 
         // Stem audio for the Web Audio mixer (spec §7). The caller's {name} selects from a fixed

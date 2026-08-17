@@ -44,6 +44,33 @@ public static class AudioDecoder
         return new AudioBuffer([.. buffer], format.SampleRate, format.Channels);
     }
 
+    /// <summary>
+    /// Duration only, without decoding a single sample — the container's own header is enough. Used to
+    /// bound client-supplied note times (Tier 2) where a full <see cref="Decode"/> would mean hundreds
+    /// of megabytes of work on an endpoint. Returns null for anything unreadable or unsupported.
+    /// </summary>
+    public static double? TryReadDurationSeconds(string path)
+    {
+        try
+        {
+            var header = new byte[12];
+            using (var probe = File.OpenRead(path))
+            {
+                var read = probe.Read(header);
+                if (!AudioFormatValidator.IsSupported(header.AsSpan(0, read), out _))
+                {
+                    return null;
+                }
+            }
+            using var reader = OpenReader(path, header);
+            return reader.TotalTime.TotalSeconds;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException)
+        {
+            return null;
+        }
+    }
+
     private static WaveStream OpenReader(string path, ReadOnlySpan<byte> header)
         => header[..4].SequenceEqual("RIFF"u8)
             ? new WaveFileReader(path)
