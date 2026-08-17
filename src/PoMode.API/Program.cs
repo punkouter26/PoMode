@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ChordRecognition;
+using PoMode.API.Features.Cloud;
 using PoMode.API.Features.Copilot;
 using PoMode.API.Features.Hardware;
 using PoMode.API.Features.MidiExport;
@@ -52,6 +53,7 @@ builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
 builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<IModalAnalyzer, ArtifactModalAnalyzer>();
+builder.Services.AddSingleton<CloudCredentials>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<OllamaCopilotClient>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
