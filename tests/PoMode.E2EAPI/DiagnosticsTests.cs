@@ -17,7 +17,9 @@ public sealed class DiagnosticsTests : IDisposable
     }
 
     private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+        .WithWebHostBuilder(b => b
+            .UseSetting("Jobs:RootPath", _root)
+            .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
     public async Task Health_returns_healthy()

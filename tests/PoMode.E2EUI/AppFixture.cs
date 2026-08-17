@@ -38,6 +38,10 @@ public class AppFixture : IAsyncLifetime
             {
                 ["ASPNETCORE_ENVIRONMENT"] = "Development",
                 ["Jobs__RootPath"] = _jobsRoot,
+                // Browser tests assert on FakePitchTracker's deterministic output; a real model download
+                // completing mid-suite would flip ExecutionPlanner onto the (non-deterministic here) local
+                // tier and also make these tests depend on network access.
+                ["Models__AutoDownload"] = "false",
             },
         }) ?? throw new InvalidOperationException("Failed to start PoMode.API");
 

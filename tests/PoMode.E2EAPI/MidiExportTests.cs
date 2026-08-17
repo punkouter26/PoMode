@@ -18,7 +18,9 @@ public sealed class MidiExportTests : IDisposable
     }
 
     private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+        .WithWebHostBuilder(b => b
+            .UseSetting("Jobs:RootPath", _root)
+            .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
     public async Task Completed_job_exports_a_playable_midi_file()

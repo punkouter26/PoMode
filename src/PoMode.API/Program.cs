@@ -54,6 +54,7 @@ builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
 builder.Services.AddHostedService<JobCleanupService>();
+builder.Services.AddHostedService<ModelWarmupService>();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(
     options => options.MultipartBodyLengthLimit = AudioFormatValidator.MaxBytes);

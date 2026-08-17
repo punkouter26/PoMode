@@ -22,7 +22,9 @@ public sealed class AnalysisApiTests : IDisposable
     }
 
     private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+        .WithWebHostBuilder(b => b
+            .UseSetting("Jobs:RootPath", _root)
+            .UseSetting("Models:AutoDownload", "false"));
 
     private static MultipartFormDataContent WavForm(byte[]? bytes = null)
     {

@@ -13,7 +13,9 @@ public sealed class ClientHostingTests : IDisposable
     }
 
     private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+        .WithWebHostBuilder(b => b
+            .UseSetting("Jobs:RootPath", _root)
+            .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
     public async Task Root_serves_blazor_index_html()

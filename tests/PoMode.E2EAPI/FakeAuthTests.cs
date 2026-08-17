@@ -18,7 +18,9 @@ public sealed class FakeAuthTests : IDisposable
     }
 
     private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+        .WithWebHostBuilder(b => b
+            .UseSetting("Jobs:RootPath", _root)
+            .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
     public async Task Session_without_fake_user_header_returns_401()
