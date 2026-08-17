@@ -67,8 +67,11 @@ public sealed class AnalysisApiTests : IDisposable
 
         var notes = await client.GetFromJsonAsync<List<NoteEvent>>($"/api/analysis/{created.JobId}/notes");
         var chords = await client.GetFromJsonAsync<List<ChordSpan>>($"/api/analysis/{created.JobId}/chords");
-        Assert.Equal(8, notes!.Count);
-        Assert.Equal(4, chords!.Count);
+        Assert.Equal(8, notes!.Count); // FakePitchTracker (model not downloaded in this test host)
+        // ChromaChordRecognizer now runs for real (Phase 5) — it is unconditionally available, so it
+        // wins ChordDetecting outright. The uploaded WavForm() fixture is silence, and real chord
+        // recognition on silence correctly yields no chords rather than the fake's fixed 4.
+        Assert.Empty(chords!);
     }
 
     private static async Task<JobStatusDto> WaitForTerminalAsync(
@@ -172,7 +175,10 @@ public sealed class AnalysisApiTests : IDisposable
 
         Assert.NotNull(result);
         Assert.Equal(1, result.SchemaVersion);
-        Assert.Equal(4, result.Windows.Count); // FakeChordRecognizer emits four chords
+        // ChromaChordRecognizer (real, Phase 5) now runs instead of FakeChordRecognizer; the uploaded
+        // WavForm() fixture is silence, so real recognition correctly finds zero chords and therefore
+        // zero modal windows (one window per chord — see ModalAnalysisEngine.Analyze).
+        Assert.Empty(result.Windows);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/result")).StatusCode);
     }
 }
