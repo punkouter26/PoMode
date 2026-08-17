@@ -87,26 +87,44 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
             OnsetOutputName, string.Join(",", session.OutputMetadata[OnsetOutputName].Dimensions),
             windowSamples, outputFrames, pitchCount);
 
+        // Derived (not the canonical 256-sample FFT hop) so per-window frame arithmetic stays exact
+        // for THIS pinned export: outputFrames * 256 = 44032 samples, 188 more than the model's actual
+        // 43844-sample window, so anchoring on 256 would drift over many windows. samplesPerFrame is
+        // self-consistent by construction (windowSamples / outputFrames spans exactly one window).
+        // See task-5-report.md "Fix Round 1" for the full comparison.
         var samplesPerFrame = (double)windowSamples / outputFrames;
         var framesPerSecond = TargetSampleRate / samplesPerFrame;
-        var overlapSamples = (int)Math.Round(Math.Min(OverlapFrames, outputFrames / 2.0) * samplesPerFrame);
+
+        // Canonical Basic Pitch recipe: pad the front with half the overlap so a true t=0 onset lands
+        // inside a window's reliable interior instead of on the model's zero-padded edge, then trim
+        // half the overlap off both ends of every window's output before stitching — this discards the
+        // "fake attack" edge frames entirely, so overlapping windows no longer need "later wins"
+        // tie-breaking; their kept ranges tile the timeline contiguously by construction.
+        var overlapFrames = Math.Min(OverlapFrames, outputFrames / 2);
+        var trimFrames = overlapFrames / 2;
+        var overlapSamples = (int)Math.Round(overlapFrames * samplesPerFrame);
         var hopSamples = Math.Max(1, windowSamples - overlapSamples);
+        var leadingPadSamples = (int)Math.Round(trimFrames * samplesPerFrame);
+
+        var audioSamples = buffer.Samples.Length;
+        var padded = new float[leadingPadSamples + audioSamples];
+        Array.Copy(buffer.Samples, 0, padded, leadingPadSamples, audioSamples);
 
         var starts = new List<int>();
-        var totalSamples = buffer.Samples.Length;
         var start = 0;
         while (true)
         {
             starts.Add(start);
-            if (start + windowSamples >= totalSamples)
+            if (start + windowSamples >= padded.Length)
             {
                 break;
             }
             start += hopSamples;
         }
 
-        var lastFrameOffset = (int)Math.Round(starts[^1] / samplesPerFrame);
-        var totalFrames = lastFrameOffset + outputFrames;
+        // Sized to the real (unpadded) audio duration, not the last window's reach, so a zero-padded
+        // trailing window can never push a note past the end of the actual clip.
+        var totalFrames = Math.Max(1, (int)Math.Ceiling(audioSamples / samplesPerFrame));
         var onsetsGlobal = new float[totalFrames, pitchCount];
         var framesGlobal = new float[totalFrames, pitchCount];
 
@@ -115,10 +133,10 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
             ct.ThrowIfCancellationRequested();
 
             var window = new float[windowSamples];
-            var available = Math.Min(windowSamples, Math.Max(0, totalSamples - windowStart));
+            var available = Math.Min(windowSamples, Math.Max(0, padded.Length - windowStart));
             if (available > 0)
             {
-                Array.Copy(buffer.Samples, windowStart, window, 0, available);
+                Array.Copy(padded, windowStart, window, 0, available);
             }
 
             var tensor = new DenseTensor<float>(window, [1, windowSamples, 1]);
@@ -128,19 +146,19 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
             var noteTensor = results[0].AsTensor<float>();
             var onsetTensor = results[1].AsTensor<float>();
 
-            var frameOffset = (int)Math.Round(windowStart / samplesPerFrame);
-            for (var f = 0; f < outputFrames; f++)
+            // frameOffset is this window's frame-0 position in original (unpadded) audio time; adding
+            // the trimmed local frame index f lands each kept frame at its true global position.
+            var frameOffset = (int)Math.Round((windowStart - leadingPadSamples) / samplesPerFrame);
+            var lastFrame = outputFrames - trimFrames;
+            for (var f = trimFrames; f < lastFrame; f++)
             {
                 var globalFrame = frameOffset + f;
-                if (globalFrame >= totalFrames)
+                if (globalFrame < 0 || globalFrame >= totalFrames)
                 {
-                    break;
+                    continue;
                 }
                 for (var p = 0; p < pitchCount; p++)
                 {
-                    // Later windows overwrite earlier ones in the overlap zone — the simplest correct
-                    // stitching strategy; see task-5-report.md for why this was chosen over Basic
-                    // Pitch's own trim-and-concatenate overlap-add.
                     framesGlobal[globalFrame, p] = noteTensor[0, f, p];
                     onsetsGlobal[globalFrame, p] = onsetTensor[0, f, p];
                 }
