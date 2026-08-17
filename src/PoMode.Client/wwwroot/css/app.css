@@ -7,6 +7,16 @@
     --pm-accent: #6750a4;
     --pm-warn-bg: #b45309;
     --pm-warn-fg: #ffffff;
+
+    /* Canvas palette. The JS module reads these with getComputedStyle, so the canvas follows
+       light/dark exactly like the rest of the UI and no colour is hard-coded in JS. */
+    --pm-lane-bg: #fbfbfd;
+    --pm-note-chord-tone: #2563eb;
+    --pm-note-in-mode: #64748b;
+    --pm-note-characteristic: #d97706;
+    --pm-note-outside: #b91c1c;
+    --pm-chord-block: #e4e4ed;
+    --pm-playhead: #e11d48;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,6 +29,14 @@
         --pm-accent: #cfbcff;
         --pm-warn-bg: #d97706;
         --pm-warn-fg: #121214;
+
+        --pm-lane-bg: #17171b;
+        --pm-note-chord-tone: #60a5fa;
+        --pm-note-in-mode: #94a3b8;
+        --pm-note-characteristic: #fbbf24;
+        --pm-note-outside: #f87171;
+        --pm-chord-block: #2a2a33;
+        --pm-playhead: #fb7185;
     }
 }
 

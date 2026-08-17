@@ -85,7 +85,7 @@ git commit -m "feat: server-built visualization payload with note roles and dual
 - Consumes: `VisualizationPayload` (Task 1).
 - Produces (consumed by Tasks 3–4):
   - `AnalysisCanvas` parameters: `Model`, `SelectedWindowIndex`, `PlayheadSec`, and an `EventCallback<double>` `OnSeek` raised when the user clicks a measure.
-  - JS module exports: `init(canvas, dotNetRef)`, `setModel(payload)`, `setPlayhead(sec)`, `setSelection(index)`, `dispose()`.
+  - JS module exports: `init(canvas, dotNetRef)`, `setModel(canvas, payload)`, `setPlayhead(canvas, sec)`, `setSelection(canvas, index)`, `dispose(canvas)`. Every export takes the canvas element, and per-canvas state lives in a module-level `Map` keyed by it — so a second canvas on a page can never share state with the first.
 
 **Rendering:** one `<canvas>`, two lanes. Top lane = note capsules, x from time, y from pitch (scaled between `MinPitch`/`MaxPitch`), fill from `NoteRole`, dual labels drawn only when a capsule is wide enough to fit them. Bottom lane = chord blocks with symbol, measure number, and mode tag. Zoom/pan on wheel and drag, with **virtualized drawing** — only items intersecting the visible time range are drawn, so a 5-minute song stays smooth. Redraw on `requestAnimationFrame`, never per-event. Colours are read once from CSS variables (`--note-chord-tone` etc.) via `getComputedStyle` and re-read on a `prefers-color-scheme` change so dark mode works.
 

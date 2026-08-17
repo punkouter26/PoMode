@@ -25,24 +25,12 @@
     <JobProgress Status="_status" />
 }
 
-@if (_notes is not null && _chords is not null)
+@if (_visual is not null)
 {
     <RadzenCard>
-        <RadzenText TextStyle="TextStyle.H6" Text="@($"{_notes.Count} notes · {_chords.Count} chords")" />
-        <div class="results">
-            <ul class="result-list">
-                @foreach (var note in _notes)
-                {
-                    <li>MIDI @note.MidiPitch at @note.StartSec.ToString("0.00")s (@note.DurationSec.ToString("0.00")s)</li>
-                }
-            </ul>
-            <ul class="result-list">
-                @foreach (var chord in _chords)
-                {
-                    <li>@chord.Symbol (@chord.StartSec.ToString("0")–@chord.EndSec.ToString("0")s)</li>
-                }
-            </ul>
-        </div>
+        <RadzenText TextStyle="TextStyle.H6" Text="@($"{_visual.Notes.Count} notes · {_visual.Chords.Count} chords")" />
+        <AnalysisCanvas Model="_visual" SelectedWindowIndex="_selectedWindow" PlayheadSec="_playheadSec"
+                        OnSeek="OnSeek" />
     </RadzenCard>
 }
 
@@ -56,18 +44,41 @@
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     private JobStatusDto? _status;
-    private List<NoteEvent>? _notes;
-    private List<ChordSpan>? _chords;
+    private VisualizationPayload? _visual;
     private ModalResult? _result;
     private string? _uploadError;
     private HubConnection? _hub;
+    private int? _selectedWindow;
+    private double _playheadSec;
+
+    /// <summary>Canvas click. The window scan is a plain time-range lookup, not analysis — the
+    /// musical decisions all happened server-side in VisualizationBuilder.</summary>
+    private void OnSeek(double seconds)
+    {
+        _playheadSec = seconds;
+        _selectedWindow = null;
+        if (_result is null)
+        {
+            return;
+        }
+        for (var index = 0; index < _result.Windows.Count; index++)
+        {
+            var window = _result.Windows[index];
+            if (seconds >= window.StartSec && seconds < window.EndSec)
+            {
+                _selectedWindow = index;
+                return;
+            }
+        }
+    }
 
     private async Task OnUploadComplete(UploadCompleteEventArgs args)
     {
         _uploadError = null;
-        _notes = null;
-        _chords = null;
+        _visual = null;
         _result = null;
+        _selectedWindow = null;
+        _playheadSec = 0;
         if (args.RawResponse is not { } rawResponse)
         {
             _uploadError = "Unexpected server response.";
@@ -109,11 +120,10 @@
             return;
         }
         _status = status;
-        if (status.Stage == JobStage.Complete && _notes is null)
+        if (status.Stage == JobStage.Complete && _visual is null)
         {
-            _notes = await Analysis.GetNotesAsync(status.JobId);
-            _chords = await Analysis.GetChordsAsync(status.JobId);
             _result = await Analysis.GetResultAsync(status.JobId);
+            _visual = await Analysis.GetVisualAsync(status.JobId);
             if (MockDataState.PlanContainsFakeExecutor(status.Plan))
             {
                 MockData.SetMock();

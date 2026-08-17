@@ -1,14 +1,3 @@
-.results {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
-.result-list {
-    margin: 0;
-    padding-left: 1.25rem;
-}
-
 .upload-error {
     color: var(--pm-warn-bg);
 }
