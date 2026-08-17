@@ -37,14 +37,45 @@ public sealed record VisualChord(
     int MeasureNumber,
     string? ModeTag);
 
+/// <summary>One of the twelve scale-degree badges in the HUD grid (spec §7).</summary>
+/// <param name="Interval">Semitones above the tonic, 0-11.</param>
+/// <param name="Sung">The singer actually used this degree in this window.</param>
+/// <param name="InMode">The degree belongs to the window's top-ranked mode.</param>
+/// <param name="Characteristic">The degree is one that distinguishes that mode from its neighbours.</param>
+public sealed record DegreeBadge(int Interval, string Label, bool Sung, bool InMode, bool Characteristic);
+
+/// <summary>A runner-up mode for the HUD's ranked alternatives list.</summary>
+public sealed record ModeAlternative(string Mode, double Confidence);
+
 /// <summary>
-/// Everything the canvas needs, flattened into one payload so the client makes a single request and
-/// the Blazor render tree never holds per-note state. SchemaVersion lets later phases migrate.
+/// Everything the HUD shows for one analysis window, pre-derived. <paramref name="ModeTag"/> and
+/// <paramref name="ModeConfidence"/> are null when the engine found insufficient evidence — the HUD
+/// must say so rather than borrow the whole-song primary mode, which would overstate the result.
+/// </summary>
+public sealed record VisualWindow(
+    int Index,
+    double StartSec,
+    double EndSec,
+    string ChordSymbol,
+    int MeasureNumber,
+    string MaskHex,
+    string? ModeTag,
+    double? ModeConfidence,
+    bool InsufficientEvidence,
+    IReadOnlyList<DegreeBadge> Degrees,
+    IReadOnlyList<ModeAlternative> Alternatives);
+
+/// <summary>
+/// Everything the canvas and HUD need, flattened into one payload so the client makes a single request,
+/// the Blazor render tree never holds per-note state, and clicking a chord needs no round trip.
+/// Derived on demand from the stored artifacts, so SchemaVersion has nothing to migrate yet — it exists
+/// so a future stored form can be versioned.
 /// </summary>
 public sealed record VisualizationPayload(
     int SchemaVersion,
     IReadOnlyList<VisualNote> Notes,
     IReadOnlyList<VisualChord> Chords,
+    IReadOnlyList<VisualWindow> Windows,
     double DurationSec,
     int MinPitch,
     int MaxPitch);

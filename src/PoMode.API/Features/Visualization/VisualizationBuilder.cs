@@ -49,12 +49,61 @@ public static class VisualizationBuilder
                 ModeTag: TopMode(window)?.ToString()));
         }
 
+        var visualWindows = new List<VisualWindow>(result.Windows.Count);
+        foreach (var window in result.Windows)
+        {
+            visualWindows.Add(ToVisualWindow(window));
+        }
+
         var (minPitch, maxPitch) = PitchRange(notes);
         var duration = Math.Max(
             notes.Count == 0 ? 0.0 : notes.Max(note => note.StartSec + note.DurationSec),
             chords.Count == 0 ? 0.0 : chords.Max(chord => chord.EndSec));
 
-        return new VisualizationPayload(SchemaVersion, visualNotes, visualChords, duration, minPitch, maxPitch);
+        return new VisualizationPayload(
+            SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch);
+    }
+
+    /// <summary>
+    /// Projects a window into the HUD's view of it. Deliberately does NOT fall back to the whole-song
+    /// primary mode when evidence was insufficient: the canvas may colour notes optimistically, but the
+    /// HUD is a factual readout and must not claim a match the engine did not make.
+    /// </summary>
+    private static VisualWindow ToVisualWindow(ModalWindow window)
+    {
+        var top = TopMode(window);
+        var modeMask = top is null ? 0 : ModeDefinitions.Mask(top.Value);
+        IReadOnlyList<int> characteristic =
+            top is null ? [] : ModeDefinitions.CharacteristicIntervals(top.Value);
+
+        var degrees = new List<DegreeBadge>(12);
+        for (var interval = 0; interval < 12; interval++)
+        {
+            degrees.Add(new DegreeBadge(
+                Interval: interval,
+                Label: PitchNames.IntervalLabel(interval),
+                Sung: (window.VocalMask & (1 << interval)) != 0,
+                InMode: (modeMask & (1 << interval)) != 0,
+                Characteristic: characteristic.Contains(interval)));
+        }
+
+        var alternatives = window.Matches
+            .Skip(1)
+            .Select(match => new ModeAlternative(match.Mode.ToString(), match.Confidence))
+            .ToArray();
+
+        return new VisualWindow(
+            Index: window.Index,
+            StartSec: window.StartSec,
+            EndSec: window.EndSec,
+            ChordSymbol: window.ChordSymbol,
+            MeasureNumber: window.MeasureNumber,
+            MaskHex: $"0x{window.VocalMask:X3}",
+            ModeTag: top?.ToString(),
+            ModeConfidence: top is null ? null : window.Matches[0].Confidence,
+            InsufficientEvidence: window.InsufficientEvidence,
+            Degrees: degrees,
+            Alternatives: alternatives);
     }
 
     /// <summary>

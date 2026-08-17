@@ -1,0 +1,7 @@
+.tier-badge {
+    display: inline-block;
+    min-width: 1.4rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: help; /* the title attribute explains what the glyph means */
+}

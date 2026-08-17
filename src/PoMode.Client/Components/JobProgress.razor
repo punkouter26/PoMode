@@ -7,7 +7,7 @@
         @foreach (var stage in Status.Plan)
         {
             <li class="@StageClass(stage)">
-                <span class="tier">@TierBadge(stage.Tier)</span>
+                <span class="tier"><TierBadge Tier="stage.Tier" /></span>
                 <span class="name">@stage.Stage</span>
                 <span class="executor">@stage.Executor</span>
                 @if (Status.CompletedStages.Contains(stage.Stage))
@@ -39,12 +39,4 @@
         => Status.CompletedStages.Contains(stage.Stage) ? "stage completed"
             : Status.Stage.ToString() == stage.Stage ? "stage active"
             : "stage";
-
-    private static string TierBadge(ExecutionTier tier) => tier switch
-    {
-        ExecutionTier.Local => "💻",
-        ExecutionTier.ClientDelegated => "🌐",
-        ExecutionTier.Cloud => "☁️💰",
-        _ => "?",
-    };
 }

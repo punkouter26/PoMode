@@ -1,0 +1,25 @@
+@using PoMode.Shared.Analysis
+
+@* Single source of truth for the tier glyphs (spec §7: 💻 local / 🌐 browser / ☁️💰 paid).
+   Used by JobProgress and anywhere else a tier is shown, so the mapping cannot drift. *@
+<span class="tier-badge" title="@Description">@Glyph</span>
+
+@code {
+    [Parameter, EditorRequired] public ExecutionTier Tier { get; set; }
+
+    private string Glyph => Tier switch
+    {
+        ExecutionTier.Local => "💻",
+        ExecutionTier.ClientDelegated => "🌐",
+        ExecutionTier.Cloud => "☁️💰",
+        _ => "?",
+    };
+
+    private string Description => Tier switch
+    {
+        ExecutionTier.Local => "Ran locally on this machine",
+        ExecutionTier.ClientDelegated => "Ran in your browser",
+        ExecutionTier.Cloud => "Ran on a paid cloud provider",
+        _ => "Unknown execution tier",
+    };
+}

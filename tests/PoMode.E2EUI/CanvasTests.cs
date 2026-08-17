@@ -74,8 +74,8 @@ public class CanvasTests(AppFixture app)
         var canvas = await UploadAndGetCanvasAsync(page, app.BaseUrl);
         var before = await SpanAsync(canvas);
 
-        var box = await canvas.BoundingBoxAsync();
-        await page.Mouse.MoveAsync(box!.X + (box.Width / 2), box.Y + (box.Height / 2));
+        // HoverAsync scrolls the canvas into view first; the page is taller than the viewport.
+        await canvas.HoverAsync();
         await page.Mouse.WheelAsync(0, -600); // negative deltaY zooms in
 
         await Assertions.Expect(canvas).Not.ToHaveAttributeAsync("data-view-end", $"{before.End}",
@@ -95,12 +95,24 @@ public class CanvasTests(AppFixture app)
         var canvas = await UploadAndGetCanvasAsync(page, app.BaseUrl);
         Assert.Equal(0.0, await PlayheadAsync(canvas), precision: 3);
 
-        var box = await canvas.BoundingBoxAsync();
-        await page.Mouse.ClickAsync(box!.X + (box.Width * 0.75f), box.Y + (box.Height * 0.3f));
+        // Locator.ClickAsync takes element-relative coordinates and scrolls into view for us; raw
+        // Mouse.ClickAsync with a BoundingBox would miss, because the box is in viewport coordinates
+        // and the lower part of the canvas sits below the fold on this page.
+        await ClickCanvasAsync(canvas, 0.75f, 0.3f);
 
         await Assertions.Expect(canvas).Not.ToHaveAttributeAsync("data-playhead", "0",
             new() { Timeout = AppFixture.ExpectTimeoutMs });
         Assert.True(await PlayheadAsync(canvas) > 0, "playhead did not move");
+    }
+
+    /// <summary>Clicks a fraction across and down the canvas, in element-relative coordinates.</summary>
+    internal static async Task ClickCanvasAsync(ILocator canvas, float acrossFraction, float downFraction)
+    {
+        var box = await canvas.BoundingBoxAsync();
+        await canvas.ClickAsync(new LocatorClickOptions
+        {
+            Position = new Position { X = box!.Width * acrossFraction, Y = box.Height * downFraction },
+        });
     }
 
     private static async Task<(double Start, double End, double Span)> SpanAsync(ILocator canvas)

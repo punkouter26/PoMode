@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PoMode</title>
     <base href="/" />
-    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css" />
+    <!-- Radzen ships separate light and dark bases. Loading both under prefers-color-scheme media
+         queries makes the component library follow the OS theme with no JS and no theme switcher,
+         which is what NET_RULES ("auto-detect system Light/Dark themes") asks for. Without the dark
+         base, Radzen cards stay white while app.css flips to light text — unreadable. -->
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css"
+          media="(prefers-color-scheme: light)" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-dark-base.css"
+          media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="PoMode.Client.styles.css" />
 </head>

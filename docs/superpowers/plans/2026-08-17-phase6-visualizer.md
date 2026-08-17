@@ -103,10 +103,18 @@ git commit -m "feat: dual-lane analysis canvas with zoom, pan and measure select
 
 ### Task 3: Modal HUD
 
+**Rulings made while doing this task:**
+1. **No `TierBadges` list in the HUD.** `JobProgress` already renders a tier glyph next to every stage's executor name, so a second list would be duplicate UI showing identical data. Instead the glyph→meaning mapping was extracted out of `JobProgress` into one `TierBadge.razor` (with a `title` explaining each glyph) so there is a single source of truth. §7's "per-stage tier badges" requirement is met by the progress card.
+2. **The HUD's per-window facts are server-derived too.** Rather than let the client compute degree badges (which would need `ModeDefinitions` in the client), `VisualizationPayload` gained a `Windows` list of `VisualWindow` — mask hex, mode tag, confidence, twelve `DegreeBadge`s and ranked `ModeAlternative`s, all pre-computed. Clicking a chord therefore needs no round trip, and the derivation is unit-tested. Same ruling as Task 1, applied consistently.
+3. **Radzen needed its dark stylesheet.** `index.html` loaded only `material-base.css`, so in dark mode Radzen cards stayed white while `app.css` flipped to light text — the HUD was unreadable. Both bases are now loaded under `prefers-color-scheme` media queries. This was a pre-existing defect, visible in the Phase 6 Task 2 screenshots, not caused by the HUD.
+
 **Files:**
-- Create: `src/PoMode.Client/Components/ModalHud.razor`, `src/PoMode.Client/Components/ModalHud.razor.css`, `src/PoMode.Client/Components/TierBadges.razor`, `src/PoMode.Client/Components/TierBadges.razor.css`
-- Modify: `src/PoMode.Client/Pages/Home.razor`, `src/PoMode.Client/Components/ModalResultView.razor` (fold its content into the HUD and delete it if it becomes redundant — CLAUDE.md requires purging dead code)
+- Create: `src/PoMode.Client/Components/ModalHud.razor`, `src/PoMode.Client/Components/ModalHud.razor.css`, `src/PoMode.Client/Components/TierBadge.razor`, `src/PoMode.Client/Components/TierBadge.razor.css`
+- Modify: `src/PoMode.Shared/Analysis/VisualContracts.cs`, `src/PoMode.API/Features/Visualization/VisualizationBuilder.cs`, `src/PoMode.Client/Pages/Home.razor`, `src/PoMode.Client/Components/JobProgress.razor`, `src/PoMode.Client/wwwroot/index.html`
+- Delete: `src/PoMode.Client/Components/ModalResultView.razor` + `.css` (superseded by the HUD), `tests/PoMode.E2EUI/ModalResultTests.cs` (its one test moved into `ModalHudTests` and now asserts the HUD's real output)
 - Test: `tests/PoMode.E2EUI/ModalHudTests.cs`, `tests/PoMode.Unit/Visualization/DegreeBadgeTests.cs`
+
+**Browser-test gotcha worth remembering:** `ILocator.BoundingBoxAsync` returns *viewport* coordinates, and the results page is taller than the 720 px default viewport — so `page.Mouse.ClickAsync(box.X + …, box.Y + …)` silently misses anything below the fold, which is exactly where the chord lane sits. Use `ILocator.ClickAsync` with element-relative `Position` (it auto-scrolls) and `HoverAsync` before `Mouse.WheelAsync`. `CanvasTests.ClickCanvasAsync` wraps this.
 
 **Interfaces:**
 - Consumes: `ModalResult`, `ModalWindow`, `JobStatusDto.Plan`, Task 1's labels.

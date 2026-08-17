@@ -1,0 +1,125 @@
+.hud {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.hud-card {
+    height: 100%;
+}
+
+.hud-headline {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0.25rem 0;
+}
+
+.hud-bar {
+    margin: 0.35rem 0;
+}
+
+.hud-sub {
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+}
+
+.hud-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 0.75rem;
+    margin: 0.5rem 0 0;
+}
+
+.hud-facts dt {
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+}
+
+.hud-facts dd {
+    margin: 0;
+}
+
+.hud-chord {
+    font-weight: 600;
+}
+
+.hud-mask {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.degree-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.25rem;
+    margin: 0.5rem 0;
+}
+
+.degree {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.9rem;
+    padding: 0.2rem 0;
+    border: 1px solid var(--pm-border);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+    background: var(--pm-lane-bg);
+}
+
+.degree.in-mode {
+    color: var(--pm-fg);
+    border-color: var(--pm-note-in-mode);
+}
+
+.degree.characteristic {
+    color: var(--pm-fg);
+    border-color: var(--pm-note-characteristic);
+    border-width: 2px;
+}
+
+.degree.sung {
+    background: var(--pm-note-chord-tone);
+    color: var(--pm-warn-fg);
+    font-weight: 600;
+}
+
+.degree.sung.characteristic {
+    background: var(--pm-note-characteristic);
+}
+
+.degree-key {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--pm-fg-muted);
+    flex-wrap: wrap;
+}
+
+.degree-key .degree {
+    min-width: 0.9rem;
+    height: 0.9rem;
+    padding: 0;
+    margin-left: 0.5rem;
+}
+
+.alternatives {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+}
+
+.alternatives li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.15rem 0;
+    border-top: 1px solid var(--pm-border);
+}
+
+.alt-mode {
+    font-size: 0.9rem;
+}
