@@ -13,7 +13,18 @@ namespace PoMode.Integration;
 /// </summary>
 public sealed class ResilientHttpTests : IAsyncLifetime
 {
-    private const int Port = 5321;
+    /// <summary>
+    /// Each test instance binds its own port. Sharing one port across instances was intermittently
+    /// off-by-one: HTTP.SYS queues requests per URL prefix, so a request still in flight when one
+    /// instance stops its listener can be delivered to the next instance's listener, shifting the
+    /// response indices and inflating the recorded request count.
+    /// </summary>
+    private static int _nextPort = 5340;
+
+    private readonly int _port = Interlocked.Increment(ref _nextPort);
+
+    /// <summary>A port no fixture in this suite binds, so a connection there genuinely fails.</summary>
+    private const int DeadPort = 5330;
 
     private HttpListener _listener = null!;
     private string _baseUrl = null!;
@@ -25,7 +36,7 @@ public sealed class ResilientHttpTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _baseUrl = $"http://127.0.0.1:{Port}";
+        _baseUrl = $"http://127.0.0.1:{_port}";
         _listener = new HttpListener();
         _listener.Prefixes.Add($"{_baseUrl}/");
         _listener.Start();
@@ -65,12 +76,22 @@ public sealed class ResilientHttpTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// A client that never pools connections. Without this, SocketsHttpHandler can transparently
+    /// re-send a request whose pooled connection was closed by the fixture's previous response, which
+    /// inflates the raw request count and makes "how many attempts did ResilientHttp make?" unanswerable.
+    /// </summary>
+    private static HttpClient UnpooledClient() => new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.Zero,
+    });
+
+    /// <summary>
     /// Runs the helper while draining the fake clock, so any backoff the helper waits on elapses
     /// immediately. Without this the call would hang: nothing else advances a FakeTimeProvider.
     /// </summary>
     private async Task<HttpResponseMessage> SendAsync(FakeTimeProvider time, string path = "/thing")
     {
-        using var client = new HttpClient();
+        using var client = UnpooledClient();
         var send = ResilientHttp.SendAsync(
             client,
             () => new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{path}"),
@@ -120,12 +141,21 @@ public sealed class ResilientHttpTests : IAsyncLifetime
         Assert.Equal(3, RequestCount); // NOT 4 — the fourth would have succeeded
     }
 
-    [Theory]
-    [InlineData(408)]
-    [InlineData(429)]
-    public async Task Timeouts_and_rate_limits_are_retried(int status)
+    [Fact]
+    public async Task Rate_limits_are_retried()
     {
-        _statuses = [status, 200];
+        _statuses = [429, 200];
+
+        using var response = await SendAsync(new FakeTimeProvider());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, RequestCount);
+    }
+
+    [Fact]
+    public async Task A_request_timeout_status_is_retried()
+    {
+        _statuses = [408, 200];
 
         using var response = await SendAsync(new FakeTimeProvider());
 
@@ -182,12 +212,12 @@ public sealed class ResilientHttpTests : IAsyncLifetime
     [Fact]
     public async Task A_transport_failure_is_retried_and_then_surfaces()
     {
-        using var client = new HttpClient();
+        using var client = UnpooledClient();
         var time = new FakeTimeProvider();
         // Nothing is listening on this port, so every attempt fails at the socket.
         var send = ResilientHttp.SendAsync(
             client,
-            () => new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{Port + 1}/x"),
+            () => new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{DeadPort}/x"),
             time,
             NullLogger.Instance,
             CancellationToken.None);

@@ -39,12 +39,12 @@ public class HardwareProbeTests
     [Fact]
     public async Task Probe_reports_configured_providers_from_config()
     {
-        var probe = Probe(new() { ["ReplicateApiToken"] = "x", ["SonicApiKey"] = "" });
+        var probe = Probe(new() { ["ReplicateApiToken"] = "x", ["LalalApiKey"] = "" });
 
         var report = await probe.ProbeAsync(CancellationToken.None);
 
         Assert.Contains("ReplicateApiToken", report.ConfiguredProviders);
-        Assert.DoesNotContain("SonicApiKey", report.ConfiguredProviders);
+        Assert.DoesNotContain("LalalApiKey", report.ConfiguredProviders);
         Assert.DoesNotContain("LalalApiKey", report.ConfiguredProviders);
     }
 

@@ -18,6 +18,7 @@ public class JsonContextTests
             IsAzureHosted: false,
             SecretSource: "EnvironmentVariables",
             SecretFellBack: true,
+            CloudEnabled: true,
             ProviderKeys: [new ProviderKeyStatus("ReplicateApiToken", Configured: true)],
             Hardware: null);
 
@@ -88,6 +89,7 @@ public class JsonContextTests
             IsAzureHosted: false,
             SecretSource: "EnvironmentVariables",
             SecretFellBack: false,
+            CloudEnabled: true,
             ProviderKeys: [],
             Hardware: new HardwareReport(
                 IsAzureHosted: false,

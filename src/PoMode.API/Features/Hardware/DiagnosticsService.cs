@@ -1,3 +1,4 @@
+using PoMode.API.Features.Cloud;
 using PoMode.API.Infrastructure;
 using PoMode.Shared.Diagnostics;
 
@@ -8,6 +9,7 @@ public sealed class DiagnosticsService(
     IConfiguration configuration,
     IHostEnvironment environment,
     SecretSourceInfo secretSource,
+    CloudCredentials cloudCredentials,
     HardwareProbe hardwareProbe)
 {
     public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
@@ -18,5 +20,6 @@ public sealed class DiagnosticsService(
         ProviderKeys: ProviderKeys.All
             .Select(name => new ProviderKeyStatus(name, !string.IsNullOrEmpty(configuration[name])))
             .ToArray(),
+        CloudEnabled: cloudCredentials.Enabled,
         Hardware: await hardwareProbe.ProbeAsync(ct));
 }
