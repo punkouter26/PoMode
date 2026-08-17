@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using PoMode.API.Features.Hardware;
 using PoMode.API.Infrastructure;
@@ -13,9 +14,13 @@ public class HardwareProbeTests
         var services = new ServiceCollection();
         services.AddHttpClient();
         var provider = services.BuildServiceProvider();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(config ?? []).Build();
+        var modelRegistry = new ModelRegistry(
+            configuration, provider.GetRequiredService<IHttpClientFactory>(), NullLogger<ModelRegistry>.Instance);
         return new HardwareProbe(
-            new ConfigurationBuilder().AddInMemoryCollection(config ?? []).Build(),
-            provider.GetRequiredService<IHttpClientFactory>());
+            configuration,
+            provider.GetRequiredService<IHttpClientFactory>(),
+            modelRegistry);
     }
 
     [Fact]

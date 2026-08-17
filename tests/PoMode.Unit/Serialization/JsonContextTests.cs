@@ -93,7 +93,8 @@ public class JsonContextTests
                 IsAzureHosted: false,
                 Gpu: new GpuReport("NVIDIA", 8192, 6000, CudaAvailable: true, DmlAvailable: true),
                 OllamaModels: ["qwen2.5:7b"],
-                ConfiguredProviders: ["ReplicateApiToken"]));
+                ConfiguredProviders: ["ReplicateApiToken"],
+                Models: [new ModelStatus("basic-pitch", Available: false, SizeBytes: 0)]));
 
         var back = JsonSerializer.Deserialize(
             JsonSerializer.Serialize(report, PoModeJsonContext.Default.DiagnosticsReport),

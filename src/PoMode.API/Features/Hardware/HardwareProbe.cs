@@ -5,7 +5,10 @@ using PoMode.Shared.Hardware;
 namespace PoMode.API.Features.Hardware;
 
 /// <summary>Runtime capability probe feeding /diag and (in later phases) executor availability.</summary>
-public sealed class HardwareProbe(IConfiguration configuration, IHttpClientFactory httpClientFactory)
+public sealed class HardwareProbe(
+    IConfiguration configuration,
+    IHttpClientFactory httpClientFactory,
+    ModelRegistry modelRegistry)
 {
     public async Task<HardwareReport> ProbeAsync(CancellationToken ct)
     {
@@ -15,7 +18,8 @@ public sealed class HardwareProbe(IConfiguration configuration, IHttpClientFacto
         var providers = ProviderKeys.All
             .Where(key => !string.IsNullOrEmpty(configuration[key]))
             .ToArray();
-        return new HardwareReport(isAzure, gpu, ollamaModels, providers);
+        var models = modelRegistry.StatusFor(ModelCatalog.All);
+        return new HardwareReport(isAzure, gpu, ollamaModels, providers, models);
     }
 
     private async Task<IReadOnlyList<string>> ProbeOllamaAsync(CancellationToken ct)
