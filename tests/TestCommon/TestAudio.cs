@@ -131,4 +131,53 @@ public static class TestAudio
         writer.Flush();
         return stream.ToArray();
     }
+
+    /// <summary>Sums sine tones (each with a quieter octave partial) into a PCM16 WAV — synthetic "chord" audio.</summary>
+    public static byte[] MakeChord(double seconds, int[] midiPitches, int sampleRate = 22050)
+    {
+        var count = (int)(seconds * sampleRate);
+        var samples = new double[count];
+        foreach (var midi in midiPitches)
+        {
+            var frequency = 440.0 * Math.Pow(2, (midi - 69) / 12.0);
+            for (var i = 0; i < count; i++)
+            {
+                var t = i / (double)sampleRate;
+                samples[i] += Math.Sin(2 * Math.PI * frequency * t)
+                    + (0.35 * Math.Sin(2 * Math.PI * frequency * 2 * t));
+            }
+        }
+
+        var peak = samples.Length == 0 ? 1.0 : Math.Max(samples.Max(Math.Abs), 1e-9);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        var dataSize = count * 2;
+        writer.Write("RIFF"u8);
+        writer.Write(36 + dataSize);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write((short)1);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * 2);
+        writer.Write((short)2);
+        writer.Write((short)16);
+        writer.Write("data"u8);
+        writer.Write(dataSize);
+        foreach (var sample in samples)
+        {
+            writer.Write((short)(sample / peak * 0.8 * short.MaxValue));
+        }
+        writer.Flush();
+        return stream.ToArray();
+    }
+
+    /// <summary>MIDI pitches for a root-position triad in octave 3. Quality: "maj" or "min".</summary>
+    public static int[] Triad(int rootPitchClass, string quality)
+    {
+        var root = 48 + rootPitchClass; // C3 = 48
+        var third = quality == "min" ? root + 3 : root + 4;
+        return [root, third, root + 7];
+    }
 }
