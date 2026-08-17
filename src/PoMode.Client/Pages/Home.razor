@@ -114,7 +114,14 @@
             _notes = await Analysis.GetNotesAsync(status.JobId);
             _chords = await Analysis.GetChordsAsync(status.JobId);
             _result = await Analysis.GetResultAsync(status.JobId);
-            MockData.SetLive();
+            if (MockDataState.PlanContainsFakeExecutor(status.Plan))
+            {
+                MockData.SetMock();
+            }
+            else
+            {
+                MockData.SetLive();
+            }
         }
         await InvokeAsync(StateHasChanged);
     }

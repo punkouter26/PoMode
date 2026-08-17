@@ -125,6 +125,13 @@ public sealed class AnalysisPipeline(
             {
                 throw;
             }
+            catch (InvalidDataException)
+            {
+                // The input itself is bad (e.g. AudioDecoder's duration cap) — not an executor/tier
+                // failure. Falling through to a fake executor would silently fabricate results for a
+                // job that should fail outright with the decoder's message.
+                throw;
+            }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Executor {Executor} failed for stage {Stage}; trying next tier.", candidate.Name, stage);

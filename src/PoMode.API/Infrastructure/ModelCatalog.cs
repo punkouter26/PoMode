@@ -26,12 +26,17 @@ public static class ModelCatalog
 
     /// <summary>
     /// HTDemucs stem separation model. URL and SHA-256 established as the real feasibility-gate values
-    /// for Task 8's stem separator.
+    /// for Task 8's stem separator. The URL is pinned to the repo's current commit
+    /// (<c>d54ed9eb60e258ea82131c6ee14578628816456a</c>, resolved via the Hugging Face models API for
+    /// <c>StemSplitio/htdemucs-onnx</c>) rather than <c>resolve/main</c>, so the bytes behind this URL
+    /// cannot silently change under us. The SHA-256 below was re-verified against a fresh download of
+    /// that exact pinned URL (165,612,636 bytes) during the Phase 4 final-review fix round — see
+    /// <c>.superpowers/sdd/2026-08-16-phase4-local-inference/finalfix-report.md</c> for the trail.
     /// </summary>
     public static readonly ModelDescriptor HtDemucs = new(
         Key: "htdemucs",
         FileName: "htdemucs_fp16weights.onnx",
-        Url: "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs_fp16weights.onnx",
+        Url: "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/d54ed9eb60e258ea82131c6ee14578628816456a/htdemucs_fp16weights.onnx",
         Sha256: "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a");
 
     public static readonly IReadOnlyList<ModelDescriptor> All = [BasicPitch, HtDemucs];

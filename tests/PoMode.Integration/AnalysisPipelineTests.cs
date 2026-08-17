@@ -64,6 +64,17 @@ public sealed class AnalysisPipelineTests : IDisposable
             => throw new InvalidOperationException("simulated OOM");
     }
 
+    private sealed class InvalidDataStemSeparator : IStemSeparator
+    {
+        private readonly string _message;
+        public InvalidDataStemSeparator(string message) => _message = message;
+        public string Name => nameof(InvalidDataStemSeparator);
+        public ExecutionTier Tier => ExecutionTier.Local;
+        public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
+        public Task SeparateAsync(StageContext context, CancellationToken ct)
+            => throw new InvalidDataException(_message);
+    }
+
     private sealed class HangingStemSeparator : IStemSeparator
     {
         public readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -173,6 +184,22 @@ public sealed class AnalysisPipelineTests : IDisposable
 
         var final = await _store.LoadAsync(job.JobId, CancellationToken.None);
         Assert.Equal(JobStage.Cancelled, final!.Stage);
+    }
+
+    [Fact]
+    public async Task InvalidDataException_from_an_executor_fails_the_job_without_falling_through()
+    {
+        var job = await NewJobAsync();
+        const string message = "Audio is 999 s long; the limit is 900 s.";
+        var counter = new CountingStemSeparator();
+        var pipeline = Pipeline([new InvalidDataStemSeparator(message), counter]);
+
+        await pipeline.RunAsync(job.JobId, CancellationToken.None);
+
+        var final = await _store.LoadAsync(job.JobId, CancellationToken.None);
+        Assert.Equal(JobStage.Failed, final!.Stage);
+        Assert.Equal(message, final.Error);
+        Assert.Equal(0, counter.Calls);
     }
 
     [Fact]

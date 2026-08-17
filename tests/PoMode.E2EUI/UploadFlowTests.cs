@@ -8,7 +8,7 @@ namespace PoMode.E2EUI;
 public class UploadFlowTests(AppFixture app)
 {
     [Fact]
-    public async Task Upload_runs_pipeline_shows_results_and_clears_mock_banner()
+    public async Task Upload_runs_pipeline_shows_results_and_keeps_mock_banner_while_any_stage_is_fake()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
@@ -26,8 +26,10 @@ public class UploadFlowTests(AppFixture app)
 
             await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(visible);
             await Assertions.Expect(page.GetByText("8 notes · 4 chords")).ToBeVisibleAsync(visible);
-            await Assertions.Expect(page.GetByText("USING MOCK DATA"))
-                .ToBeHiddenAsync(new() { Timeout = AppFixture.ExpectTimeoutMs });
+            // FakeChordRecognizer is still the only chord recognizer (Phase 5 adds a real one), so any
+            // completed job's plan still touches a fake executor and the banner must stay on — see
+            // MockDataState.PlanContainsFakeExecutor.
+            await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(visible);
         }
         finally
         {
