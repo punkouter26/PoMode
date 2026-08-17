@@ -16,4 +16,8 @@ public sealed class AnalysisClient(HttpClient http)
 
     public Task<ModalResult?> GetResultAsync(string jobId)
         => http.GetFromJsonAsync<ModalResult>($"api/analysis/{jobId}/result");
+
+    /// <summary>The canvas payload — note roles and labels already decided server-side.</summary>
+    public Task<VisualizationPayload?> GetVisualAsync(string jobId)
+        => http.GetFromJsonAsync<VisualizationPayload>($"api/analysis/{jobId}/visual");
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using PoMode.API.Features.Visualization;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 
@@ -106,6 +107,27 @@ public static class AnalysisEndpoints
         MapArtifact(group, "notes", "notes.json");
         MapArtifact(group, "chords", "chords.json");
         MapArtifact(group, "result", "result.json");
+
+        // The canvas payload is derived, not stored: one request instead of three, and every colouring
+        // decision stays server-side (see the Phase 6 plan's Task 1 ruling). Reads go through
+        // ReadArtifact*Async, which holds the per-job lock, so this never streams a half-written file.
+        group.MapGet("/{jobId}/visual", async Task<Results<Ok<VisualizationPayload>, NotFound>> (
+            string jobId, JobStore store, CancellationToken ct) =>
+        {
+            if (!IsValidJobId(jobId))
+            {
+                return TypedResults.NotFound();
+            }
+            var result = await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct);
+            if (result is null)
+            {
+                return TypedResults.NotFound();
+            }
+            var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
+            var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
+            return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result));
+        });
+
         return app;
     }
 

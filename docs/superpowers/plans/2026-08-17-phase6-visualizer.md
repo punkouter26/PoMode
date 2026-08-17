@@ -5,7 +5,7 @@
 **Goal:** Turn the current text-list results page into the visualizer §7 describes: a dual-lane canvas (piano roll + chord blocks), a Radzen HUD that explains the modal analysis, a Web Audio stem mixer, and the local Ollama copilot. After this phase a user uploads a song and *sees* the analysis instead of reading a list of numbers.
 
 **Architecture:** All analysis data already exists as DTOs (`NoteEvent`, `ChordSpan`, `ModalResult`/`ModalWindow`/`ModalMatch`) served by the four existing artifact endpoints. Phase 6 adds no new analysis. It adds:
-- a **pure C# colouring/lookup layer** in `PoMode.Shared` (unit-testable, no canvas involved) that answers "what colour class is this note?" and "which modal window covers time *t*?";
+- a **pure C# colouring/lookup layer in the API** (unit-testable, no canvas involved) that answers "what colour class is this note?" and "which modal window covers time *t*?", served to the client as a finished `VisualizationPayload` — see Task 1's ruling on why this is not in `PoMode.Shared`;
 - a **JS interop module** (`wwwroot/js/canvas.js`) that draws from a flat, pre-computed payload — the Blazor render tree never touches per-note elements;
 - **Radzen HUD components** bound to the selected window;
 - a **Web Audio module** (`wwwroot/js/mixer.js`) owning playback, gain ramps, and the clock the scrubber reads;
@@ -34,38 +34,42 @@
 
 ---
 
-### Task 1: Note Colouring and Window Lookup (pure C#)
+### Task 1: Note Colouring and Window Lookup (server-side, pure)
+
+**Ruling made while starting this task — the plan's first draft was wrong.** The draft put the colouring logic in `PoMode.Shared` so the client could compute it. That breaks CLAUDE.md's "`Shared`: DTOs, Enums, Interfaces, JSON contexts. **Zero business logic**", because deciding whether a note is in-mode needs `ModeDefinitions` — the modal engine's own interval and characteristic-degree tables. Duplicating those tables in `Shared` would also create a second source of truth for the masks §6 insists are derived once, in code. So: **the builder lives in the API, the DTOs live in `Shared`, and the client fetches a finished payload.** The client draws; it decides nothing.
 
 **Files:**
-- Create: `src/PoMode.Shared/Visualization/NoteRole.cs`, `src/PoMode.Shared/Visualization/VisualizationModel.cs`
-- Test: `tests/PoMode.Unit/Visualization/VisualizationModelTests.cs`
+- Create: `src/PoMode.Shared/Analysis/VisualContracts.cs`, `src/PoMode.API/Features/Visualization/VisualizationBuilder.cs`
+- Modify: `src/PoMode.API/Features/Analysis/AnalysisEndpoints.cs` (serve the payload), `src/PoMode.Client/Services/AnalysisClient.cs`
+- Test: `tests/PoMode.Unit/Visualization/VisualizationBuilderTests.cs`, `tests/PoMode.E2EAPI/VisualEndpointTests.cs`
 
 **Interfaces:**
-- Consumes: `NoteEvent`, `ChordSpan`, `ModalResult`, `ModalWindow`, `ModalMatch`, `ScaleMode` (all existing).
-- Produces (consumed by Tasks 2–3):
-  - `enum NoteRole { ChordTone, InMode, Characteristic, Outside }`
+- Consumes: `NoteEvent`, `ChordSpan`, `ModalResult`, `ModalWindow`, `ModalMatch`, `ScaleMode`, and the API's existing `ModeDefinitions` + `PitchNames` (reused, not reimplemented).
+- Produces (consumed by Tasks 2–4):
+  - `enum NoteRole { ChordTone, InMode, Characteristic, Outside }` (in `Shared`)
   - `record VisualNote(int MidiPitch, double StartSec, double DurationSec, int Velocity, NoteRole Role, string PitchLabel, string DegreeLabel)`
   - `record VisualChord(string Symbol, double StartSec, double EndSec, int MeasureNumber, string? ModeTag)`
-  - `record VisualizationModel(IReadOnlyList<VisualNote> Notes, IReadOnlyList<VisualChord> Chords, double DurationSec, int MinPitch, int MaxPitch)`
-  - `static VisualizationModel VisualizationModel.Build(IReadOnlyList<NoteEvent> notes, IReadOnlyList<ChordSpan> chords, ModalResult result)`
-  - `static int? VisualizationModel.WindowIndexAt(ModalResult result, double timeSec)` — the window covering `timeSec`, or `null` past the end
+  - `record VisualizationPayload(int SchemaVersion, IReadOnlyList<VisualNote> Notes, IReadOnlyList<VisualChord> Chords, double DurationSec, int MinPitch, int MaxPitch)`
+  - `static VisualizationPayload VisualizationBuilder.Build(IReadOnlyList<NoteEvent> notes, IReadOnlyList<ChordSpan> chords, ModalResult result)`
+  - `static int? VisualizationBuilder.WindowIndexAt(ModalResult result, double timeSec)` — the window covering `timeSec`, or `null` past the end
+  - `GET /api/analysis/{jobId}/visual` → `VisualizationPayload`, built on demand from the three existing artifacts; 404 if any is missing. The `notes`/`chords`/`result` endpoints stay as they are.
 
 **Role rules (in priority order, first match wins):**
-1. **ChordTone** — the note's pitch class is in the triad of the `ChordSpan` covering its start (root/third/fifth, derived by rotation from the chord's `Root` + `Quality`, never a hand-written table).
-2. **Characteristic** — the interval above the tonic is the characteristic degree of the window's top-ranked mode: Dorian ♮6 (9), Lydian ♯4 (6), Phrygian ♭2 (1), Mixolydian ♭7 (10), Locrian ♭5 (6), Aeolian ♭6 (8). Ionian and the pentatonics have none.
-3. **InMode** — the interval is in the top-ranked mode's mask.
-4. **Outside** — everything else. Notes in a window with `InsufficientEvidence`, or past the last window, are `InMode` only if the *primary* mode covers them, else `Outside`.
+1. **ChordTone** — the note's pitch class is in the triad of the `ChordSpan` covering its start (root/third/fifth, derived by rotation from `Root` + `Quality`, never a hand-written table).
+2. **Characteristic** — the interval above the tonic is in `ModeDefinitions.CharacteristicIntervals` for the window's top-ranked mode. **Use that existing table, do not write a new one** — it already encodes Dorian `[9,3]`, Lydian `[6]`, Phrygian `[1]`, Mixolydian `[10,4]`, Aeolian `[8,3]`, Locrian `[6,1]`, Ionian `[11]`, and both pentatonics.
+3. **InMode** — the interval is set in the top-ranked mode's `ModeDefinitions.Mask`.
+4. **Outside** — everything else. Notes in a window with `InsufficientEvidence`, or past the last window, fall back to the **primary** mode; with no primary mode they are `InMode` only if a chord tone, else `Outside`.
 
-**Labels:** `PitchLabel` is scientific pitch (`"B4"`, `"F#3"`) from the existing `PitchNames`; `DegreeLabel` is the bracketed scale degree relative to the tonic (`"[b3]"`, `"[4]"`, `"[#4]"`) — the dual label §7 asks for.
+**Labels:** `PitchLabel` is scientific pitch (`"B4"`, `"F#3"`) built from `PitchNames.Name` plus the octave; `DegreeLabel` is the bracketed degree relative to the tonic (`"[b3]"`, `"[4]"`, `"[#4]"`) from `PitchNames.IntervalLabel` — the dual label §7 asks for.
 
-- [ ] **Step 1: Write the failing tests.** Cover: a C-major chord's C/E/G become `ChordTone`; a ♮6 over a Dorian window becomes `Characteristic` and not merely `InMode`; a chromatic outsider becomes `Outside`; role priority (a note that is both a chord tone and characteristic is `ChordTone`); `MinPitch`/`MaxPitch` bracket the input and stay valid for an empty note list; `DurationSec` is the max of the last note end and last chord end; `PitchLabel`/`DegreeLabel` formats; `WindowIndexAt` at a boundary picks the later window, and returns `null` past the end; `InsufficientEvidence` windows fall back to the primary mode.
-- [ ] **Step 2: RED** — `dotnet test tests/PoMode.Unit --filter VisualizationModelTests` (tee `task-1-red.log`).
-- [ ] **Step 3: Implement.** `PitchNames` currently lives in the API (Phase 3) — if the pitch-class naming helper is not already in `PoMode.Shared`, move it there and update the API references, rather than duplicating it. `PoMode.Shared` must stay free of business logic per CLAUDE.md; note *presentation* classification is display metadata, which is why it belongs here and not in the API.
-- [ ] **Step 4: GREEN** — Unit suite (tee `task-1-green.log`). Commit:
+- [ ] **Step 1: Write the failing tests.** Cover: a C-major chord's C/E/G become `ChordTone`; a ♮6 over a Dorian window becomes `Characteristic` and not merely `InMode`; a chromatic outsider becomes `Outside`; role priority (a note that is both a chord tone and characteristic is `ChordTone`); `MinPitch`/`MaxPitch` bracket the input and stay valid for an empty note list; `DurationSec` is the max of the last note end and last chord end; `PitchLabel`/`DegreeLabel` formats; `WindowIndexAt` at a boundary picks the later window and returns `null` past the end; `InsufficientEvidence` windows fall back to the primary mode; a `null` `PrimaryMode` does not throw. E2EAPI: `/visual` returns a well-formed payload for a completed job and 404 for an unknown or incomplete one.
+- [ ] **Step 2: RED** — `dotnet test tests/PoMode.Unit --filter VisualizationBuilderTests` (tee `task-1-red.log`).
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: GREEN** — Unit, then E2EAPI (tee `task-1-green.log`). Commit:
 
 ```powershell
-git add src/PoMode.Shared tests/PoMode.Unit/Visualization src/PoMode.API
-git commit -m "feat: pure note-role and window-lookup model for the visualizer"
+git add src/PoMode.Shared src/PoMode.API src/PoMode.Client/Services tests/PoMode.Unit/Visualization tests/PoMode.E2EAPI
+git commit -m "feat: server-built visualization payload with note roles and dual labels"
 ```
 
 ---
@@ -78,7 +82,7 @@ git commit -m "feat: pure note-role and window-lookup model for the visualizer"
 - Test: `tests/PoMode.E2EUI/CanvasTests.cs`
 
 **Interfaces:**
-- Consumes: `VisualizationModel` (Task 1).
+- Consumes: `VisualizationPayload` (Task 1).
 - Produces (consumed by Tasks 3–4):
   - `AnalysisCanvas` parameters: `Model`, `SelectedWindowIndex`, `PlayheadSec`, and an `EventCallback<double>` `OnSeek` raised when the user clicks a measure.
   - JS module exports: `init(canvas, dotNetRef)`, `setModel(payload)`, `setPlayhead(sec)`, `setSelection(index)`, `dispose()`.
