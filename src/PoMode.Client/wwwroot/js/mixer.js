@@ -12,13 +12,29 @@ const states = new Map();
 const STEMS = ['mix', 'vocals', 'instrumental'];
 
 /// Which stem is audible in each mode. Everything keeps playing; only the gains change.
+/// The three "notes*" modes mute all stems and synthesise transcribed notes instead — the muted
+/// stems keep running so the transport clock, playhead and seek behave identically in every mode.
 const MODE_GAINS = {
     full: { mix: 1, vocals: 0, instrumental: 0 },
     vocals: { mix: 0, vocals: 1, instrumental: 0 },
     backing: { mix: 0, vocals: 0, instrumental: 1 },
+    'notes': { mix: 0, vocals: 0, instrumental: 0 },
+    'notes-backing': { mix: 0, vocals: 0, instrumental: 0 },
+    'notes-both': { mix: 0, vocals: 0, instrumental: 0 },
+};
+
+/// Which transcribed note lists sound in each notes mode.
+const NOTE_SOURCES = {
+    'notes': ['vocal'],
+    'notes-backing': ['backing'],
+    'notes-both': ['vocal', 'backing'],
 };
 
 const RAMP_SECONDS = 0.05;
+
+/// How far ahead of the playhead synth notes are committed to the audio clock. Generous enough to
+/// survive a laggy tab (requestAnimationFrame pauses), short enough that a seek barely overlaps.
+const SYNTH_LOOKAHEAD_SECONDS = 0.25;
 
 /// Mirrors mode/time/duration onto the element without touching the status. Seeking and switching
 /// stems change neither the transport state nor the loaded state, so they must not overwrite it.
@@ -78,10 +94,87 @@ function stopSources(state) {
     state.sources = {};
 }
 
+function stopSynthVoices(state) {
+    for (const osc of state.synthVoices) {
+        try {
+            osc.stop();
+        } catch {
+            // Already stopped.
+        }
+        osc.disconnect();
+    }
+    state.synthVoices = [];
+}
+
+/// One synthesized note: a detuned oscillator pair through a lowpass and an ADSR envelope (the
+/// timbre is borrowed from PoModeMm's midiPlayer.js). Vocal notes get a bright sawtooth lead;
+/// backing notes get a mellower, quieter triangle so the melody stays in front when both play.
+/// Envelope times are ordered even for very short notes.
+function scheduleVoice(state, note, when, source) {
+    const ctx = state.context;
+    const freq = 440 * Math.pow(2, (note.midiPitch - 69) / 12);
+    const duration = Math.max(0.05, note.durationSec);
+    const level = source === 'backing' ? 0.5 : 1;
+    const velocity = ((note.velocity ?? 90) / 127) * level;
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    osc1.type = source === 'backing' ? 'triangle' : 'sawtooth';
+    osc2.type = source === 'backing' ? 'triangle' : 'sawtooth';
+    osc1.frequency.value = freq;
+    osc2.frequency.value = freq * 1.001; // gentle detune for warmth
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = source === 'backing' ? 2000 : 3200;
+    filter.Q.value = 0.7;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, when);
+    env.gain.exponentialRampToValueAtTime(0.6 * velocity, when + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.35 * velocity, when + Math.min(0.15, Math.max(0.03, duration * 0.5)));
+    env.gain.exponentialRampToValueAtTime(0.0001, when + duration + 0.05);
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(env);
+    env.connect(state.synthGain);
+
+    for (const osc of [osc1, osc2]) {
+        osc.start(when);
+        osc.stop(when + duration + 0.1);
+        osc.onended = () => {
+            const index = state.synthVoices.indexOf(osc);
+            if (index >= 0) {
+                state.synthVoices.splice(index, 1);
+            }
+            osc.disconnect();
+        };
+        state.synthVoices.push(osc);
+    }
+}
+
+/// Commits every note whose start falls between the cursor and the lookahead horizon to the audio
+/// clock at its exact song position, then advances the cursor so nothing is scheduled twice.
+function scheduleSynth(state) {
+    const windowEnd = currentSeconds(state) + SYNTH_LOOKAHEAD_SECONDS;
+    for (const source of NOTE_SOURCES[state.mode] ?? []) {
+        for (const note of state.notes[source]) {
+            if (note.startSec >= state.synthCursor && note.startSec < windowEnd) {
+                const when = state.startedAt + (note.startSec - state.offset);
+                scheduleVoice(state, note, Math.max(when, state.context.currentTime), source);
+            }
+        }
+    }
+    state.synthCursor = windowEnd;
+}
+
 /// AudioBufferSourceNodes are single-use, so every play and every seek builds a fresh set. They are
 /// all started with the same `when`, which is what keeps the three stems sample-synchronised.
 function startSources(state, offsetSeconds) {
     stopSources(state);
+    stopSynthVoices(state);
+    state.synthCursor = offsetSeconds;
     const when = state.context.currentTime + 0.02; // a beat of headroom so all three share a start
     for (const stem of STEMS) {
         const buffer = state.buffers[stem];
@@ -111,6 +204,9 @@ function tick(state) {
             report(state, 'ended');
             return;
         }
+        if (state.mode in NOTE_SOURCES) {
+            scheduleSynth(state);
+        }
     }
     state.frame = requestAnimationFrame(() => tick(state));
 }
@@ -119,6 +215,7 @@ function pauseInternal(state, atSeconds) {
     state.offset = atSeconds;
     state.playing = false;
     stopSources(state);
+    stopSynthVoices(state);
 }
 
 // ---- exports ----
@@ -138,6 +235,10 @@ export function init(root, canvas) {
         duration: 0,
         playing: false,
         frame: null,
+        notes: { vocal: [], backing: [] },
+        synthGain: null,
+        synthVoices: [],
+        synthCursor: 0,
     });
     report(states.get(root), 'idle');
 }
@@ -183,6 +284,12 @@ export async function load(root, urls) {
         state.gains[stem] = gain;
     }
 
+    if (!state.synthGain) {
+        state.synthGain = state.context.createGain();
+        state.synthGain.gain.value = 0.35; // master synth level, below the stems' full-scale audio
+        state.synthGain.connect(state.context.destination);
+    }
+
     state.duration = Math.max(0, ...Object.values(state.buffers).map(buffer => buffer.duration));
     state.offset = 0;
     state.playing = false;
@@ -197,6 +304,27 @@ export async function load(root, urls) {
         state.frame = requestAnimationFrame(() => tick(state));
     }
     return state.duration;
+}
+
+/// Fetches the transcribed note lists for the notes modes: the vocal melody (notes.json) and the
+/// backing transcription (notes-backing.json). A missing or unreadable artifact leaves its mode
+/// silent rather than breaking the mixer. Returns [vocalCount, backingCount].
+export async function loadNotes(root, urls) {
+    const state = states.get(root);
+    if (!state) {
+        return [0, 0];
+    }
+    const fetchList = async url => {
+        try {
+            const response = await fetch(url);
+            return response.ok ? await response.json() : [];
+        } catch {
+            return [];
+        }
+    };
+    const [vocal, backing] = await Promise.all([fetchList(urls.vocal), fetchList(urls.backing)]);
+    state.notes = { vocal, backing };
+    return [vocal.length, backing.length];
 }
 
 export async function play(root) {
@@ -245,9 +373,18 @@ export function setMode(root, mode) {
     if (!state || !(mode in MODE_GAINS)) {
         return;
     }
+    const wasNotes = state.mode in NOTE_SOURCES;
     state.mode = mode;
     if (state.context) {
         applyGains(state, false);
+        if (wasNotes) {
+            // A source-set change must not leave voices from the previous set ringing.
+            stopSynthVoices(state);
+        }
+        if (mode in NOTE_SOURCES && state.playing) {
+            // Start synthesising from the current position; notes already sounding are skipped.
+            state.synthCursor = currentSeconds(state);
+        }
     }
     refresh(state);
 }
@@ -266,6 +403,7 @@ export function dispose(root) {
         cancelAnimationFrame(state.frame);
     }
     stopSources(state);
+    stopSynthVoices(state);
     states.delete(root);
     if (state.context) {
         state.context.close();

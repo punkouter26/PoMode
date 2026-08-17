@@ -17,7 +17,15 @@
             <RadzenTabsItem Text="Upload">
                 <RadzenText Text="Upload an .mp3 or .wav track (max 100 MB) to analyze its melody, chords, and scale modes." />
                 <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
+                              Progress="@OnUploadProgress"
                               Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+                @if (_uploading)
+                {
+                    <div class="upload-progress">
+                        <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
+                        <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
+                    </div>
+                }
                 @if (_uploadError is not null)
                 {
                     <RadzenText class="upload-error" Text="@_uploadError" />
@@ -105,6 +113,10 @@
     private VisualizationPayload? _visual;
     private ModalResult? _result;
     private string? _uploadError;
+    private bool _uploading;
+    private int _uploadPercent;
+    private long _uploadLoaded;
+    private long _uploadTotal;
     private HubConnection? _hub;
     private int? _selectedWindow;
     private double _playheadSec;
@@ -161,8 +173,23 @@
         }
     }
 
+    private string UploadProgressText
+        => _uploadPercent >= 100 ? "Upload sent — waiting for the server…"
+            : _uploadTotal > 0
+                ? $"Uploading… {_uploadPercent}% ({_uploadLoaded / 1048576.0:0.0} of {_uploadTotal / 1048576.0:0.0} MB)"
+                : $"Uploading… {_uploadPercent}%";
+
+    private void OnUploadProgress(UploadProgressArgs args)
+    {
+        _uploading = true;
+        _uploadPercent = args.Progress;
+        _uploadLoaded = args.Loaded;
+        _uploadTotal = args.Total;
+    }
+
     private async Task OnUploadComplete(UploadCompleteEventArgs args)
     {
+        _uploading = false;
         _uploadError = null;
         if (args.RawResponse is not { } rawResponse
             || JsonSerializer.Deserialize<JobStatusDto>(rawResponse, WebJson) is not { } status)
@@ -302,6 +329,7 @@
 
     private void OnUploadError(UploadErrorEventArgs args)
     {
+        _uploading = false;
         _uploadError = string.IsNullOrWhiteSpace(args.Message) ? "Upload failed." : args.Message;
     }
 

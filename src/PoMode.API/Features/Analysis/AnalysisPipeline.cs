@@ -1,3 +1,4 @@
+using PoMode.API.Features.PitchTracking;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 
@@ -71,6 +72,7 @@ public sealed class AnalysisPipeline(
                 var notes = await RunWithFallbackAsync(state, StageNames.PitchTracking, pitchTrackers,
                     (executor, token) => executor.TrackAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "notes.json", notes, ct);
+                await TranscribeBackingAsync(state, ct);
                 await CompleteStageAsync(state, StageNames.PitchTracking, 1, ct);
             }
 
@@ -105,6 +107,35 @@ public sealed class AnalysisPipeline(
             state.Stage = JobStage.Failed;
             state.Error = ex.Message;
             await PersistAsync(state, CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort second transcription: the instrumental stem through the local ONNX tracker, for
+    /// the client's "music notes" playback. Deliberately outside the tier-fallback machinery — when
+    /// the stem or the local model is missing (Tier 2/cloud paths), or the run fails, the job simply
+    /// has no notes-backing.json and the client keeps that mode silent.
+    /// </summary>
+    private async Task TranscribeBackingAsync(JobState state, CancellationToken ct)
+    {
+        var instrumentalPath = Path.Combine(store.JobDir(state.JobId), "instrumental.wav");
+        var onnxTracker = pitchTrackers.OfType<OnnxPitchTracker>().FirstOrDefault();
+        if (onnxTracker is null || !File.Exists(instrumentalPath) || !await onnxTracker.IsAvailableAsync(ct))
+        {
+            return;
+        }
+        try
+        {
+            var backingNotes = await onnxTracker.TranscribeAsync(instrumentalPath, ct);
+            await store.WriteArtifactAsync(state.JobId, "notes-backing.json", backingNotes, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Backing transcription failed for job {JobId}; continuing without it.", state.JobId);
         }
     }
 

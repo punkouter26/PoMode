@@ -88,6 +88,7 @@ public static class AnalysisEndpoints
         }).RequireAuthorization();
 
         MapArtifact(group, "notes", "notes.json");
+        MapArtifact(group, "notes-backing", "notes-backing.json");
         MapArtifact(group, "chords", "chords.json");
         MapArtifact(group, "result", "result.json");
 

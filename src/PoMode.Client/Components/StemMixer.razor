@@ -18,7 +18,7 @@
             @foreach (var (mode, label) in Modes)
             {
                 <RadzenButton Click="@(() => SetModeAsync(mode))"
-                              Disabled="@(_status is "idle" or "loading")"
+                              Disabled="@(_status is "idle" or "loading" || !HasNotesFor(mode))"
                               ButtonStyle="@(_mode == mode ? ButtonStyle.Primary : ButtonStyle.Light)"
                               Text="@label" />
             }
@@ -33,6 +33,9 @@
         ("full", "Full Mix"),
         ("vocals", "Solo Vocals"),
         ("backing", "Solo Backing"),
+        ("notes", "Vocal Notes"),
+        ("notes-backing", "Music Notes"),
+        ("notes-both", "All Notes"),
     ];
 
     /// <summary>Job whose stems to play. Changing it reloads the mixer.</summary>
@@ -49,12 +52,30 @@
     private string _status = "idle";
     private string _mode = "full";
     private double _duration;
+    private int _vocalNoteCount;
+    private int _backingNoteCount;
     private string? _loadedJobId;
     private double? _sentSeek;
 
     private string StatusText => _duration <= 0
         ? "Loading stems…"
-        : $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio";
+        : _mode switch
+        {
+            "notes" => $"Vocal Notes · {_vocalNoteCount} synthesized notes",
+            "notes-backing" => $"Music Notes · {_backingNoteCount} synthesized notes",
+            "notes-both" => $"All Notes · {_vocalNoteCount + _backingNoteCount} synthesized notes",
+            _ => $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio",
+        };
+
+    /// <summary>A notes mode with nothing to play stays disabled — older jobs analyzed before the
+    /// backing transcription existed have no notes-backing.json.</summary>
+    private bool HasNotesFor(string mode) => mode switch
+    {
+        "notes" => _vocalNoteCount > 0,
+        "notes-backing" => _backingNoteCount > 0,
+        "notes-both" => _vocalNoteCount > 0 || _backingNoteCount > 0,
+        _ => true,
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -80,6 +101,18 @@
             });
             _status = _duration > 0 ? "ready" : "unavailable";
             _sentSeek = null;
+            if (_status == "ready")
+            {
+                // The transcriptions feed the notes modes; a missing artifact keeps its mode
+                // disabled via HasNotesFor rather than failing the mixer.
+                var counts = await _module.InvokeAsync<int[]>("loadNotes", _root, new
+                {
+                    vocal = $"api/analysis/{JobId}/notes",
+                    backing = $"api/analysis/{JobId}/notes-backing",
+                });
+                _vocalNoteCount = counts.Length > 0 ? counts[0] : 0;
+                _backingNoteCount = counts.Length > 1 ? counts[1] : 0;
+            }
             StateHasChanged();
             return;
         }

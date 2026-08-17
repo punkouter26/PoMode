@@ -1,14 +1,22 @@
 @using PoMode.Shared.Analysis
+@implements IDisposable
 
 <RadzenCard class="job-progress">
-    <RadzenText TextStyle="TextStyle.H6" Text="Analysis progress" />
+    <div class="progress-header">
+        <RadzenText TextStyle="TextStyle.H6" Text="Analysis progress" />
+        <span class="percent">@($"{Status.Progress * 100:0}%")</span>
+    </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
+    @if (CurrentStepText is { } step)
+    {
+        <RadzenText class="current-step" Text="@step" />
+    }
     <ul class="stages">
         @foreach (var stage in Status.Plan)
         {
             <li class="@StageClass(stage)">
                 <span class="tier"><TierBadge Tier="stage.Tier" /></span>
-                <span class="name">@stage.Stage</span>
+                <span class="name">@FriendlyName(stage.Stage)</span>
                 <span class="executor">@stage.Executor</span>
                 @if (DurationText(stage) is { } duration)
                 {
@@ -17,6 +25,10 @@
                 @if (Status.CompletedStages.Contains(stage.Stage))
                 {
                     <span class="done">✓</span>
+                }
+                else if (IsActive(stage))
+                {
+                    <span class="spinner" aria-label="in progress"></span>
                 }
             </li>
         }
@@ -43,18 +55,72 @@
     [Parameter, EditorRequired]
     public required JobStatusDto Status { get; set; }
 
+    private Timer? _elapsedTimer;
+
+    private bool IsRunning
+        => Status.Stage is not (JobStage.Complete or JobStage.Failed or JobStage.Cancelled);
+
+    protected override void OnInitialized()
+        // Repaint once a second so the active stage's elapsed time counts up live.
+        => _elapsedTimer = new Timer(_ =>
+        {
+            if (IsRunning)
+            {
+                _ = InvokeAsync(StateHasChanged);
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+    public void Dispose() => _elapsedTimer?.Dispose();
+
+    private static string FriendlyName(string stage) => stage switch
+    {
+        "Separating" => "Separating stems",
+        "PitchTracking" => "Transcribing melody",
+        "ChordDetecting" => "Detecting chords",
+        "ModalAnalysis" => "Analyzing modes",
+        _ => stage,
+    };
+
+    private string? CurrentStepText
+    {
+        get
+        {
+            if (!IsRunning)
+            {
+                return null;
+            }
+            for (var index = 0; index < Status.Plan.Count; index++)
+            {
+                if (IsActive(Status.Plan[index]))
+                {
+                    return $"Step {index + 1} of {Status.Plan.Count}: {FriendlyName(Status.Plan[index].Stage)}…";
+                }
+            }
+            return "Waiting to start…";
+        }
+    }
+
+    private bool IsActive(StagePlan stage)
+        => Status.Stage.ToString() == stage.Stage
+            // AwaitingClient is the pitch stage parked on the browser, so that row stays active.
+            || (Status.Stage == JobStage.AwaitingClient && stage.Stage == "PitchTracking");
+
     private string? DurationText(StagePlan stage)
     {
         var record = Status.StageHistory?.LastOrDefault(r => r.Stage == stage.Stage);
-        return record?.CompletedAt is { } end
+        if (record is null)
+        {
+            return null;
+        }
+        return record.CompletedAt is { } end
             ? $"{(end - record.StartedAt).TotalSeconds:0.0}s"
-            : null;
+            : IsActive(stage)
+                ? $"{(DateTimeOffset.UtcNow - record.StartedAt).TotalSeconds:0}s…"
+                : null;
     }
 
     private string StageClass(StagePlan stage)
         => Status.CompletedStages.Contains(stage.Stage) ? "stage completed"
-            : Status.Stage.ToString() == stage.Stage ? "stage active"
-            // AwaitingClient is the pitch stage parked on the browser, so that row stays active.
-            : Status.Stage == JobStage.AwaitingClient && stage.Stage == "PitchTracking" ? "stage active"
+            : IsActive(stage) ? "stage active"
             : "stage";
 }

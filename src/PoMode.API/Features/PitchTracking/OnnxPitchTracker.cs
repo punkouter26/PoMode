@@ -50,12 +50,19 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
     public Task<bool> IsAvailableAsync(CancellationToken ct) =>
         Task.FromResult(!EnvironmentDetector.IsAzureHosted() && registry.IsDownloaded(ModelCatalog.BasicPitch));
 
-    public async Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct)
+    public Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct)
+    {
+        var vocalsPath = Path.Combine(context.JobDir, "vocals.wav");
+        return TranscribeAsync(File.Exists(vocalsPath) ? vocalsPath : context.InputPath, ct);
+    }
+
+    /// <summary>
+    /// Transcribes one audio file. Public beyond <see cref="TrackAsync"/> because the pipeline also
+    /// runs it on instrumental.wav to produce the backing-notes artifact (notes-backing.json).
+    /// </summary>
+    public async Task<IReadOnlyList<NoteEvent>> TranscribeAsync(string audioPath, CancellationToken ct)
     {
         var modelPath = await registry.EnsureAsync(ModelCatalog.BasicPitch, ct);
-
-        var vocalsPath = Path.Combine(context.JobDir, "vocals.wav");
-        var audioPath = File.Exists(vocalsPath) ? vocalsPath : context.InputPath;
 
         var buffer = AudioDecoder.Decode(audioPath);
         buffer = AudioDecoder.ToMono(buffer);

@@ -2,6 +2,18 @@
     color: var(--pm-warn-bg);
 }
 
+.upload-progress {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.upload-progress-text {
+    font-size: 0.85rem;
+    color: var(--pm-fg-muted);
+}
+
 .url-row {
     display: flex;
     gap: 0.5rem;
