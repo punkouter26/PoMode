@@ -8,6 +8,7 @@ public sealed class FakeStemSeparator : IStemSeparator
 {
     public string Name => nameof(FakeStemSeparator);
     public ExecutionTier Tier => ExecutionTier.Local;
+    public bool IsPlaceholder => true;
     public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
 
     public Task SeparateAsync(StageContext context, CancellationToken ct)

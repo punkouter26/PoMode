@@ -40,4 +40,45 @@ public static class ModelCatalog
         Sha256: "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a");
 
     public static readonly IReadOnlyList<ModelDescriptor> All = [BasicPitch, HtDemucs];
+
+    /// <summary>
+    /// onnxruntime-web 1.27.0, pinned to the immutable npm-versioned jsdelivr URLs (npm packages
+    /// cannot be republished under the same version). Served to the browser by
+    /// <c>WebRuntimeEndpoints</c> for the ClientDelegated pitch tier (spec §4): the app is
+    /// local-first, so the runtime comes from our own origin, downloaded once and SHA-256-verified
+    /// like every model, never from a CDN at page load and never committed. Each SHA-256 below was
+    /// computed from a fresh download of the exact pinned URL during Phase 8.
+    /// </summary>
+    public static readonly ModelDescriptor OrtBundle = new(
+        Key: "ort-bundle",
+        FileName: "ort.all.bundle.min.mjs",
+        Url: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.all.bundle.min.mjs",
+        Sha256: "e1f340eef7b46a331aa7c2c9aa313cfd47b83f2a1892f4016ecfade0d3005036");
+
+    /// <summary>The plain WASM-SIMD execution provider binary — the verified Tier 2 path.</summary>
+    public static readonly ModelDescriptor OrtWasm = new(
+        Key: "ort-wasm",
+        FileName: "ort-wasm-simd-threaded.wasm",
+        Url: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort-wasm-simd-threaded.wasm",
+        Sha256: "d1ab1b94b16a65b29d710d0b587b29e7bed336827577623913479b8afe8113e6");
+
+    /// <summary>
+    /// The JSEP binary onnxruntime-web fetches when the WebGPU execution provider is selected —
+    /// the opportunistic upgrade path, unverifiable on this dev machine (headless Chromium reports
+    /// no WebGPU adapter; see the Phase 8 plan's measured capability table).
+    /// </summary>
+    public static readonly ModelDescriptor OrtWasmJsep = new(
+        Key: "ort-wasm-jsep",
+        FileName: "ort-wasm-simd-threaded.jsep.wasm",
+        Url: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort-wasm-simd-threaded.jsep.wasm",
+        Sha256: "78feeeb3d08f6bcee94d938ed322f69073bb8076b5f9d34697a574ffba8deb48");
+
+    /// <summary>
+    /// Everything <c>/web-runtime/{asset}</c> may serve. Deliberately not merged into
+    /// <see cref="All"/>: that list drives <c>ModelWarmupService</c>'s startup auto-download and the
+    /// /diag model report, and ~40 MB of browser runtime should download on first Tier 2 use, not on
+    /// every server start. <see cref="BasicPitch"/> appears in both — the browser runs the very same
+    /// pinned model file the local tier runs.
+    /// </summary>
+    public static readonly IReadOnlyList<ModelDescriptor> WebRuntime = [OrtBundle, OrtWasm, OrtWasmJsep, BasicPitch];
 }

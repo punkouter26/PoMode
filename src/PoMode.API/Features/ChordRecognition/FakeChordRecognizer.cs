@@ -11,6 +11,7 @@ public sealed class FakeChordRecognizer : IChordRecognizer
 
     public string Name => nameof(FakeChordRecognizer);
     public ExecutionTier Tier => ExecutionTier.Local;
+    public bool IsPlaceholder => true;
     public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
 
     public Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct)

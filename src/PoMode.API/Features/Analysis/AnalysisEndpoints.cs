@@ -56,9 +56,13 @@ public static class AnalysisEndpoints
             // Plan synchronously so the response DTO already reflects the execution plan — the
             // background pipeline runs on a separate JobState instance loaded from disk, so it
             // can never retroactively populate the DTO already handed back to the caller.
+            // Tier 2 availability is a per-job property of the uploading browser (spec §4): the
+            // client probes for onnxruntime-web support and declares it here. Absent or false, the
+            // browser tier is simply invisible and planning behaves exactly as before.
+            var clientCanInfer = bool.TryParse(request.Query["clientCanInfer"], out var canInfer) && canInfer;
             try
             {
-                state.Plan = await planner.PlanAsync(ct);
+                state.Plan = await planner.PlanAsync(clientCanInfer, ct);
             }
             catch (InvalidOperationException ex)
             {

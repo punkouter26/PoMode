@@ -17,6 +17,15 @@ public interface IStageExecutor
     string Name { get; }
     ExecutionTier Tier { get; }
     Task<bool> IsAvailableAsync(CancellationToken ct);
+
+    /// <summary>
+    /// True for the Fake* development stand-ins that fabricate deterministic results instead of doing
+    /// real work. A placeholder is always available, so without this flag one would outrank every
+    /// executor of a higher tier — a browser genuinely running Basic Pitch (ClientDelegated) would
+    /// lose to <c>FakePitchTracker</c> forever. Placeholders rank after every real free tier but
+    /// still before Cloud: mock data is a better automatic fallback than silently spending money.
+    /// </summary>
+    bool IsPlaceholder => false;
 }
 
 public interface IStemSeparator : IStageExecutor

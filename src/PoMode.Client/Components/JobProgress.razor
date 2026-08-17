@@ -29,6 +29,10 @@
     {
         <RadzenText Text="Analysis cancelled" />
     }
+    else if (Status.Stage == JobStage.AwaitingClient)
+    {
+        <RadzenText class="awaiting-client-text" Text="Transcribing the vocals in your browser…" />
+    }
 </RadzenCard>
 
 @code {
@@ -38,5 +42,7 @@
     private string StageClass(StagePlan stage)
         => Status.CompletedStages.Contains(stage.Stage) ? "stage completed"
             : Status.Stage.ToString() == stage.Stage ? "stage active"
+            // AwaitingClient is the pitch stage parked on the browser, so that row stays active.
+            : Status.Stage == JobStage.AwaitingClient && stage.Stage == "PitchTracking" ? "stage active"
             : "stage";
 }

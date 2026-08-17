@@ -89,6 +89,7 @@ app.MapDiagnostics();
 
 app.MapSession();
 app.MapAnalysis();
+app.MapWebRuntime();
 app.MapMidiExport();
 app.MapCopilot();
 app.MapHub<AnalysisHub>("/hubs/analysis");

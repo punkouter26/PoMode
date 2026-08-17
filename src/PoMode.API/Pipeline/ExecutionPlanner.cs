@@ -16,6 +16,16 @@ public sealed class ExecutionPlanner(
         _ => int.MaxValue,
     };
 
+    /// <summary>
+    /// Selection order across tiers *and* placeholders: real Local (0) → real ClientDelegated (2) →
+    /// any Fake* placeholder (3) → real Cloud (4). A placeholder fabricates data, so it must lose to
+    /// a browser doing real inference — but it still beats Cloud, because falling through to mock
+    /// data is free while falling through to a paid provider spends the user's money automatically.
+    /// Used by both planning and mid-run fallback so the two can never disagree on order.
+    /// </summary>
+    public static int EffectiveRank(IStageExecutor executor) =>
+        executor.IsPlaceholder ? 3 : TierRank(executor.Tier) * 2;
+
     /// <summary>Plans with no browser help — the browser tier is invisible.</summary>
     public Task<List<StagePlan>> PlanAsync(CancellationToken ct)
         => PlanAsync(browserCanInfer: false, ct);
@@ -40,7 +50,7 @@ public sealed class ExecutionPlanner(
         var eligible = candidates
             .Where(c => browserCanInfer || c.Tier != ExecutionTier.ClientDelegated);
 
-        foreach (var candidate in eligible.OrderBy(c => TierRank(c.Tier)))
+        foreach (var candidate in eligible.OrderBy(c => EffectiveRank(c)))
         {
             if (await candidate.IsAvailableAsync(ct))
             {

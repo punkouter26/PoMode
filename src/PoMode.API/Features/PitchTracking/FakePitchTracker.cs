@@ -10,6 +10,7 @@ public sealed class FakePitchTracker : IPitchTracker
 
     public string Name => nameof(FakePitchTracker);
     public ExecutionTier Tier => ExecutionTier.Local;
+    public bool IsPlaceholder => true;
     public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
 
     public Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct)

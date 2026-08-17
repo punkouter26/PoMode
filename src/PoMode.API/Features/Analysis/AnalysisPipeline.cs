@@ -99,7 +99,7 @@ public sealed class AnalysisPipeline(
     {
         var planned = state.Plan.Single(p => p.Stage == stage);
         var ordered = candidates
-            .OrderBy(c => c.Name == planned.Executor ? -1 : ExecutionPlanner.TierRank(c.Tier))
+            .OrderBy(c => c.Name == planned.Executor ? -1 : ExecutionPlanner.EffectiveRank(c))
             .ToList();
 
         Exception? lastFailure = null;
