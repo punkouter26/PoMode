@@ -7,6 +7,7 @@ namespace PoMode.E2EUI;
 public class AppFixture : IAsyncLifetime
 {
     private readonly int _port;
+    private readonly string _jobsRoot = Path.Combine(Path.GetTempPath(), $"pomode-e2eui-{Guid.NewGuid():N}");
     private Process? _server;
 
     public AppFixture() : this(5199)
@@ -33,7 +34,11 @@ public class AppFixture : IAsyncLifetime
             WorkingDirectory = repoRoot,
             UseShellExecute = false,
             CreateNoWindow = true,
-            Environment = { ["ASPNETCORE_ENVIRONMENT"] = "Development" },
+            Environment =
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Development",
+                ["Jobs__RootPath"] = _jobsRoot,
+            },
         }) ?? throw new InvalidOperationException("Failed to start PoMode.API");
 
         using var http = new HttpClient();
@@ -60,6 +65,20 @@ public class AppFixture : IAsyncLifetime
             _server.Kill(entireProcessTree: true);
         }
         _server?.Dispose();
+
+        try
+        {
+            if (Directory.Exists(_jobsRoot)) Directory.Delete(_jobsRoot, recursive: true);
+        }
+        catch (IOException)
+        {
+            // best-effort cleanup — a leaked temp dir must never fail a test
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // best-effort cleanup — a leaked temp dir must never fail a test
+        }
+
         return Task.CompletedTask;
     }
 

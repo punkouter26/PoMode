@@ -8,12 +8,22 @@ using PoMode.Shared.Session;
 
 namespace PoMode.E2EAPI;
 
-public class FakeAuthTests
+public sealed class FakeAuthTests : IDisposable
 {
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"pomode-e2e-{Guid.NewGuid():N}");
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
+        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
+
     [Fact]
     public async Task Session_without_fake_user_header_returns_401()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = Factory();
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/session");
@@ -24,7 +34,7 @@ public class FakeAuthTests
     [Fact]
     public async Task Session_with_fake_user_and_roles_returns_identity()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = Factory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Fake-User", "alice");
         client.DefaultRequestHeaders.Add("X-Fake-Roles", "admin, listener");
@@ -39,7 +49,7 @@ public class FakeAuthTests
     [Fact]
     public void FakeAuth_throws_InvalidOperationException_in_production()
     {
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = Factory()
             .WithWebHostBuilder(b => b.UseEnvironment("Production"));
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());

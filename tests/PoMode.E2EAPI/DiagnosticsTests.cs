@@ -5,14 +5,24 @@ using PoMode.Shared.Diagnostics;
 
 namespace PoMode.E2EAPI;
 
-public class DiagnosticsTests
+public sealed class DiagnosticsTests : IDisposable
 {
     private const string FakeSecret = "sk-super-secret-value-9000";
+
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"pomode-e2e-{Guid.NewGuid():N}");
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>()
+        .WithWebHostBuilder(b => b.UseSetting("Jobs:RootPath", _root));
 
     [Fact]
     public async Task Health_returns_healthy()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = Factory();
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/health");
@@ -27,7 +37,7 @@ public class DiagnosticsTests
         Environment.SetEnvironmentVariable("ReplicateApiToken", FakeSecret);
         try
         {
-            await using var factory = new WebApplicationFactory<Program>();
+            await using var factory = Factory();
             using var client = factory.CreateClient();
 
             var raw = await client.GetStringAsync("/diag");
@@ -53,7 +63,7 @@ public class DiagnosticsTests
     [Fact]
     public async Task OpenApi_document_and_scalar_ui_are_served()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = Factory();
         using var client = factory.CreateClient();
 
         var doc = await client.GetAsync("/openapi/v1.json");
