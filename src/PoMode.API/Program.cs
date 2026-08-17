@@ -45,6 +45,7 @@ builder.Services.AddSingleton<JobStore>();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
+builder.Services.AddSingleton<IPitchTracker, OnnxPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<IModalAnalyzer, ArtifactModalAnalyzer>();
