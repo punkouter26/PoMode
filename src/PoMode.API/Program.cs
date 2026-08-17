@@ -48,6 +48,7 @@ builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
+builder.Services.AddSingleton<IStemSeparator, ReplicateStemSeparator>();
 builder.Services.AddSingleton<IPitchTracker, OnnxPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
 builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
