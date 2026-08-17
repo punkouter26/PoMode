@@ -13,4 +13,7 @@ public sealed class AnalysisClient(HttpClient http)
 
     public Task<List<ChordSpan>?> GetChordsAsync(string jobId)
         => http.GetFromJsonAsync<List<ChordSpan>>($"api/analysis/{jobId}/chords");
+
+    public Task<ModalResult?> GetResultAsync(string jobId)
+        => http.GetFromJsonAsync<ModalResult>($"api/analysis/{jobId}/result");
 }

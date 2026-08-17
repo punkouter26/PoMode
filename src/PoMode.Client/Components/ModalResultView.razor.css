@@ -1,0 +1,35 @@
+.tempo-note {
+    color: var(--pm-fg-muted);
+    font-size: 0.85rem;
+}
+
+.windows {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+}
+
+.window {
+    display: grid;
+    grid-template-columns: 3rem 5rem 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--pm-border);
+}
+
+.measure {
+    color: var(--pm-fg-muted);
+}
+
+.chord {
+    font-weight: 600;
+}
+
+.mode {
+    color: var(--pm-accent);
+}
+
+.degrees {
+    color: var(--pm-fg-muted);
+    font-family: monospace;
+}

@@ -46,12 +46,19 @@
     </RadzenCard>
 }
 
+@if (_result is not null)
+{
+    <ModalResultView Result="_result" />
+    <RadzenLink Path="@($"api/analysis/{_status!.JobId}/midi")" Text="Download MIDI" Target="_blank" />
+}
+
 @code {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     private JobStatusDto? _status;
     private List<NoteEvent>? _notes;
     private List<ChordSpan>? _chords;
+    private ModalResult? _result;
     private string? _uploadError;
     private HubConnection? _hub;
 
@@ -60,6 +67,7 @@
         _uploadError = null;
         _notes = null;
         _chords = null;
+        _result = null;
         if (args.RawResponse is not { } rawResponse)
         {
             _uploadError = "Unexpected server response.";
@@ -105,6 +113,7 @@
         {
             _notes = await Analysis.GetNotesAsync(status.JobId);
             _chords = await Analysis.GetChordsAsync(status.JobId);
+            _result = await Analysis.GetResultAsync(status.JobId);
             MockData.SetLive();
         }
         await InvokeAsync(StateHasChanged);
