@@ -20,9 +20,12 @@ public sealed class TempoEstimatorTests : IDisposable
     }
 
     [Theory]
+    [InlineData(75.0)]
     [InlineData(90.0)]
     [InlineData(120.0)]
     [InlineData(140.0)]
+    [InlineData(160.0)]
+    [InlineData(180.0)]
     public void Finds_the_tempo_of_a_click_track(double bpm)
     {
         var estimate = TempoEstimator.Estimate(Click(bpm));
