@@ -1,0 +1,26 @@
+.copilot-body {
+    margin: 0.4rem 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.copilot-body ::deep p {
+    margin: 0 0 0.5rem;
+}
+
+.copilot-body ::deep code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85em;
+    padding: 0 0.15rem;
+    border-radius: 3px;
+    background: var(--pm-lane-bg);
+}
+
+.copilot-unavailable {
+    color: var(--pm-warn-bg);
+    font-weight: 600;
+}
+
+.copilot-button {
+    margin-top: 0.35rem;
+}

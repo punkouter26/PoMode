@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ChordRecognition;
+using PoMode.API.Features.Copilot;
 using PoMode.API.Features.Hardware;
 using PoMode.API.Features.MidiExport;
 using PoMode.API.Features.ModalAnalysis;
@@ -52,6 +53,7 @@ builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<IModalAnalyzer, ArtifactModalAnalyzer>();
 builder.Services.AddSingleton<ExecutionPlanner>();
+builder.Services.AddSingleton<OllamaCopilotClient>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
@@ -82,6 +84,7 @@ app.MapDiagnostics();
 app.MapSession();
 app.MapAnalysis();
 app.MapMidiExport();
+app.MapCopilot();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 app.MapFallbackToFile("index.html");

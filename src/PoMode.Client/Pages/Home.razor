@@ -41,7 +41,8 @@
 
 @if (_result is not null && _visual is not null)
 {
-    <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow" />
+    <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow"
+              JobId="@_status!.JobId" />
     <RadzenLink Path="@($"api/analysis/{_status!.JobId}/midi")" Text="Download MIDI" Target="_blank" />
 }
 
