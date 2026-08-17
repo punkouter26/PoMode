@@ -216,7 +216,20 @@ Consequences for **Phase 4 (local ONNX tier)**, which must be re-planned before 
 - **Optimistic concurrency on `job.json`.** A `DELETE` on a still-queued job can be overwritten by the worker's first write (last-writer-wins). Per-job locking and atomic writes are in place, but there is no versioning, so cancel remains best-effort until Phase 4.
 - **Intra-stage progress** (`StageProgress(pct)` in §4) and **DXGI adapter enumeration** in the hardware probe.
 
-### 13.3 Phase 2 additions not in the original spec
+### 13.3 Phase 3 rulings and deviations (modal engine & MIDI)
+
+- **Tempo detection moved to Phase 4** (user decision). Phase 3 uses a fixed 120 BPM for MIDI Track 0 and measure numbering; `ModalResult.TempoEstimated` is `true` and the UI labels it "(estimated)". Phase 4 passes a real BPM into `ModalAnalysisEngine.Analyze(notes, chords, tempoBpm)` and flips the flag — the MIDI builder and client need no other change.
+- **The characteristic-degree bonus is 0.05, not an arbitrary weight.** §6 step 3 says "bonus weight for characteristic degrees". Implementation constraint discovered in review: the bonus must stay strictly below the smallest possible coverage step (1/12 ≈ 0.083), or a mode explaining *less* of the sung material can outrank one explaining more once 7+ distinct pitch classes are sung. The bonus therefore only orders modes *within* a coverage level; it can never invert coverage ordering.
+- **Tonic histogram uses chord roots only**, not "roots/thirds" as §6 step 1 says — thirds would require chord-quality inference that duplicates the mode scoring.
+- **No explicit out-of-mode penalty.** §6 step 3 mentions one; coverage already divides by the count of sung classes, so an outside note reduces the score inherently. A separate penalty would double-count.
+- **`ModalMatch` carries matched and outside intervals, not "missing".** Missing degrees are derivable (`modeMask & ~vocalMask`) and unused by the HUD.
+- **Insufficient evidence** is `< 3` distinct pitch classes in a window; such windows report no matches and are excluded from the primary-mode vote.
+
+### 13.4 Known defect carried into Phase 4
+
+**Artifact read/write race (found at the end of Phase 3, deliberately unfixed).** `notes.json`, `chords.json`, and `result.json` are written by the pipeline and the modal analyzer *outside* the per-job `SemaphoreSlim` that Phase 2 added for `job.json`, while `/api/analysis/{id}/notes|chords|result` serve them with `TypedResults.PhysicalFile`, which opens its own handle. On Windows a write or `File.Move` over an open handle throws `UnauthorizedAccessException`, which the pipeline's catch-all turns into `Stage = Failed` — a healthy job reporting failure purely because a client read an artifact at the wrong moment. Observed intermittently under parallel test load. Fix in Phase 4 before real long-running stages make mid-write reads common: extend the per-job lock to cover every artifact, or serve artifacts as byte copies read under that lock instead of streaming the file in place.
+
+### 13.5 Phase 2 additions not in the original spec
 
 - Kestrel's `MaxRequestBodySize` must be raised explicitly to 100 MB; `FormOptions.MultipartBodyLengthLimit` alone leaves a ~28.6 MB effective cap (§11's "request size limits configured explicitly" now covers both).
 - `jobId` route parameters are validated as 32 lowercase hex characters before reaching `Path.Combine`/`PhysicalFile`.
