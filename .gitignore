@@ -9,3 +9,4 @@ TestResults/
 *.wav
 !tests/**/*.wav
 .claude/
+.superpowers/
