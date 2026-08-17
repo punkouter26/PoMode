@@ -4,6 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoMode.Shared\PoMode.Shared.csproj" />
+    <!-- For ModelCatalog only: the client-delegated fixture seeds its models directory from the
+         same pinned URLs and SHA-256 hashes the server uses, so they can never drift apart. -->
+    <ProjectReference Include="..\..\src\PoMode.API\PoMode.API.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

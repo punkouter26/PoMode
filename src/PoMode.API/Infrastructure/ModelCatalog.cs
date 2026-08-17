@@ -74,11 +74,33 @@ public static class ModelCatalog
         Sha256: "78feeeb3d08f6bcee94d938ed322f69073bb8076b5f9d34697a574ffba8deb48");
 
     /// <summary>
+    /// The Emscripten JS glue for the plain WASM binary. Discovered empirically: the "bundle"
+    /// build does not embed the glue modules — the first flow-test run failed with the runtime
+    /// fetching them from <c>wasmPaths</c> — so they are catalog assets like everything else.
+    /// </summary>
+    public static readonly ModelDescriptor OrtWasmGlue = new(
+        Key: "ort-wasm-glue",
+        FileName: "ort-wasm-simd-threaded.mjs",
+        Url: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort-wasm-simd-threaded.mjs",
+        Sha256: "0a1e718d99c41b22c21f2520ff4f9e883a6b5533856e398d21816ee8eb8185d3");
+
+    /// <summary>
+    /// The JSEP glue. The <c>ort.all</c> bundle requests this one even for the plain 'wasm'
+    /// execution provider (its wasm backend is the JSEP build), so Tier 2 cannot run without it.
+    /// </summary>
+    public static readonly ModelDescriptor OrtWasmJsepGlue = new(
+        Key: "ort-wasm-jsep-glue",
+        FileName: "ort-wasm-simd-threaded.jsep.mjs",
+        Url: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort-wasm-simd-threaded.jsep.mjs",
+        Sha256: "3ee381d20a80f51a788a1c4a5872f6f1d047538dd4342f4af00062de5f9ea4c6");
+
+    /// <summary>
     /// Everything <c>/web-runtime/{asset}</c> may serve. Deliberately not merged into
     /// <see cref="All"/>: that list drives <c>ModelWarmupService</c>'s startup auto-download and the
     /// /diag model report, and ~40 MB of browser runtime should download on first Tier 2 use, not on
     /// every server start. <see cref="BasicPitch"/> appears in both — the browser runs the very same
     /// pinned model file the local tier runs.
     /// </summary>
-    public static readonly IReadOnlyList<ModelDescriptor> WebRuntime = [OrtBundle, OrtWasm, OrtWasmJsep, BasicPitch];
+    public static readonly IReadOnlyList<ModelDescriptor> WebRuntime =
+        [OrtBundle, OrtWasm, OrtWasmJsep, OrtWasmGlue, OrtWasmJsepGlue, BasicPitch];
 }

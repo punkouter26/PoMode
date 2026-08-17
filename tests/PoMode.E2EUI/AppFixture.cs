@@ -22,13 +22,25 @@ public class AppFixture : IAsyncLifetime
 
     public string BaseUrl => $"http://127.0.0.1:{_port}";
 
+    /// <summary>The isolated models directory this fixture's server reads. Derived fixtures may seed it.</summary>
+    protected string ModelsRoot => _modelsRoot;
+
+    /// <summary>Extra environment variables for the server process. Base adds none.</summary>
+    protected virtual void ConfigureEnvironment(IDictionary<string, string?> environment)
+    {
+    }
+
+    /// <summary>Runs before the server starts — a derived fixture's chance to seed <see cref="ModelsRoot"/>.</summary>
+    protected virtual Task BeforeServerStartAsync() => Task.CompletedTask;
+
     /// <summary>Blazor WASM cold-boot can exceed 30 s when the whole solution's test assemblies run in parallel.</summary>
     public const float ExpectTimeoutMs = 60000f;
 
     public async Task InitializeAsync()
     {
         var repoRoot = FindRepoRoot();
-        _server = Process.Start(new ProcessStartInfo
+        await BeforeServerStartAsync();
+        var startInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
             Arguments = $"run --no-build --project src/PoMode.API --urls {BaseUrl}",
@@ -47,13 +59,21 @@ public class AppFixture : IAsyncLifetime
                 // ExecutionPlanner regardless of the auto-download setting.
                 ["Models__AutoDownload"] = "false",
                 ["Models__RootPath"] = _modelsRoot,
+                // Headless Chromium honestly declares WASM inference capability, and a capable
+                // browser outranks FakePitchTracker — which would make every test here run real
+                // (network-downloading, non-deterministic) in-browser inference. These tests assert
+                // the fake pipeline's deterministic output, so the browser tier is switched off;
+                // ClientDelegatedFlowTests covers Tier 2 on its own fixture with it switched on.
+                ["Tier2__Enabled"] = "false",
                 // Point the copilot at a loopback port with nothing listening. Otherwise these tests
                 // would call whatever Ollama the dev box happens to run, making them slow and their
                 // assertions dependent on a language model's wording. The reachable-Ollama path is
                 // covered deterministically by OllamaCopilotClientTests against a fixture server.
                 ["Copilot__BaseUrl"] = "http://127.0.0.1:5398",
             },
-        }) ?? throw new InvalidOperationException("Failed to start PoMode.API");
+        };
+        ConfigureEnvironment(startInfo.Environment);
+        _server = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start PoMode.API");
 
         using var http = new HttpClient();
         for (var attempt = 0; attempt < 120; attempt++)

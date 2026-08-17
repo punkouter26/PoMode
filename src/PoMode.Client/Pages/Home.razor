@@ -19,6 +19,9 @@
     {
         <RadzenText class="upload-error" Text="@_uploadError" />
     }
+    @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
+       declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
+    <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
 </RadzenCard>
 
 @if (_status is not null)
@@ -60,6 +63,7 @@
     private ElementReference? _canvasElement;
     private IJSObjectReference? _pitchWorker;
     private string? _clientCapability;
+    private bool _probed;
     private readonly HashSet<string> _delegatedJobs = [];
 
     /// <summary>
@@ -77,6 +81,7 @@
         }
         _pitchWorker = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pitch-worker.js");
         _clientCapability = await _pitchWorker.InvokeAsync<string?>("probeCapability");
+        _probed = true;
         StateHasChanged();
     }
 
