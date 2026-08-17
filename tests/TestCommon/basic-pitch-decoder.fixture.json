@@ -1,0 +1,16 @@
+{
+  "description": "Shared Basic Pitch decoder fixture: the C# and JS decoders must agree on this. Generated once from BasicPitchDecoder (spec 5: the decoder algorithm is specified once and implemented twice). Covers: a plain note, a note ended by a re-onset, the re-onset's own note, a one-frame note dropped by the 0.058 s floor, and a note running to the end of the clip.",
+  "framesPerSecond": 50,
+  "minMidi": 60,
+  "onsetThreshold": 0.5,
+  "frameThreshold": 0.3,
+  "minDurationSec": 0.058,
+  "onsets": [[0,0,0],[0,0.9,0],[0.9,0,0],[0,0,0.9],[0,0,0],[0,0,0],[0,0.9,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0.9],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+  "frames": [[0,0,0],[0,0.8,0],[0.8,0.8,0],[0.8,0.8,0.8],[0.8,0.8,0],[0.8,0.8,0],[0.8,0.8,0],[0.8,0.8,0],[0.8,0.8,0],[0.8,0.8,0],[0.8,0.8,0.8],[0.8,0.8,0.8],[0,0.8,0.8],[0,0,0.8],[0,0,0.8],[0,0,0.8],[0,0,0.8],[0,0,0.8],[0,0,0.8],[0,0,0.8]],
+  "expectedNotes": [
+    { "midiPitch": 61, "startSec": 0.02, "durationSec": 0.1, "velocity": 101 },
+    { "midiPitch": 60, "startSec": 0.04, "durationSec": 0.2, "velocity": 101 },
+    { "midiPitch": 61, "startSec": 0.12, "durationSec": 0.14, "velocity": 101 },
+    { "midiPitch": 62, "startSec": 0.2, "durationSec": 0.2, "velocity": 101 }
+  ]
+}
