@@ -72,8 +72,6 @@
             <dl class="diag-grid">
                 <dt>GPU</dt>
                 <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
-                <dt>Ollama models</dt>
-                <dd>@(hardware.OllamaModels.Count > 0 ? string.Join(", ", hardware.OllamaModels) : "none")</dd>
                 <dt>Configured providers</dt>
                 <dd>@(hardware.ConfiguredProviders.Count > 0 ? string.Join(", ", hardware.ConfiguredProviders) : "none")</dd>
             </dl>

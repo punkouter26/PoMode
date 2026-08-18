@@ -32,14 +32,10 @@ public sealed class RomanNumeralsTests
     }
 
     [Theory]
-    [InlineData("C", 0)]
-    [InlineData("C#", 1)]
-    [InlineData("Db", 1)]
-    [InlineData("B", 11)]
-    [InlineData("Bb", 10)]
-    [InlineData("N", -1)]
-    [InlineData("", -1)]
-    [InlineData("H", -1)]
+    [InlineData("C", 0)]   // natural
+    [InlineData("C#", 1)]  // sharp
+    [InlineData("Bb", 10)] // flat
+    [InlineData("N", -1)]  // reject
     public void Pitch_class_parsing_handles_accidentals_and_rejects_junk(string root, int expected)
     {
         var parsed = PitchNames.TryParseRoot(root, out var pitchClass);

@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace PoMode.E2EAPI;
 
 /// <summary>Factory whose clients present the FakeAuth headers, matching the Blazor client's
-/// defaults — the write endpoints (cancel, client-result, copilot, from-url) require them.</summary>
+/// defaults — the write endpoints (cancel, client-result, from-url) require them.</summary>
 public sealed class AuthedFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureClient(HttpClient client)

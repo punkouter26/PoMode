@@ -52,18 +52,6 @@ public sealed class WriteEndpointAuthTests : IDisposable
     }
 
     [Fact]
-    public async Task Copilot_without_auth_is_401()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync(
-            "/api/copilot/explain", new CopilotRequest(SomeJobId, 0));
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
     public async Task From_url_without_auth_is_401()
     {
         await using var factory = Factory();

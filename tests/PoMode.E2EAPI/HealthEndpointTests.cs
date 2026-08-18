@@ -33,9 +33,9 @@ public sealed class HealthEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task Readiness_is_200_even_when_ollama_is_absent()
+    public async Task Readiness_is_200_even_when_optional_dependencies_are_absent()
     {
-        // Ollama down is Degraded, not Unhealthy — an absent copilot is a normal state
+        // An optional dependency down is Degraded, not Unhealthy — a normal local state
         // and must never 503 the app.
         await using var factory = Factory();
         using var client = factory.CreateClient();

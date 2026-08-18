@@ -14,7 +14,7 @@ builder.Services.AddScoped<AnalysisClient>();
 builder.Services.AddScoped(_ =>
 {
     var http = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
-    // Dev/test FakeAuth: the API's write endpoints (cancel, client-result, copilot, from-url)
+    // Dev/test FakeAuth: the API's write endpoints (cancel, client-result, from-url)
     // require an authenticated caller. Production replaces this with a real auth provider.
     http.DefaultRequestHeaders.Add("X-Fake-User", "guest");
     return http;

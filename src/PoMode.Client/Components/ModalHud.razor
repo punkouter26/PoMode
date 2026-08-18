@@ -102,16 +102,12 @@
             }
         }
     </RadzenCard>
-
-    <CopilotCard JobId="@JobId" WindowIndex="SelectedWindowIndex" />
 </div>
 
 @code {
     [Parameter, EditorRequired] public required ModalResult Result { get; set; }
 
     [Parameter, EditorRequired] public required IReadOnlyList<VisualWindow> Windows { get; set; }
-
-    [Parameter, EditorRequired] public required string JobId { get; set; }
 
     [Parameter] public int? SelectedWindowIndex { get; set; }
 

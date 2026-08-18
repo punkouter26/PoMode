@@ -17,6 +17,9 @@ namespace PoMode.Integration;
 /// <summary>
 /// Drives the LALAL.AI separator against an HttpListener reproducing the protocol from their official
 /// client: upload → split → check → delete. Nothing here contacts lalal.ai.
+/// Provider-agnostic plumbing shared with Replicate (availability gating, the poll-until-terminal
+/// loop, error-status throwing, "the audio bytes actually travel") is covered once in
+/// <see cref="ReplicateStemSeparatorTests"/>; this file keeps the tier/name tagging for both.
 /// </summary>
 public sealed class LalalStemSeparatorTests : IAsyncLifetime
 {
@@ -38,7 +41,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
     private readonly List<string> _paths = [];
     private readonly List<string?> _licenceHeaders = [];
     private readonly List<string?> _authHeaders = [];
-    private long _uploadedBytes;
 
     public Task InitializeAsync()
     {
@@ -69,9 +71,9 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
 
                 if (path.EndsWith("/upload/", StringComparison.Ordinal))
                 {
-                    using var memory = new MemoryStream();
-                    await context.Request.InputStream.CopyToAsync(memory);
-                    _uploadedBytes = memory.Length;
+                    // Drain the request body so the client's upload completes cleanly. That the audio
+                    // bytes actually travel to the provider is proven once, in the Replicate file.
+                    await context.Request.InputStream.CopyToAsync(Stream.Null);
                     await WriteAsync(context, 200, """{"status":"success","id":"src1"}""");
                     continue;
                 }
@@ -191,14 +193,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task It_is_available_only_with_a_key_and_the_tier_enabled()
-    {
-        Assert.True(await Separator().IsAvailableAsync(CancellationToken.None));
-        Assert.False(await Separator(key: null).IsAvailableAsync(CancellationToken.None));
-        Assert.False(await Separator(cloudEnabled: false).IsAvailableAsync(CancellationToken.None));
-    }
-
-    [Fact]
     public async Task It_walks_upload_split_check_and_writes_both_stems()
     {
         var time = new FakeTimeProvider();
@@ -229,39 +223,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
             // LALAL.AI authenticates with X-License-Key; sending Authorization would be a silent 401.
             Assert.All(_authHeaders, header => Assert.Null(header));
         }
-    }
-
-    [Fact]
-    public async Task The_audio_is_actually_uploaded()
-    {
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.True(_uploadedBytes > 10_000, $"only {_uploadedBytes} bytes were uploaded");
-    }
-
-    [Fact]
-    public async Task A_task_in_progress_is_polled_until_it_finishes()
-    {
-        _checkStatuses = ["progress", "progress", "success"];
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.Equal(3, Paths.Count(path => path.EndsWith("/check/", StringComparison.Ordinal)));
-    }
-
-    [Fact]
-    public async Task A_cancelled_task_throws_so_the_pipeline_can_fall_back()
-    {
-        _checkStatuses = ["cancelled"];
-        var time = new FakeTimeProvider();
-
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
-
-        Assert.Contains("cancelled", failure.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

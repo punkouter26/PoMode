@@ -17,10 +17,7 @@ public class HardwareProbeTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(config ?? []).Build();
         var modelRegistry = new ModelRegistry(
             configuration, provider.GetRequiredService<IHttpClientFactory>(), NullLogger<ModelRegistry>.Instance);
-        return new HardwareProbe(
-            configuration,
-            provider.GetRequiredService<IHttpClientFactory>(),
-            modelRegistry);
+        return new HardwareProbe(configuration, modelRegistry);
     }
 
     [Fact]
@@ -49,12 +46,11 @@ public class HardwareProbeTests
     }
 
     [Fact]
-    public async Task Probe_never_throws_when_ollama_is_unreachable()
+    public async Task Probe_never_throws_when_optional_dependencies_are_unreachable()
     {
-        // Whatever the machine state, ProbeAsync must complete and OllamaModels must be non-null.
+        // Whatever the machine state, ProbeAsync must complete without throwing.
         var report = await Probe().ProbeAsync(CancellationToken.None);
 
-        Assert.NotNull(report.OllamaModels);
         Assert.False(report.IsAzureHosted);
     }
 }

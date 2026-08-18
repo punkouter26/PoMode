@@ -71,31 +71,9 @@ public sealed class ClientResultTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    [Fact]
-    public async Task A_malformed_job_id_is_not_found()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync("/api/analysis/nope/client-result", GoodNotes());
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task A_second_post_is_refused_because_the_waiter_is_gone()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
-
-        var first = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", GoodNotes());
-        var second = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", GoodNotes());
-
-        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, second.StatusCode);
-        await parked;
-    }
+    // Per-rule validation behavior (flood cap, empty payloads, retry-after-reject, every reject
+    // boundary) is pinned by PoMode.Unit's ClientResultValidatorTests; this file keeps one HTTP
+    // representative of each contract outcome: accept, 400-with-reason, and 404-no-waiter.
 
     [Fact]
     public async Task An_out_of_range_pitch_is_rejected_with_a_reason_and_the_stage_stays_parked()
@@ -112,50 +90,5 @@ public sealed class ClientResultTests : IDisposable
         Assert.Contains("pitch", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
         // A rejected payload must not consume the waiter — the browser can correct itself and retry.
         Assert.False(parked.IsCompleted);
-    }
-
-    [Fact]
-    public async Task A_rejected_payload_can_be_followed_by_a_good_one()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
-
-        await client.PostAsJsonAsync(
-            $"/api/analysis/{JobId}/client-result", new[] { new NoteEvent(60, -5.0, 0.5, 90) });
-        var retry = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", GoodNotes());
-
-        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
-        Assert.Equal(2, (await parked).Count);
-    }
-
-    [Fact]
-    public async Task A_flood_of_notes_is_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
-
-        var flood = Enumerable.Range(0, 20_001)
-            .Select(_ => new NoteEvent(60, 0.0, 0.5, 90))
-            .ToArray();
-        var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", flood);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.False(parked.IsCompleted);
-    }
-
-    [Fact]
-    public async Task An_empty_payload_is_accepted_because_silence_really_has_no_notes()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
-
-        var response = await client.PostAsJsonAsync(
-            $"/api/analysis/{JobId}/client-result", Array.Empty<NoteEvent>());
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Empty(await parked);
     }
 }

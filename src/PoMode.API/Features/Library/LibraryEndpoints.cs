@@ -26,17 +26,21 @@ public static class LibraryEndpoints
                     continue;
                 }
 
-                // The pipeline stamps headline facts on completion; only jobs persisted before
-                // that field existed pay the full result.json read as a fallback.
+                // The pipeline stamps headline facts on completion; anything missing from the
+                // job.json (legacy jobs, or completed runs where the engine found no mode) pays
+                // the full result.json read as a fallback. PrimaryMode is the only field that
+                // can legitimately be null after a successful run, so it is the most common
+                // reason to fall back; we check all three rather than guessing.
                 var tonicName = state.TonicName;
                 var primaryMode = state.PrimaryMode;
                 var tempoBpm = state.TempoBpm;
-                if (tonicName is null && state.Stage == JobStage.Complete
+                if (state.Stage == JobStage.Complete
+                    && (tonicName is null || primaryMode is null || tempoBpm is null)
                     && await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct) is { } result)
                 {
-                    tonicName = result.TonicName;
-                    primaryMode = result.PrimaryMode?.ToString();
-                    tempoBpm = result.TempoBpm;
+                    tonicName ??= result.TonicName;
+                    primaryMode ??= result.PrimaryMode?.ToString();
+                    tempoBpm ??= result.TempoBpm;
                 }
                 entries.Add(new LibraryEntryDto(
                     state.JobId,

@@ -1,9 +1,22 @@
+.live-description {
+    /* RadzenText renders as <p> with `pointer-events: auto` by default; in our flex layout that
+       <p> was stacking its rendered bounding box *over* the Start-listening button below it,
+       making the button unclickable through Playwright (and on real touch surfaces). Keep the
+       text on its own line and let the live-controls div anchor the button. */
+    margin: 0 0 0.75rem;
+    display: block;
+}
+
 .live-controls {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     margin-top: 0.75rem;
     flex-wrap: wrap;
+    /* The control row owns its own hit-test area; the description above is paragraph-sized
+       (one line) and cannot reach down into the buttons. */
+    position: relative;
+    z-index: 1;
 }
 
 .live-hint {

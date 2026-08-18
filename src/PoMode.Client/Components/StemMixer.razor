@@ -51,6 +51,11 @@
         </div>
         <canvas class="mixer-spectrum" @ref="_spectrumCanvas" aria-hidden="true"></canvas>
         <RadzenText class="mixer-note" Text="@StatusText" />
+        @if (_status is "loading" or "idle")
+        {
+            <RadzenProgressBar class="mixer-loading" Value="100" ShowValue="false"
+                               Mode="ProgressBarMode.Indeterminate" aria-label="Loading stems" />
+        }
         @if (_karaokeError is not null)
         {
             <RadzenText class="mixer-note karaoke-error" Text="@_karaokeError" />
@@ -101,9 +106,23 @@
     private string? _loadedJobId;
     private double? _sentSeek;
 
-    private string StatusText => _duration <= 0
-        ? "Loading stems…"
-        : $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio · Space = play/pause · , = restart";
+    private string StatusText
+    {
+        get
+        {
+            if (_status is "loading")
+            {
+                return "Loading stems…";
+            }
+            if (_status is "idle" || _duration <= 0)
+            {
+                // Mixer's buttons are disabled while we wait, but the strip itself still shows;
+                // explain what is being loaded so the user knows the page is not hung.
+                return _status is "idle" ? "Preparing stems…" : "Loading stems…";
+            }
+            return $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio · Space = play/pause · , = restart";
+        }
+    }
 
     private string MetronomeLabel => _beatBpm > 0 ? $"Click · {_beatBpm:0} BPM" : "Click";
 

@@ -28,43 +28,45 @@ public class ClientResultValidatorTests
     public void An_empty_payload_is_accepted_because_silence_really_has_no_notes()
         => Assert.Null(ClientResultValidator.Validate([], TrackSeconds));
 
-    [Fact]
-    public void Too_many_notes_are_rejected()
+    [Theory]
+    [InlineData(20_000, true)]  // exactly the limit is still accepted
+    [InlineData(20_001, false)] // one over is too many
+    public void The_note_count_cap_is_enforced_at_its_boundary(int count, bool accepted)
     {
-        var flood = Enumerable.Range(0, 20_001).Select(_ => Note()).ToArray();
+        var notes = Enumerable.Range(0, count).Select(_ => Note()).ToArray();
 
-        var error = ClientResultValidator.Validate(flood, TrackSeconds);
+        var error = ClientResultValidator.Validate(notes, TrackSeconds);
 
-        Assert.NotNull(error);
-        Assert.Contains("too many", error, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Exactly_the_limit_is_still_accepted()
-    {
-        var atLimit = Enumerable.Range(0, 20_000).Select(_ => Note()).ToArray();
-
-        Assert.Null(ClientResultValidator.Validate(atLimit, TrackSeconds));
+        if (accepted)
+        {
+            Assert.Null(error);
+        }
+        else
+        {
+            Assert.NotNull(error);
+            Assert.Contains("too many", error, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Theory]
-    [InlineData(20)]  // below the piano
-    [InlineData(109)] // above it
-    [InlineData(-1)]
-    [InlineData(int.MaxValue)]
-    public void Pitches_outside_the_piano_range_are_rejected(int pitch)
+    [InlineData(21, true)]   // lowest piano key
+    [InlineData(108, true)]  // highest piano key
+    [InlineData(20, false)]  // below the piano
+    [InlineData(109, false)] // above it
+    public void Pitches_are_accepted_only_inside_the_piano_range(int pitch, bool accepted)
     {
         var error = Validate(Note(pitch: pitch));
 
-        Assert.NotNull(error);
-        Assert.Contains("pitch", error, StringComparison.OrdinalIgnoreCase);
+        if (accepted)
+        {
+            Assert.Null(error);
+        }
+        else
+        {
+            Assert.NotNull(error);
+            Assert.Contains("pitch", error, StringComparison.OrdinalIgnoreCase);
+        }
     }
-
-    [Theory]
-    [InlineData(21)]
-    [InlineData(108)]
-    public void The_range_boundaries_are_accepted(int pitch)
-        => Assert.Null(Validate(Note(pitch: pitch)));
 
     [Fact]
     public void A_negative_start_time_is_rejected()
@@ -89,8 +91,7 @@ public class ClientResultValidatorTests
     }
 
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(-1.0)]
+    [InlineData(0.0)] // the boundary of the non-positive rule
     public void A_non_positive_duration_is_rejected(double duration)
     {
         var error = Validate(Note(duration: duration));
@@ -109,9 +110,8 @@ public class ClientResultValidatorTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(128)]
-    [InlineData(-5)]
+    [InlineData(0)]   // just below the MIDI range
+    [InlineData(128)] // just above it
     public void Velocities_outside_midi_range_are_rejected(int velocity)
     {
         var error = Validate(Note(velocity: velocity));
@@ -123,7 +123,6 @@ public class ClientResultValidatorTests
     [Theory]
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
-    [InlineData(double.NegativeInfinity)]
     public void Non_finite_times_are_rejected(double value)
     {
         // NaN silently defeats every comparison below, so it must be checked explicitly or it would

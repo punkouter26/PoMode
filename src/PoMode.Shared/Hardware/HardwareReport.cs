@@ -12,6 +12,5 @@ public sealed record ModelStatus(string Key, bool Available, long SizeBytes);
 public sealed record HardwareReport(
     bool IsAzureHosted,
     GpuReport? Gpu,
-    IReadOnlyList<string> OllamaModels,
     IReadOnlyList<string> ConfiguredProviders,
     IReadOnlyList<ModelStatus> Models);

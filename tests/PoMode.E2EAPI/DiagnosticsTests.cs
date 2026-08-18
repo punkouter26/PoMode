@@ -32,7 +32,7 @@ public sealed class DiagnosticsTests : IDisposable
 
         var response = await client.GetAsync("/health");
 
-        // Degraded is a 200 too: it means an optional dependency (Ollama, the blob mirror)
+        // Degraded is a 200 too: it means an optional dependency (the blob mirror)
         // is absent — a normal local state that must never read as an outage.
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync();
@@ -64,7 +64,6 @@ public sealed class DiagnosticsTests : IDisposable
             Assert.Equal("EnvironmentVariables", report.SecretSource);
             Assert.NotNull(report.Hardware);
             Assert.False(report.Hardware.IsAzureHosted);
-            Assert.NotNull(report.Hardware.OllamaModels);
         }
         finally
         {

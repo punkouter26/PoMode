@@ -65,11 +65,6 @@ public class AppFixture : IAsyncLifetime
                 // the fake pipeline's deterministic output, so the browser tier is switched off;
                 // ClientDelegatedFlowTests covers Tier 2 on its own fixture with it switched on.
                 ["Tier2__Enabled"] = "false",
-                // Point the copilot at a loopback port with nothing listening. Otherwise these tests
-                // would call whatever Ollama the dev box happens to run, making them slow and their
-                // assertions dependent on a language model's wording. The reachable-Ollama path is
-                // covered deterministically by OllamaCopilotClientTests against a fixture server.
-                ["Copilot__BaseUrl"] = "http://127.0.0.1:5398",
             },
         };
         ConfigureEnvironment(startInfo.Environment);

@@ -8,7 +8,6 @@ using PoMode.API.Features.Audio;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Features.StemSeparation;
 using PoMode.API.Pipeline;
-using PoMode.Shared.Analysis;
 using PoMode.TestCommon;
 using Xunit;
 
@@ -17,6 +16,9 @@ namespace PoMode.Integration;
 /// <summary>
 /// Drives the Replicate separator against an HttpListener reproducing the documented prediction
 /// protocol. No test here ever contacts api.replicate.com, so no test can spend money.
+/// Provider-agnostic plumbing shared with LALAL.AI (tier tagging, cancelled-status handling) is
+/// covered once in <see cref="LalalStemSeparatorTests"/>; this file keeps availability gating and
+/// the polling loop for both.
 /// </summary>
 public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
 {
@@ -160,15 +162,6 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
     }
 
     [Fact]
-    public void It_is_cloud_tier_and_named()
-    {
-        var separator = Separator();
-
-        Assert.Equal(ExecutionTier.Cloud, separator.Tier);
-        Assert.Equal(nameof(ReplicateStemSeparator), separator.Name);
-    }
-
-    [Fact]
     public async Task It_is_available_only_with_a_token_and_the_tier_enabled()
     {
         Assert.True(await Separator().IsAvailableAsync(CancellationToken.None));
@@ -233,16 +226,6 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
             () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
 
         Assert.Contains("CUDA out of memory", failure.Message);
-    }
-
-    [Fact]
-    public async Task A_canceled_prediction_throws_so_the_pipeline_can_fall_back()
-    {
-        _pollStatuses = ["canceled"];
-        var time = new FakeTimeProvider();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
     }
 
     [Fact]

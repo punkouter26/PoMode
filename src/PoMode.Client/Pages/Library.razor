@@ -1,6 +1,7 @@
 @page "/library"
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
+@inject MockDataState MockData
 @inject NavigationManager Navigation
 
 <PageTitle>PoMode</PageTitle>
@@ -30,7 +31,18 @@
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Analyzed" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px" />
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Key" Width="130px">
                         <Template Context="entry">
-                            @(entry.TonicName is null ? "—" : $"{entry.TonicName} {entry.PrimaryMode ?? ""}")
+                            @if (entry.TonicName is null)
+                            {
+                                <span>—</span>
+                            }
+                            else if (string.IsNullOrEmpty(entry.PrimaryMode))
+                            {
+                                <span><strong>@entry.TonicName</strong> <span class="library-key-missing">— mode unclear</span></span>
+                            }
+                            else
+                            {
+                                <span><strong>@entry.TonicName</strong> @entry.PrimaryMode</span>
+                            }
                         </Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Tempo" Width="90px">
@@ -96,7 +108,13 @@
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
 
     protected override async Task OnInitializedAsync()
-        => _entries = await Analysis.GetLibraryAsync() ?? [];
+    {
+        _entries = await Analysis.GetLibraryAsync() ?? [];
+        // The library lists persisted jobs — the data is real persistence, not placeholders.
+        // The mock banner is the Analyze page's "I haven't shown you a real result yet" hint;
+        // showing it here implies the library is mocked, which it isn't.
+        MockData.SetLive();
+    }
 
     private void Open(LibraryEntryDto entry)
         => Navigation.NavigateTo($"/?job={entry.JobId}");

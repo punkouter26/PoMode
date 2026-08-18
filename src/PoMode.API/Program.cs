@@ -4,7 +4,6 @@ using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Batch;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Cloud;
-using PoMode.API.Features.Copilot;
 using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Library;
 using PoMode.API.Features.Live;
@@ -48,7 +47,6 @@ builder.Services.AddSingleton<HardwareProbe>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddHealthChecks()
     .AddCheck<JobStorageHealthCheck>("job-storage")
-    .AddCheck<OllamaHealthCheck>("ollama")
     .AddCheck<CloudProvidersHealthCheck>("cloud-providers");
 
 builder.Services.AddSingleton(TimeProvider.System);
@@ -73,7 +71,6 @@ builder.Services.AddSingleton<ArtifactModalAnalyzer>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
 builder.Services.AddSingleton<CloudCredentials>();
 builder.Services.AddSingleton<ExecutionPlanner>();
-builder.Services.AddSingleton<OllamaCopilotClient>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
@@ -114,7 +111,6 @@ app.MapUrlIngest();
 app.MapWebRuntime();
 app.MapMidiExport();
 app.MapMusicXmlExport();
-app.MapCopilot();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 app.MapFallbackToFile("index.html");

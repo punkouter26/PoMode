@@ -94,7 +94,6 @@ public class JsonContextTests
             Hardware: new HardwareReport(
                 IsAzureHosted: false,
                 Gpu: new GpuReport("NVIDIA", 8192, 6000, CudaAvailable: true, DmlAvailable: true),
-                OllamaModels: ["qwen2.5:7b"],
                 ConfiguredProviders: ["ReplicateApiToken"],
                 Models: [new ModelStatus("basic-pitch", Available: false, SizeBytes: 0)]));
 
@@ -104,7 +103,6 @@ public class JsonContextTests
 
         Assert.NotNull(back?.Hardware?.Gpu);
         Assert.Equal(6000, back.Hardware.Gpu.FreeVramMb);
-        Assert.Equal(["qwen2.5:7b"], back.Hardware.OllamaModels);
     }
 
     [Fact]
