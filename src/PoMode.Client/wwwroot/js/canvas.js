@@ -223,9 +223,12 @@ function drawNotes(state, ctx, width, laneHeight) {
         const capsuleWidth = Math.max(timeToX(state, endSec, width) - x, 2);
         const top = (model.maxPitch - note.midiPitch) * rowHeight;
 
-        const active = state.playhead >= note.startSec && state.playhead < endSec;
+        // Halo when the playhead is on this note, OR when the vocal overlay is on and the note
+        // has already played (so the user sees the strip of synth notes they just heard).
+        const haloed = (state.playhead >= note.startSec && state.playhead < endSec)
+            || (state.overlay.vocal && note.startSec <= state.playhead && state.playhead - note.startSec < 0.8);
         ctx.fillStyle = colourForRole(state, note.role);
-        if (active) {
+        if (haloed) {
             // A soft halo behind the sounding note: same colour, low alpha, slightly larger.
             ctx.globalAlpha = 0.28;
             roundedRect(ctx, x - 2, top - 2, capsuleWidth + 4, capsuleHeight + 4, Math.min(5, (capsuleHeight + 4) / 2));
@@ -489,6 +492,7 @@ export function init(canvas, dotNetRef) {
         followTarget: null,
         followSuspendedUntil: 0,
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        overlay: { vocal: true, backing: false },
         colours: readColours(canvas),
         frame: null,
         drag: null,
@@ -605,6 +609,17 @@ export function setSelection(canvas, index) {
         return;
     }
     state.selection = index;
+    invalidate(state);
+}
+
+/// Toggle a note-overlay (visual only — the audio layer is owned by mixer.js). When `vocal` is true,
+/// notes near the playhead get a soft halo so the user sees "what you're hearing right now".
+export function setOverlay(canvas, source, enabled) {
+    const state = states.get(canvas);
+    if (!state || !(source in state.overlay)) {
+        return;
+    }
+    state.overlay[source] = enabled;
     invalidate(state);
 }
 

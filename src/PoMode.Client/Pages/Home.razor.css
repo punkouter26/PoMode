@@ -49,26 +49,111 @@
     flex-wrap: wrap;
 }
 
+.export-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.export-menu {
+    position: relative;
+}
+
+.export-toggle {
+    width: auto;
+    padding: 0 0.75rem;
+    height: 2rem;
+}
+
+.export-dropdown {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    min-width: 11rem;
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    background: var(--pm-surface);
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+    box-shadow: var(--pm-shadow);
+    z-index: 11;
+}
+
+/* "More ways to get audio in" disclosure under the dropzone. Fieldset/legend lets the section
+   titles render naturally without bringing in another Radzen control. */
+.more-ways {
+    margin-top: 0.75rem;
+    background: transparent;
+    border: 0;
+    color: var(--pm-accent);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0;
+}
+
+.more-ways:hover { text-decoration: underline; }
+.more-ways:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; border-radius: 0.2rem; }
+
+.more-inputs {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    text-align: left;
+    width: 100%;
+    max-width: 34rem;
+}
+
+.more-input-block {
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem 0.75rem;
+    background: var(--pm-surface);
+}
+
+.more-input-block legend {
+    padding: 0 0.35rem;
+    color: var(--pm-fg-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.more-input-hint {
+    color: var(--pm-fg-muted);
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+    display: block;
+}
+
+.intake-card ::deep .rz-card-body {
+    padding: 0;
+}
+
 .upload-hero {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.6rem;
     text-align: center;
-    padding: 2rem 1rem;
+    padding: 1.25rem 1rem 1rem;
     border: 2px dashed var(--pm-border);
     border-radius: 0.75rem;
     margin-top: 0.5rem;
 }
 
 .upload-hero ::deep .upload-hero-icon {
-    font-size: 2.5rem;
+    font-size: 2rem;
     color: var(--pm-accent);
 }
 
 .upload-hero-sub {
     color: var(--pm-fg-muted);
     max-width: 34rem;
+    font-size: 0.9rem;
 }
 
 .preview-line {
@@ -85,6 +170,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+}
+
+.landscape-title {
+    font-weight: 600;
 }
 
 .landscape-canvas {

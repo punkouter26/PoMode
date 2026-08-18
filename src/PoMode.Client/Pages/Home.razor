@@ -12,68 +12,77 @@
 
 <PageTitle>PoMode</PageTitle>
 
-<RadzenCard>
-    <RadzenText TextStyle="TextStyle.H5" Text="Audio Modal Analyzer" />
-    <RadzenTabs>
-        <Tabs>
-            <RadzenTabsItem Text="Upload">
-                <div class="upload-hero">
-                    <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
-                    <RadzenText TextStyle="TextStyle.H6" Text="Drop in a track, get the theory" />
-                    <RadzenText class="upload-hero-sub"
-                                Text="Upload an .mp3 or .wav (max 100 MB) to analyze its melody, chords, and scale modes." />
-                    <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
-                                  Progress="@OnUploadProgress"
-                                  Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
-                </div>
-                @if (_uploading)
-                {
-                    <div class="upload-progress">
-                        <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
-                        <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
+<RadzenCard class="intake-card">
+    @* One dropzone, four intake paths. The primary action is "drop a file here" — everything else
+       lives behind a small "More ways" disclosure so the empty state stays focused on the work. *@
+    <div class="upload-hero">
+        <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
+        <RadzenText TextStyle="TextStyle.H6" Text="Drop a track, get the theory" />
+        <RadzenText class="upload-hero-sub"
+                    Text=".mp3 or .wav · up to 100 MB" />
+        <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
+                      Progress="@OnUploadProgress"
+                      Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+        @if (_uploading)
+        {
+            <div class="upload-progress">
+                <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
+                <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
+            </div>
+        }
+        @if (_uploadError is not null)
+        {
+            <RadzenText class="upload-error" Text="@_uploadError" />
+        }
+        <button class="more-ways" type="button" @onclick="ToggleMoreInputsAsync"
+                aria-expanded="@_moreInputsOpen" aria-controls="more-inputs-panel">
+            @(_moreInputsOpen ? "Hide other ways" : "More ways to get audio in")
+        </button>
+        @if (_moreInputsOpen)
+        {
+            <div id="more-inputs-panel" class="more-inputs" role="region" aria-label="Other ways to provide audio">
+                <fieldset class="more-input-block">
+                    <legend>From URL</legend>
+                    <RadzenText class="more-input-hint"
+                                Text="Paste a page URL (YouTube, SoundCloud, …). The server fetches the audio with yt-dlp." />
+                    <div class="url-row">
+                        <RadzenTextBox @bind-Value="_url" Placeholder="https://…" Disabled="@_fetchingUrl"
+                                       aria-label="Audio page URL" />
+                        <RadzenButton Text="@(_fetchingUrl ? "Fetching…" : "Analyze")" Click="@OnAnalyzeUrl"
+                                      Disabled="@_fetchingUrl" ButtonStyle="ButtonStyle.Primary" />
                     </div>
-                }
-                @if (_uploadError is not null)
-                {
-                    <RadzenText class="upload-error" Text="@_uploadError" />
-                }
-            </RadzenTabsItem>
-            <RadzenTabsItem Text="From URL">
-                <RadzenText Text="Paste a page URL (YouTube, SoundCloud, …). The server fetches the audio with yt-dlp." />
-                <div class="url-row">
-                    <RadzenTextBox @bind-Value="_url" Placeholder="https://…" Disabled="@_fetchingUrl"
-                                   aria-label="Audio page URL" />
-                    <RadzenButton Text="@(_fetchingUrl ? "Fetching…" : "Analyze")" Click="@OnAnalyzeUrl"
-                                  Disabled="@_fetchingUrl" ButtonStyle="ButtonStyle.Primary" />
-                </div>
-                @if (_urlError is not null)
-                {
-                    <RadzenText class="upload-error" Text="@_urlError" />
-                }
-            </RadzenTabsItem>
-            <RadzenTabsItem Text="Record">
-                <RadzenText Text="Record from your microphone, then analyze the recording like an upload." />
-                <div class="record-row">
-                    @if (!_recording)
+                    @if (_urlError is not null)
                     {
-                        <RadzenButton Text="Start recording" Click="@OnStartRecording" ButtonStyle="ButtonStyle.Primary" />
+                        <RadzenText class="upload-error" Text="@_urlError" />
                     }
-                    else
+                </fieldset>
+                <fieldset class="more-input-block">
+                    <legend>Record</legend>
+                    <RadzenText class="more-input-hint"
+                                Text="Capture from your microphone, then analyze like an upload." />
+                    <div class="record-row">
+                        @if (!_recording)
+                        {
+                            <RadzenButton Text="Start recording" Click="@OnStartRecording" ButtonStyle="ButtonStyle.Primary" />
+                        }
+                        else
+                        {
+                            <RadzenButton Text="Stop and analyze" Click="@OnStopRecording" ButtonStyle="ButtonStyle.Danger" />
+                            <RadzenText class="recording-hint" Text="Recording…" />
+                        }
+                    </div>
+                    @if (_recordError is not null)
                     {
-                        <RadzenButton Text="Stop and analyze" Click="@OnStopRecording" ButtonStyle="ButtonStyle.Danger" />
-                        <RadzenText class="recording-hint" Text="Recording…" />
+                        <RadzenText class="upload-error" Text="@_recordError" />
                     }
-                </div>
-                @if (_recordError is not null)
-                {
-                    <RadzenText class="upload-error" Text="@_recordError" />
-                }
-            </RadzenTabsItem>
-            <RadzenTabsItem Text="Batch">
-                <BatchPanel />
-            </RadzenTabsItem>
-        </Tabs>
-    </RadzenTabs>
+                </fieldset>
+                <fieldset class="more-input-block">
+                    <legend>Batch</legend>
+                    <BatchPanel />
+                </fieldset>
+            </div>
+        }
+    </div>
     @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
        declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
     <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
@@ -118,27 +127,43 @@
 
 @if (_result is not null && _visual is not null)
 {
-    <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow" />
-    <div class="export-links">
-        <RadzenLink Path="@($"api/analysis/{_status!.JobId}/midi")" Text="Download MIDI" Target="_blank" />
-        <RadzenLink Path="@($"api/analysis/{_status!.JobId}/musicxml")" Text="Download MusicXML" Target="_blank" />
+    <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow"
+              OnShowLandscape="ShowLandscapeAsync" />
+    <div class="export-row">
         <RadzenButton class="share-card-button" Text="Share card (PNG)" Size="ButtonSize.Small"
-                      ButtonStyle="ButtonStyle.Light" Click="@OnShareCard" />
-    </div>
-    <RadzenCard class="landscape-card">
-        <div class="landscape-head">
-            <RadzenText TextStyle="TextStyle.H6" Text="3D mode landscape" />
-            <RadzenToggleButton Value="@_landscapeOn" Change="@ToggleLandscape"
-                                Text="@(_landscapeOn ? "Hide" : "Show")" Size="ButtonSize.Small"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary" />
+                      ButtonStyle="ButtonStyle.Primary" Click="@OnShareCard" />
+        <div class="export-menu">
+            <button class="icon-button export-toggle" type="button" @onclick="ToggleExportAsync"
+                    aria-haspopup="true" aria-expanded="@_exportOpen" title="Export">
+                Export ▾
+            </button>
+            @if (_exportOpen)
+            {
+                <div class="export-dropdown" role="menu">
+                    <a class="overflow-item" href="@($"api/analysis/{_status!.JobId}/midi")" target="_blank" rel="noopener" role="menuitem">
+                        Download MIDI
+                    </a>
+                    <a class="overflow-item" href="@($"api/analysis/{_status!.JobId}/musicxml")" target="_blank" rel="noopener" role="menuitem">
+                        Download MusicXML
+                    </a>
+                </div>
+            }
         </div>
-        @if (_landscapeOn)
-        {
+    </div>
+    @* The 3D mode landscape stays at the bottom — promoted from a RadzenCard to a compact
+       disclosure that only mounts the WebGL scene on demand. *@
+    @if (_landscapeOn)
+    {
+        <RadzenCard class="landscape-card">
+            <div class="landscape-head">
+                <RadzenText class="landscape-title" Text="3D mode landscape" />
+                <button class="icon-button" type="button" @onclick="HideLandscapeAsync" aria-label="Hide 3D mode landscape" title="Hide">✕</button>
+            </div>
             <canvas class="landscape-canvas" @ref="_landscapeCanvas"></canvas>
             <RadzenText class="landscape-hint"
                         Text="Drag to orbit · scroll to zoom · height is confidence, colour is mode" />
-        }
-    </RadzenCard>
+        </RadzenCard>
+    }
 }
 
 @code {
@@ -177,6 +202,35 @@
     private string? _urlError;
     private bool _recording;
     private string? _recordError;
+    private bool _moreInputsOpen;
+    private bool _exportOpen;
+
+    private void ToggleMoreInputsAsync() => _moreInputsOpen = !_moreInputsOpen;
+
+    private void ToggleExportAsync() => _exportOpen = !_exportOpen;
+
+    private void ShowLandscapeAsync()
+    {
+        _landscapeOn = true;
+        _landscapeNeedsInit = true;
+    }
+
+    private async Task HideLandscapeAsync()
+    {
+        _landscapeOn = false;
+        if (_landscape is not null)
+        {
+            try { await _landscape.InvokeVoidAsync("dispose", _landscapeCanvas); }
+            catch (JSDisconnectedException) { /* circuit torn down */ }
+        }
+    }
+
+    /// <summary>Disposes the WebGL scene when a new job starts (TrackJobAsync calls this).</summary>
+    private Task ToggleLandscape(bool on)
+    {
+        if (on) { ShowLandscapeAsync(); return Task.CompletedTask; }
+        return HideLandscapeAsync();
+    }
     private readonly HashSet<string> _delegatedJobs = [];
 
     /// <summary>
@@ -223,16 +277,6 @@
             {
                 startSec = w.StartSec, endSec = w.EndSec, modeTag = w.ModeTag, confidence = w.ModeConfidence,
             }));
-        }
-    }
-
-    private async Task ToggleLandscape(bool on)
-    {
-        _landscapeOn = on;
-        _landscapeNeedsInit = on;
-        if (!on && _landscape is not null)
-        {
-            await _landscape.InvokeVoidAsync("dispose", _landscapeCanvas);
         }
     }
 

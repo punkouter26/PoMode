@@ -7,6 +7,15 @@ namespace PoMode.Unit.Client;
 public sealed class MockDataStateTests
 {
     [Fact]
+    public void Default_state_is_live_so_cold_start_does_not_flash_the_banner()
+    {
+        // No data is on screen yet, mock or otherwise — flashing "USING MOCK DATA" on a fresh
+        // client is misleading. SetMock() flips it on when a completed job's plan actually contains
+        // a placeholder, which is the only honest trigger.
+        Assert.False(new MockDataState().IsMockData);
+    }
+
+    [Fact]
     public void All_real_plan_is_not_mock()
     {
         var plan = new[]

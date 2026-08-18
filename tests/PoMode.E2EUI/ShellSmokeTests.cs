@@ -7,7 +7,7 @@ namespace PoMode.E2EUI;
 public class ShellSmokeTests(AppFixture app)
 {
     [Fact]
-    public async Task Shell_renders_header_and_mock_data_banner()
+    public async Task Shell_renders_header_without_mock_banner_on_cold_load()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
@@ -18,7 +18,11 @@ public class ShellSmokeTests(AppFixture app)
         // First WASM load downloads the framework and can be slow; raise only the assertion
         // timeout (not a Task.Delay) so Playwright's auto-wait tolerates it.
         var expectOptions = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
-        await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(expectOptions);
+        // No job has run yet — there's nothing on screen, mock or otherwise, so the banner must stay
+        // hidden. It only flips on when a completed job's plan actually touched a fake/placeholder
+        // executor (see MockDataState.SetMock in Home.razor).
+        var hiddenOptions = new LocatorAssertionsToBeHiddenOptions { Timeout = AppFixture.ExpectTimeoutMs };
+        await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeHiddenAsync(hiddenOptions);
         await Assertions.Expect(page.GetByText("PoMode").First).ToBeVisibleAsync(expectOptions);
         await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Diagnostics" })).ToBeVisibleAsync(expectOptions);
     }

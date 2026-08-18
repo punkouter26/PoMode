@@ -5,103 +5,115 @@
    repeated here: JobProgress already renders them next to each stage's executor. *@
 
 <div class="hud">
-    <RadzenCard class="hud-card">
-        <RadzenText TextStyle="TextStyle.H6" Text="Primary mode" />
-        <RadzenText class="hud-headline" Text="@PrimaryHeadline" />
-        @if (Result.PrimaryMode is not null)
-        {
-            <RadzenProgressBar Value="@(Result.PrimaryConfidence * 100)" ShowValue="false" class="hud-bar" />
-            <RadzenText class="hud-sub" Text="@($"confidence {Result.PrimaryConfidence:P0}")" />
-        }
-        else
-        {
-            <RadzenText class="hud-sub"
-                        Text="No window had enough sung material to name a mode." />
-        }
-        <RadzenText class="hud-sub"
-                    Text="@($"Tempo {Result.TempoBpm:0} BPM{(Result.TempoEstimated ? " (estimated)" : "")} · {Windows.Count} windows")" />
-    </RadzenCard>
-
-    <RadzenCard class="hud-card">
-        <RadzenText TextStyle="TextStyle.H6" Text="Harmonic context" />
-        @if (Selected is null)
-        {
-            <RadzenText class="hud-sub" Text="Click a chord block on the timeline to inspect a window." />
-        }
-        else
-        {
-            <dl class="hud-facts">
-                <dt>Chord</dt>
-                <dd class="hud-chord">@Selected.ChordSymbol</dd>
-                <dt>Measure</dt>
-                <dd>m@(Selected.MeasureNumber)</dd>
-                <dt>Tonic</dt>
-                <dd>@Result.TonicName <span class="hud-sub">(@Result.TonicConfidence.ToString("P0"))</span></dd>
-                <dt>Sung mask</dt>
-                <dd class="hud-mask">@Selected.MaskHex</dd>
-                <dt>Window</dt>
-                <dd>@Selected.StartSec.ToString("0.00")–@Selected.EndSec.ToString("0.00")s</dd>
-            </dl>
-        }
-    </RadzenCard>
-
-    <RadzenCard class="hud-card">
-        <RadzenText TextStyle="TextStyle.H6" Text="Scale degrees" />
-        @if (Selected is null)
-        {
-            <RadzenText class="hud-sub" Text="No window selected." />
-        }
-        else
-        {
-            <div class="degree-grid">
-                @foreach (var badge in Selected.Degrees)
+    <RadzenCard class="hud-card hud-primary">
+        <div class="hud-primary-row">
+            <div class="hud-primary-text">
+                <RadzenText TextStyle="TextStyle.H6" Text="Primary mode" />
+                <RadzenText class="hud-headline" Text="@PrimaryHeadline" />
+                @if (Result.PrimaryMode is not null)
                 {
-                    <span class="@DegreeClass(badge)" title="@DegreeTitle(badge)">@badge.Label</span>
+                    <RadzenProgressBar Value="@(Result.PrimaryConfidence * 100)" ShowValue="false" class="hud-bar" />
+                    <RadzenText class="hud-sub" Text="@($"confidence {Result.PrimaryConfidence:P0}")" />
                 }
+                else
+                {
+                    <RadzenText class="hud-sub"
+                                Text="No window had enough sung material to name a mode." />
+                }
+                <RadzenText class="hud-sub"
+                            Text="@($"Tempo {Result.TempoBpm:0} BPM{(Result.TempoEstimated ? " (estimated)" : "")} · {Windows.Count} windows")" />
             </div>
-            <p class="degree-key">
-                <span class="degree sung"></span>sung
-                <span class="degree characteristic"></span>modal
-                <span class="degree in-mode"></span>in mode
-                <span class="degree"></span>unused
-            </p>
-        }
+            <button class="hud-landscape-link" type="button" @onclick="OnShowLandscapeAsync" title="Open the 3D mode landscape">
+                3D landscape ↗
+            </button>
+        </div>
     </RadzenCard>
 
-    <RadzenCard class="hud-card">
-        <RadzenText TextStyle="TextStyle.H6" Text="Mode match" />
-        @if (Selected is null)
-        {
-            <RadzenText class="hud-sub" Text="No window selected." />
-        }
-        else if (Selected.InsufficientEvidence || Selected.ModeTag is null)
-        {
-            @* Honest empty state: the engine needs 3+ distinct sung pitch classes (spec §6). *@
-            <RadzenText class="hud-sub"
-                        Text="Not enough sung notes in this window to name a mode." />
-        }
-        else
-        {
-            <RadzenText class="hud-headline" Text="@($"{Selected.ModeTag} ({Selected.ModeConfidence:P0})")" />
-            <RadzenProgressBar Value="@((Selected.ModeConfidence ?? 0) * 100)" ShowValue="false" class="hud-bar" />
-            @if (Selected.Alternatives.Count == 0)
+    @* The three window-detail cards collapse into a single "Details" disclosure. They were
+       individually visible before but on a fresh analysis they all read "No window selected" —
+       pure noise. Now they only render once a window is actually selected. *@
+    @if (Selected is null)
+    {
+        <RadzenCard class="hud-card hud-empty">
+            <RadzenText class="hud-sub" Text="Click a chord block on the timeline to inspect a window." />
+        </RadzenCard>
+    }
+    else
+    {
+        <RadzenCard class="hud-card">
+            <button class="hud-disclosure" type="button" @onclick="ToggleDetailsAsync"
+                    aria-expanded="@_detailsOpen" aria-controls="hud-details">
+                @(_detailsOpen ? "Hide details" : "Show details")
+            </button>
+            @if (_detailsOpen)
             {
-                <RadzenText class="hud-sub" Text="No close alternatives." />
+                <div id="hud-details" class="hud-details">
+                    <section class="hud-section">
+                        <RadzenText TextStyle="TextStyle.Subtitle2" Text="Harmonic context" />
+                        <dl class="hud-facts">
+                            <dt>Chord</dt>
+                            <dd class="hud-chord">@Selected.ChordSymbol</dd>
+                            <dt>Measure</dt>
+                            <dd>m@(Selected.MeasureNumber)</dd>
+                            <dt>Tonic</dt>
+                            <dd>@Result.TonicName <span class="hud-sub">(@Result.TonicConfidence.ToString("P0"))</span></dd>
+                            <dt>Sung mask</dt>
+                            <dd class="hud-mask">@Selected.MaskHex</dd>
+                            <dt>Window</dt>
+                            <dd>@Selected.StartSec.ToString("0.00")–@Selected.EndSec.ToString("0.00")s</dd>
+                        </dl>
+                    </section>
+
+                    <section class="hud-section">
+                        <RadzenText TextStyle="TextStyle.Subtitle2" Text="Scale degrees" />
+                        <div class="degree-grid">
+                            @foreach (var badge in Selected.Degrees)
+                            {
+                                <span class="@DegreeClass(badge)" title="@DegreeTitle(badge)">@badge.Label</span>
+                            }
+                        </div>
+                        <p class="degree-key">
+                            <span class="degree sung"></span>sung
+                            <span class="degree characteristic"></span>modal
+                            <span class="degree in-mode"></span>in mode
+                            <span class="degree"></span>unused
+                        </p>
+                    </section>
+
+                    <section class="hud-section">
+                        <RadzenText TextStyle="TextStyle.Subtitle2" Text="Mode match" />
+                        @if (Selected.InsufficientEvidence || Selected.ModeTag is null)
+                        {
+                            @* Honest empty state: the engine needs 3+ distinct sung pitch classes (spec §6). *@
+                            <RadzenText class="hud-sub"
+                                        Text="Not enough sung notes in this window to name a mode." />
+                        }
+                        else
+                        {
+                            <RadzenText class="hud-headline" Text="@($"{Selected.ModeTag} ({Selected.ModeConfidence:P0})")" />
+                            <RadzenProgressBar Value="@((Selected.ModeConfidence ?? 0) * 100)" ShowValue="false" class="hud-bar" />
+                            @if (Selected.Alternatives.Count == 0)
+                            {
+                                <RadzenText class="hud-sub" Text="No close alternatives." />
+                            }
+                            else
+                            {
+                                <ul class="alternatives">
+                                    @foreach (var alternative in Selected.Alternatives)
+                                    {
+                                        <li>
+                                            <span class="alt-mode">@alternative.Mode</span>
+                                            <span class="hud-sub">@alternative.Confidence.ToString("P0")</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        }
+                    </section>
+                </div>
             }
-            else
-            {
-                <ul class="alternatives">
-                    @foreach (var alternative in Selected.Alternatives)
-                    {
-                        <li>
-                            <span class="alt-mode">@alternative.Mode</span>
-                            <span class="hud-sub">@alternative.Confidence.ToString("P0")</span>
-                        </li>
-                    }
-                </ul>
-            }
-        }
-    </RadzenCard>
+        </RadzenCard>
+    }
 </div>
 
 @code {
@@ -111,9 +123,29 @@
 
     [Parameter] public int? SelectedWindowIndex { get; set; }
 
+    /// <summary>Raised when the user clicks the "3D landscape" link — the parent owns the WebGL scene.</summary>
+    [Parameter] public EventCallback OnShowLandscape { get; set; }
+
+    private bool _detailsOpen;
+    private int? _lastSelection;
+
     private VisualWindow? Selected => SelectedWindowIndex is { } index && index >= 0 && index < Windows.Count
         ? Windows[index]
         : null;
+
+    /// <summary>Open the details disclosure automatically the first time a window is selected.</summary>
+    protected override void OnParametersSet()
+    {
+        if (Selected is not null && _lastSelection != SelectedWindowIndex)
+        {
+            _detailsOpen = true;
+            _lastSelection = SelectedWindowIndex;
+        }
+    }
+
+    private void ToggleDetailsAsync() => _detailsOpen = !_detailsOpen;
+
+    private Task OnShowLandscapeAsync() => OnShowLandscape.InvokeAsync();
 
     private string PrimaryHeadline => Result.PrimaryMode is null
         ? $"{Result.TonicName} · mode unclear"

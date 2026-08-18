@@ -20,7 +20,12 @@
         @foreach (var stage in Status.Plan)
         {
             <li class="@StageClass(stage)">
-                <span class="tier"><TierBadge Tier="stage.Tier" /></span>
+                @* Local is the default — show its tier only when the cost is real (Cloud) or unusual
+                   (Browser). Four identical "💻 Ran locally" rows on every job is visual noise. *@
+                @if (stage.Tier != ExecutionTier.Local)
+                {
+                    <span class="tier"><TierBadge Tier="stage.Tier" /></span>
+                }
                 <span class="name">@FriendlyName(stage.Stage)</span>
                 <span class="executor">@stage.Executor</span>
                 @if (DurationText(stage) is { } duration)

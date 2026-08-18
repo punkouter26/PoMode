@@ -2,10 +2,15 @@ using PoMode.Shared.Analysis;
 
 namespace PoMode.Client.Services;
 
-/// <summary>True whenever displayed analysis data is mock/local. Real job results flip it via SetLive().</summary>
+/// <summary>
+/// True whenever displayed analysis data is mock/local. Real job results flip it via SetLive().
+/// Defaults to <c>false</c>: a fresh client has nothing to show yet, so flashing "USING MOCK DATA"
+/// on cold-start was misleading — no data was on screen, mock or otherwise. A completed job whose
+/// plan actually touched a placeholder/Fake executor still flips it back on via SetMock().
+/// </summary>
 public sealed class MockDataState
 {
-    public bool IsMockData { get; private set; } = true;
+    public bool IsMockData { get; private set; } = false;
 
     public event Action? Changed;
 

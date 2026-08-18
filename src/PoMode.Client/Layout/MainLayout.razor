@@ -12,15 +12,46 @@
         <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Analyze</NavLink>
         <NavLink class="nav-link" href="library">Library</NavLink>
         <NavLink class="nav-link" href="live">Live</NavLink>
-        <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
     </nav>
     <div class="session">
-        <RadzenButton class="theme-toggle" Text="@ThemeLabel" ButtonStyle="ButtonStyle.Light"
-                      Size="ButtonSize.Small" Click="@CycleThemeAsync"
-                      title="Theme: follows the system by default; click to override" />
-        <span>@_userName</span>
+        <button class="icon-button theme-toggle" type="button" @onclick="CycleThemeAsync"
+                title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {ThemeLabel}")">
+            @ThemeGlyph
+        </button>
+        <button class="icon-button overflow-toggle" type="button" @onclick="ToggleOverflowAsync"
+                title="More" aria-label="More" aria-haspopup="true" aria-expanded="@_overflowOpen">
+            ⋯
+        </button>
+        @if (_overflowOpen)
+        {
+            <div class="overflow-menu" role="menu">
+                <a class="overflow-item" href="diagnostics" role="menuitem">Diagnostics</a>
+                <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
+                    Keyboard shortcuts
+                </button>
+            </div>
+        }
     </div>
 </header>
+
+@if (_shortcutsOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseShortcutsAsync">
+        <div class="modal-card shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" @onclick:stopPropagation>
+            <div class="shortcuts-head">
+                <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+                <button class="icon-button" type="button" @onclick="CloseShortcutsAsync" aria-label="Close">✕</button>
+            </div>
+            <dl class="shortcuts-list">
+                <dt><kbd>Space</kbd></dt><dd>Play / pause the stems</dd>
+                <dt><kbd>,</kbd></dt><dd>Restart playback from the beginning</dd>
+                <dt>Mouse wheel</dt><dd>Zoom the canvas timeline in and out</dd>
+                <dt>Click + drag</dt><dd>Pan the canvas timeline</dd>
+                <dt>Click</dt><dd>Seek the playhead to that point and inspect that window</dd>
+            </dl>
+        </div>
+    </div>
+}
 
 <MockDataBanner />
 <RadzenNotification />
@@ -34,30 +65,32 @@
     private IJSObjectReference? _fx;
     private IJSObjectReference? _theme;
     private string _themeMode = "system";
-    private string _userName = "Guest";
-
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            // The session slot shows who the server authenticated, not a hardcoded label.
-            if (await Analysis.GetSessionAsync() is { } session && !string.IsNullOrWhiteSpace(session.UserName))
-            {
-                _userName = session.UserName;
-            }
-        }
-        catch (HttpRequestException)
-        {
-            // Offline or unauthenticated: the default label stands.
-        }
-    }
+    private bool _overflowOpen;
+    private bool _shortcutsOpen;
 
     private string ThemeLabel => _themeMode switch
     {
-        "light" => "Theme: Light",
-        "dark" => "Theme: Dark",
-        _ => "Theme: Auto",
+        "light" => "Light",
+        "dark" => "Dark",
+        _ => "Auto",
     };
+
+    private string ThemeGlyph => _themeMode switch
+    {
+        "light" => "☀",
+        "dark" => "☾",
+        _ => "◐",
+    };
+
+    private void ToggleOverflowAsync() => _overflowOpen = !_overflowOpen;
+
+    private void ToggleShortcutsAsync()
+    {
+        _overflowOpen = false;
+        _shortcutsOpen = !_shortcutsOpen;
+    }
+
+    private void CloseShortcutsAsync() => _shortcutsOpen = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

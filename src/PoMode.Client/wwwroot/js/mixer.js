@@ -387,6 +387,62 @@ function onKeyDown(state, event) {
         togglePlayback(state);
     } else if (event.key === ',') {
         seekInternal(state, 0);
+    } else if (event.key === 'm' || event.key === 'M') {
+        // Stems mute toggle — independent of the source mode so synth-only listening is one key.
+        const next = !state.stemsMuted;
+        state.stemsMuted = next;
+        applyStemMuting(state, next);
+        state.root.dataset.mixerStemsMuted = next ? 'muted' : 'audible';
+        state.dotNet?.invokeMethodAsync('OnStemsMutedChanged', next);
+    } else if (event.key === '1') {
+        setModeInternal(state, 'full');
+        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'full');
+    } else if (event.key === '2') {
+        setModeInternal(state, 'vocals');
+        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'vocals');
+    } else if (event.key === '3') {
+        setModeInternal(state, 'backing');
+        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'backing');
+    } else if (event.key === 'v' || event.key === 'V') {
+        const next = !state.noteSources.vocal;
+        state.noteSources.vocal = next;
+        if (!next) stopSynthVoices(state, 'vocal');
+        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'vocal', next);
+    } else if (event.key === 'b' || event.key === 'B') {
+        const next = !state.noteSources.backing;
+        state.noteSources.backing = next;
+        if (!next) stopSynthVoices(state, 'backing');
+        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'backing', next);
+    } else if (event.key === 'k' || event.key === 'K') {
+        state.dotNet?.invokeMethodAsync('OnKaraokeShortcut');
+    }
+}
+
+function setModeInternal(state, mode) {
+    state.mode = mode;
+    if (state.context) {
+        applyGains(state, false);
+    }
+    refresh(state);
+}
+
+/// Silences/un-silences the stem buses without touching the synth/drone/metronome buses — so
+/// "Mute stems" + "Synth vocal" is the equivalent of "play only the MIDI".
+function applyStemMuting(state, muted) {
+    if (!state.context) {
+        return;
+    }
+    const now = state.context.currentTime;
+    for (const stem of STEMS) {
+        const node = state.gains[stem];
+        if (!node) {
+            continue;
+        }
+        const mode = state.mode;
+        const target = muted ? 0 : (MODE_GAINS[mode]?.[stem] ?? 0);
+        node.gain.cancelScheduledValues(now);
+        node.gain.setValueAtTime(node.gain.value, now);
+        node.gain.linearRampToValueAtTime(target, now + RAMP_SECONDS);
     }
 }
 
@@ -428,6 +484,8 @@ export function init(root, canvas, dotNetRef) {
         synthVoices: [],
         synthCursor: 0,
         synthIndex: { vocal: 0, backing: 0 },
+        stemsMuted: false,
+        bpmNudge: 0,
         metronome: false,
         beatGrid: null,
         clickGain: null,
@@ -651,6 +709,34 @@ export function setMetronome(root, enabled) {
     } else if (state.playing) {
         state.clickCursor = currentSeconds(state);
     }
+}
+
+/// Apply a +/- BPM offset to the metronome without touching any other layer. Used by the tap-tempo
+/// + nudge buttons in the UI. Nudge of 0 restores the server BPM.
+export function setBpmNudge(root, nudge) {
+    const state = states.get(root);
+    if (!state) {
+        return;
+    }
+    state.bpmNudge = nudge;
+    // The scheduling cursor must restart on the playhead because the period changed; pending
+    // click voices on the old period are stranded either way and we silence them.
+    if (state.playing) {
+        state.clickCursor = currentSeconds(state);
+        stopSynthVoices(state, 'click');
+    }
+}
+
+/// Mute or unmute the stem audio without touching the synth/click/drone buses. So "Mute stems"
+/// + "Synth vocal" is exactly "play only the MIDI".
+export function setStemsMuted(root, muted) {
+    const state = states.get(root);
+    if (!state) {
+        return;
+    }
+    state.stemsMuted = muted;
+    applyStemMuting(state, muted);
+    state.root.dataset.mixerStemsMuted = muted ? 'muted' : 'audible';
 }
 
 // ---- drone ----

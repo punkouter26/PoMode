@@ -8,7 +8,6 @@
 
 <RadzenCard>
     <RadzenText TextStyle="TextStyle.H5" Text="Song library" />
-    <RadzenText Text="Every song analyzed on this machine. Open one, or pick two completed songs to compare their modal fingerprints." />
 
     @if (_entries is null)
     {
@@ -20,10 +19,17 @@
     }
     else if (_entries.Count == 0)
     {
-        <RadzenText class="library-empty" Text="Nothing here yet — analyze a song first." />
+        <div class="library-empty">
+            <RadzenText class="library-empty-headline" Text="No songs yet" />
+            <RadzenText class="library-empty-sub"
+                        Text="Analyzed songs will show up here." />
+            <a class="library-empty-cta" href="">Upload your first track →</a>
+        </div>
     }
     else
     {
+        @* Compare only makes sense with 2+ completed jobs — hide the column when there's only one. *@
+        var canCompare = _entries.Count >= 2;
         <div class="library-grid" data-library-count="@_entries.Count">
             <RadzenDataGrid Data="@_entries" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact">
                 <Columns>
@@ -51,14 +57,17 @@
                         </Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="Stage" Title="Status" Width="110px" />
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="200px">
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="@(canCompare ? "200px" : "90px")">
                         <Template Context="entry">
                             <RadzenButton Text="Open" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
                                           Click="@(() => Open(entry))" Disabled="@(entry.Stage != JobStage.Complete)" />
-                            <RadzenToggleButton Text="Compare" Size="ButtonSize.Small"
-                                                Value="@_compare.Contains(entry.JobId)"
-                                                Change="@(_ => ToggleCompareAsync(entry))"
-                                                Disabled="@(entry.Stage != JobStage.Complete)" />
+                            @if (canCompare)
+                            {
+                                <RadzenToggleButton Text="Compare" Size="ButtonSize.Small"
+                                                    Value="@_compare.Contains(entry.JobId)"
+                                                    Change="@(_ => ToggleCompareAsync(entry))"
+                                                    Disabled="@(entry.Stage != JobStage.Complete)" />
+                            }
                         </Template>
                     </RadzenDataGridColumn>
                 </Columns>

@@ -16,39 +16,94 @@
     }
     else
     {
-        <RadzenButton Click="TogglePlayAsync" Disabled="@(_status is "idle" or "loading")"
-                      Text="@(_status == "playing" ? "Pause" : "Play")" class="mixer-play" />
-        <div class="mixer-modes" role="group" aria-label="Stem selection">
-            @foreach (var (mode, label) in Modes)
-            {
-                <RadzenButton Click="@(() => SetModeAsync(mode))"
-                              Disabled="@(_status is "idle" or "loading")"
-                              ButtonStyle="@(_mode == mode ? ButtonStyle.Primary : ButtonStyle.Light)"
-                              Text="@label" />
-            }
+        @* The strip is three labelled groups so a glance tells you which controls affect audio
+           routing, which turn on a synthetic layer, and which are playback verbs. *@
+        <div class="mixer-groups">
+            <div class="mixer-group mixer-group-play" role="group" aria-label="Transport">
+                <RadzenButton Click="TogglePlayAsync" Disabled="@(_status is "idle" or "loading")"
+                              Text="@(_status == "playing" ? "Pause" : "Play")" class="mixer-play"
+                              title="Space = play/pause, , = restart" />
+            </div>
+
+            <div class="mixer-group mixer-group-source" role="group" aria-label="Audio source">
+                <span class="mixer-group-label">Source</span>
+                <RadzenToggleButton Value="@_stemsMuted" Change="@SetStemsMutedAsync"
+                                    Disabled="@(_status is "idle" or "loading")"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Mute stems" title="Silence the separated audio — keep only synth/click/drone" />
+                @foreach (var (mode, label) in Modes)
+                {
+                    <RadzenButton Click="@(() => SetModeAsync(mode))"
+                                  Disabled="@(_status is "idle" or "loading")"
+                                  ButtonStyle="@(_mode == mode && !_stemsMuted ? ButtonStyle.Primary : ButtonStyle.Light)"
+                                  Text="@label" />
+                }
+                <RadzenToggleButton Value="@_vocalSynthOn" Change="@(on => SetNotesAsync("vocal", on))"
+                                    Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Synth vocal" title="Play the transcribed vocal melody as a synth lead (MIDI)" />
+                <RadzenToggleButton Value="@_backingSynthOn" Change="@(on => SetNotesAsync("backing", on))"
+                                    Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Synth backing" title="Play the transcribed backing notes as a synth pad (MIDI)" />
+            </div>
+
+            <div class="mixer-group mixer-group-layers" role="group" aria-label="Layers and helpers">
+                <span class="mixer-group-label">Layers</span>
+                <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetOverlayAsync("vocal", on))"
+                                    Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Show vocal notes" title="Highlight the vocal notes on the canvas (no audio)" />
+                <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetOverlayAsync("backing", on))"
+                                    Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Show backing notes" title="Highlight the backing notes on the canvas (no audio)" />
+                <div class="metronome-cell" title="@MetronomeTitle">
+                    <RadzenToggleButton Value="@_metronomeOn" Change="@SetMetronomeAsync"
+                                        Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Metronome" />
+                    <div class="bpm-nudge" role="group" aria-label="Tempo nudge">
+                        <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(-2))"
+                                disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                title="Slower (2 BPM)" aria-label="Slower 2 BPM">−</button>
+                        <span class="bpm-readout">@BpmReadout</span>
+                        <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(2))"
+                                disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                title="Faster (2 BPM)" aria-label="Faster 2 BPM">+</button>
+                        <button class="icon-button bpm-tap" type="button" @onclick="OnTapTempoAsync"
+                                disabled="@(_status is "idle" or "loading")"
+                                title="Tap tempo (3+ taps)" aria-label="Tap tempo">TAP</button>
+                    </div>
+                </div>
+                <div class="drone-cell" title="@($"Drone on {TonicName ?? "the detected tonic"}")">
+                    <RadzenToggleButton Value="@_droneOn" Change="@SetDroneAsync"
+                                        Disabled="@(_status is "idle" or "loading" || TonicPitchClass is null)"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Drone" />
+                    @if (TonicName is not null)
+                    {
+                        <span class="drone-readout">@TonicName</span>
+                    }
+                </div>
+                <RadzenToggleButton Value="@_karaokeOn" Change="@SetKaraokeAsync"
+                                    Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                    Text="Karaoke"
+                                    title="@KaraokeTitle" />
+            </div>
         </div>
-        <div class="mixer-toggles" role="group" aria-label="Note overlays and metronome">
-            <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetNotesAsync("vocal", on))"
-                                Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                Text="Vocal Notes" />
-            <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetNotesAsync("backing", on))"
-                                Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                Text="Music Notes" />
-            <RadzenToggleButton Value="@_metronomeOn" Change="@SetMetronomeAsync"
-                                Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                Text="@MetronomeLabel" />
-            <RadzenToggleButton Value="@_karaokeOn" Change="@SetKaraokeAsync"
-                                Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                Text="@KaraokeLabel" />
-            <RadzenToggleButton Value="@_droneOn" Change="@SetDroneAsync"
-                                Disabled="@(_status is "idle" or "loading" || TonicPitchClass is null)"
-                                ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                Text="@DroneLabel" />
-        </div>
+
+        @* Always-visible affordance for the keyboard verbs a mixer user actually needs. *@
+        <p class="mixer-keys" aria-label="Keyboard shortcuts">
+            <kbd>Space</kbd> play/pause <span class="key-sep">·</span>
+            <kbd>,</kbd> restart <span class="key-sep">·</span>
+            <kbd>M</kbd> mute stems <span class="key-sep">·</span>
+            <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> mix/vocals/backing <span class="key-sep">·</span>
+            <kbd>V</kbd>/<kbd>B</kbd> synth vocal/backing <span class="key-sep">·</span>
+            <kbd>K</kbd> karaoke
+        </p>
+
         <canvas class="mixer-spectrum" @ref="_spectrumCanvas" aria-hidden="true"></canvas>
         <RadzenText class="mixer-note" Text="@StatusText" />
         @if (_status is "loading" or "idle")
@@ -95,14 +150,19 @@
     private double _duration;
     private int _vocalNoteCount;
     private int _backingNoteCount;
-    private bool _vocalNotesOn;
-    private bool _backingNotesOn;
+    private bool _vocalSynthOn;   // MIDI synth: routes through mixer.js oscillator bank
+    private bool _backingSynthOn; // MIDI synth: routes through mixer.js oscillator bank
+    private bool _vocalNotesOn;   // canvas overlay: glows vocal dots
+    private bool _backingNotesOn; // canvas overlay: backing has no canvas yet, kept for parity
     private bool _metronomeOn;
     private double _beatBpm;
+    private double _bpmNudge;     // user-adjusted offset from server tempo
     private bool _karaokeOn;
     private int _karaokeScore;
     private string? _karaokeError;
     private Timer? _karaokeTimer;
+    private readonly List<double> _tapTimes = new();
+    private bool _stemsMuted;
     private string? _loadedJobId;
     private double? _sentSeek;
 
@@ -120,15 +180,19 @@
                 // explain what is being loaded so the user knows the page is not hung.
                 return _status is "idle" ? "Preparing stems…" : "Loading stems…";
             }
-            return $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio · Space = play/pause · , = restart";
+            return $"{Modes.First(entry => entry.Mode == _mode).Label} · {_duration:0.0}s of audio";
         }
     }
 
-    private string MetronomeLabel => _beatBpm > 0 ? $"Click · {_beatBpm:0} BPM" : "Click";
+    private string MetronomeTitle => _beatBpm > 0
+        ? $"Click at {(_beatBpm + _bpmNudge):0} BPM{(Math.Abs(_bpmNudge) > 0.01 ? $" (server {_beatBpm:0} + nudge {_bpmNudge:+0;-0;0})" : "")}"
+        : "No beat grid available for this job";
 
-    private string KaraokeLabel => _karaokeOn ? $"Karaoke · {_karaokeScore}%" : "Karaoke";
+    private string BpmReadout => _beatBpm > 0 ? $"{(_beatBpm + _bpmNudge):0} BPM" : "— BPM";
 
-    private string DroneLabel => TonicName is null ? "Drone" : $"Drone · {TonicName}";
+    private string KaraokeTitle => _karaokeOn
+        ? $"Karaoke scoring: {_karaokeScore}%"
+        : "Mute vocal stem, open mic, score your singing against the melody";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -157,10 +221,15 @@
             });
             _status = _duration > 0 ? "ready" : "unavailable";
             _sentSeek = null;
+            _vocalSynthOn = false;
+            _backingSynthOn = false;
             _vocalNotesOn = false;
             _backingNotesOn = false;
             _metronomeOn = false;
             _beatBpm = 0;
+            _bpmNudge = 0;
+            _stemsMuted = false;
+            _tapTimes.Clear();
             StopKaraokeTimer();
             _karaokeOn = false;
             _karaokeError = null;
@@ -202,6 +271,51 @@
         StateHasChanged();
     }
 
+    /// <summary>mixer.js reports its M-key stems-mute shortcut so the toggle stays truthful.</summary>
+    [JSInvokable]
+    public void OnStemsMutedChanged(bool muted)
+    {
+        _stemsMuted = muted;
+        StateHasChanged();
+    }
+
+    /// <summary>mixer.js reports its 1/2/3 source mode shortcut so the highlighted button tracks.</summary>
+    [JSInvokable]
+    public void OnModeShortcut(string mode)
+    {
+        _mode = mode;
+        // Muting off when the user explicitly picks a source again — the keyboard is intent.
+        if (_stemsMuted && mode != _mode)
+        {
+            _stemsMuted = false;
+            _ = _module?.InvokeVoidAsync("setStemsMuted", _root, false);
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>mixer.js reports its V/B synth toggles so the Synth buttons stay in sync.</summary>
+    [JSInvokable]
+    public void OnSynthToggle(string source, bool on)
+    {
+        if (source == "vocal")
+        {
+            _vocalSynthOn = on;
+            _vocalNotesOn = on; // the canvas glow follows the synth on/off
+        }
+        else
+        {
+            _backingSynthOn = on;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>mixer.js fires K so the karaoke button label and score can refresh.</summary>
+    [JSInvokable]
+    public void OnKaraokeShortcut()
+    {
+        _ = SetKaraokeAsync(!_karaokeOn);
+    }
+
     private async Task TogglePlayAsync()
     {
         if (_module is null)
@@ -238,13 +352,111 @@
         }
         if (source == "vocal")
         {
+            _vocalSynthOn = on;
+        }
+        else
+        {
+            _backingSynthOn = on;
+        }
+        await _module.InvokeVoidAsync("setNoteSource", _root, source, on);
+        // The canvas glow channel follows the synth on/off so the user sees what's audible.
+        if (source == "vocal")
+        {
+            _vocalNotesOn = on;
+        }
+        try
+        {
+            await _module.InvokeVoidAsync("setOverlay", _root, source, on);
+        }
+        catch (JSDisconnectedException)
+        {
+            // circuit torn down
+        }
+    }
+
+    /// <summary>Show/hide the canvas overlay without enabling the synth. Independent of <see cref="SetNotesAsync"/>.</summary>
+    private async Task SetOverlayAsync(string source, bool on)
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        if (source == "vocal")
+        {
             _vocalNotesOn = on;
         }
         else
         {
             _backingNotesOn = on;
         }
-        await _module.InvokeVoidAsync("setNoteSource", _root, source, on);
+        try
+        {
+            await _module.InvokeVoidAsync("setOverlay", _root, source, on);
+        }
+        catch (JSDisconnectedException)
+        {
+            // circuit torn down
+        }
+    }
+
+    private async Task SetStemsMutedAsync(bool muted)
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        _stemsMuted = muted;
+        // Re-applying the current mode with a "muted" twist via a synthetic mode is cleanest: we
+        // add two modes to the JS-side table on the fly by issuing setMode with a special key, but
+        // simpler: temporarily zero the master gain.
+        await _module.InvokeVoidAsync("setStemsMuted", _root, muted);
+        StateHasChanged();
+    }
+
+    private async Task NudgeBpmAsync(double delta)
+    {
+        _bpmNudge = Math.Clamp(_bpmNudge + delta, -30, 30);
+        await ApplyBpmAsync();
+    }
+
+    private async Task OnTapTempoAsync()
+    {
+        var now = DateTime.UtcNow;
+        _tapTimes.Add(now.Ticks / (double)TimeSpan.TicksPerSecond);
+        // Drop taps older than 2 s so the user can pace a fresh tap session without restarting.
+        _tapTimes.RemoveAll(t => now.Ticks / (double)TimeSpan.TicksPerSecond - t > 2);
+        if (_tapTimes.Count >= 2)
+        {
+            var diffs = new List<double>();
+            for (var i = 1; i < _tapTimes.Count; i++)
+            {
+                diffs.Add(_tapTimes[i] - _tapTimes[i - 1]);
+            }
+            var avgInterval = diffs.Average();
+            if (avgInterval > 0)
+            {
+                var tappedBpm = 60.0 / avgInterval;
+                if (_beatBpm > 0)
+                {
+                    _bpmNudge = Math.Clamp(tappedBpm - _beatBpm, -30, 30);
+                }
+                else
+                {
+                    // No server grid — feed the absolute value straight to the metronome.
+                    _beatBpm = tappedBpm;
+                }
+                await ApplyBpmAsync();
+            }
+        }
+    }
+
+    private async Task ApplyBpmAsync()
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        await _module.InvokeVoidAsync("setBpmNudge", _root, _bpmNudge);
     }
 
     private async Task SetMetronomeAsync(bool on)

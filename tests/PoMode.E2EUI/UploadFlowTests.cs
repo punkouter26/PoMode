@@ -20,7 +20,9 @@ public class UploadFlowTests(AppFixture app)
         try
         {
             var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
-            await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(visible);
+            var hidden = new LocatorAssertionsToBeHiddenOptions { Timeout = AppFixture.ExpectTimeoutMs };
+            // Cold load: no data on screen yet, mock or otherwise, so the banner is hidden.
+            await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeHiddenAsync(hidden);
 
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
 
@@ -34,9 +36,10 @@ public class UploadFlowTests(AppFixture app)
             // because a real chord recognizer is missing (it isn't, see above), but because AppFixture
             // deliberately sets Models:AutoDownload=false and isolates Models:RootPath so these browser
             // tests stay fast, deterministic, and network-free (see AppFixture's comment). With two of
-            // four stages still fake, the plan still touches a fake executor and the banner must stay on
-            // — see MockDataState.PlanContainsFakeExecutor. The banner only goes fully dark once the
-            // Onnx stem separator and pitch tracker are also available (a real model download, exercised
+            // four stages still fake, the plan still touches a fake executor and SetMock() flips the
+            // banner back on once that completed job lands — see MockDataState.PlanContainsFakeExecutor
+            // and the SetMock call in Home.razor. The banner only stays hidden once the Onnx stem
+            // separator and pitch tracker are also available (a real model download, exercised
             // elsewhere, not by this fast in-memory-model browser suite).
             await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeVisibleAsync(visible);
         }

@@ -49,8 +49,3 @@
 .outside {
     background: var(--pm-note-outside);
 }
-
-.canvas-hint {
-    margin-left: auto;
-    font-style: italic;
-}
