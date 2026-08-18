@@ -5,16 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PoMode</title>
     <base href="/" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%F0%9F%8E%B5%3C/text%3E%3C/svg%3E" />
     <!-- Radzen ships separate light and dark bases. Loading both under prefers-color-scheme media
-         queries makes the component library follow the OS theme with no JS and no theme switcher,
-         which is what NET_RULES ("auto-detect system Light/Dark themes") asks for. Without the dark
-         base, Radzen cards stay white while app.css flips to light text — unreadable. -->
-    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css"
+         queries makes the component library follow the OS theme with no JS by default. The header's
+         theme toggle (js/theme.js) overrides by rewriting these links' media attributes, which is
+         why they carry ids. Without the dark base, Radzen cards stay white while app.css flips to
+         light text — unreadable. -->
+    <link id="radzen-light" rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css"
           media="(prefers-color-scheme: light)" />
-    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-dark-base.css"
+    <link id="radzen-dark" rel="stylesheet" href="_content/Radzen.Blazor/css/material-dark-base.css"
           media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="PoMode.Client.styles.css" />
+    <script>
+        // Pre-paint theme: apply any persisted override before the first frame so a user who chose
+        // Dark on a light-OS machine never sees a light flash. Mirrors js/theme.js's apply().
+        (function () {
+            var mode = null;
+            try { mode = localStorage.getItem('pm-theme'); } catch (e) { }
+            if (mode === 'light' || mode === 'dark') {
+                document.documentElement.dataset.theme = mode;
+                document.getElementById('radzen-light').media = mode === 'light' ? 'all' : 'not all';
+                document.getElementById('radzen-dark').media = mode === 'dark' ? 'all' : 'not all';
+            }
+        })();
+    </script>
 </head>
 <body>
     <div id="app">Loading…</div>

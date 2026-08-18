@@ -23,16 +23,13 @@ public static class ModalAnalysisEngine
         var tonic = TonicDetector.Detect(notes, chords);
         var secondsPerMeasure = 4.0 * 60.0 / bpm;
 
+        var sortedNotes = notes.OrderBy(note => note.StartSec).ToArray();
+
         var windows = new List<ModalWindow>(chords.Count);
         for (var index = 0; index < chords.Count; index++)
         {
             var chord = chords[index];
-            var intervals = notes
-                .Where(note => note.StartSec >= chord.StartSec && note.StartSec < chord.EndSec)
-                .Select(note => (((note.MidiPitch % 12) + 12) % 12 - tonic.PitchClass + 12) % 12)
-                .Distinct()
-                .Order()
-                .ToArray();
+            var intervals = SungIntervals(sortedNotes, chord, tonic.PitchClass);
 
             var vocalMask = intervals.Aggregate(0, (mask, interval) => mask | (1 << interval));
             var insufficient = intervals.Length < MinimumDistinctPitchClasses;
@@ -62,6 +59,29 @@ public static class ModalAnalysisEngine
             TempoBpm: bpm,
             TempoEstimated: tempoEstimated,
             Windows: windows);
+    }
+
+    /// <summary>Distinct, ascending intervals above the tonic sung inside the chord's half-open
+    /// span. Binary-searches the start-sorted notes so each window only touches its own notes.</summary>
+    private static int[] SungIntervals(NoteEvent[] sortedNotes, ChordSpan chord, int tonicPitchClass)
+    {
+        var seen = new bool[12];
+        for (var index = TimelineSearch.LowerBound(sortedNotes, chord.StartSec, static n => n.StartSec);
+             index < sortedNotes.Length && sortedNotes[index].StartSec < chord.EndSec;
+             index++)
+        {
+            seen[PitchNames.IntervalAboveTonic(sortedNotes[index].MidiPitch, tonicPitchClass)] = true;
+        }
+
+        var intervals = new List<int>(12);
+        for (var interval = 0; interval < 12; interval++)
+        {
+            if (seen[interval])
+            {
+                intervals.Add(interval);
+            }
+        }
+        return [.. intervals];
     }
 
     private static IReadOnlyList<ModalMatch> ScoreModes(int vocalMask, int[] intervals)

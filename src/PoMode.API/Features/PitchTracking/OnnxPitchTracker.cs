@@ -14,7 +14,8 @@ namespace PoMode.API.Features.PitchTracking;
 /// per ~2s window). Falls back to <see cref="FakePitchTracker"/> automatically via
 /// <see cref="ExecutionPlanner"/> when the model has not been downloaded yet.
 /// </summary>
-public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTracker> logger) : IPitchTracker
+public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTracker> logger)
+    : IPitchTracker, IFileTranscriber
 {
     /// <summary>Basic Pitch's audio front end always expects 22.05 kHz mono (not exposed via ONNX metadata).</summary>
     private const int TargetSampleRate = 22050;
@@ -44,6 +45,10 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
     private const string NoteOutputName = "StatefulPartitionedCall:1";
     private const string OnsetOutputName = "StatefulPartitionedCall:2";
 
+    private readonly object _sessionGate = new();
+    private (string Path, DateTime WrittenUtc)? _sessionModelKey;
+    private InferenceSession? _session;
+
     public string Name => nameof(OnnxPitchTracker);
     public ExecutionTier Tier => ExecutionTier.Local;
 
@@ -57,9 +62,21 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
     }
 
     /// <summary>
-    /// Transcribes one audio file. Public beyond <see cref="TrackAsync"/> because the pipeline also
-    /// runs it on instrumental.wav to produce the backing-notes artifact (notes-backing.json).
+    /// Transcribes one audio file — the <see cref="IFileTranscriber"/> capability. Beyond
+    /// <see cref="TrackAsync"/>, the pipeline also runs it on instrumental.wav to produce the
+    /// backing-notes artifact (notes-backing.json).
     /// </summary>
+    public Task<IReadOnlyList<NoteEvent>> TranscribeFileAsync(string audioPath, CancellationToken ct)
+        => TranscribeAsync(audioPath, ct);
+
+    /// <summary>Builds and caches the inference session ahead of the first job, so the first
+    /// transcription doesn't pay model load and graph optimization on the user's clock.</summary>
+    public async Task WarmUpAsync(CancellationToken ct)
+    {
+        var modelPath = await registry.EnsureAsync(ModelCatalog.BasicPitch, ct);
+        GetSession(modelPath);
+    }
+
     public async Task<IReadOnlyList<NoteEvent>> TranscribeAsync(string audioPath, CancellationToken ct)
     {
         var modelPath = await registry.EnsureAsync(ModelCatalog.BasicPitch, ct);
@@ -68,8 +85,7 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
         buffer = AudioDecoder.ToMono(buffer);
         buffer = AudioDecoder.Resample(buffer, TargetSampleRate);
 
-        using var options = new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2) };
-        using var session = new InferenceSession(modelPath, options);
+        var session = GetSession(modelPath);
 
         var inputName = session.InputMetadata.Keys.Single();
         var inputDims = session.InputMetadata[inputName].Dimensions;
@@ -135,15 +151,19 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
         var onsetsGlobal = new float[totalFrames, pitchCount];
         var framesGlobal = new float[totalFrames, pitchCount];
 
+        var window = new float[windowSamples];
         foreach (var windowStart in starts)
         {
             ct.ThrowIfCancellationRequested();
 
-            var window = new float[windowSamples];
             var available = Math.Min(windowSamples, Math.Max(0, padded.Length - windowStart));
             if (available > 0)
             {
                 Array.Copy(padded, windowStart, window, 0, available);
+            }
+            if (available < windowSamples)
+            {
+                Array.Clear(window, available, windowSamples - available);
             }
 
             var tensor = new DenseTensor<float>(window, [1, windowSamples, 1]);
@@ -173,5 +193,24 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
         }
 
         return BasicPitchDecoder.Decode(onsetsGlobal, framesGlobal, framesPerSecond, MinMidi);
+    }
+
+    private InferenceSession GetSession(string modelPath)
+    {
+        lock (_sessionGate)
+        {
+            // Keyed on the file EnsureAsync just validated — path plus write time, so a
+            // re-downloaded or replaced model rebuilds the session instead of silently running
+            // the stale one for the rest of the process lifetime.
+            var key = (modelPath, File.GetLastWriteTimeUtc(modelPath));
+            if (_session is null || _sessionModelKey != key)
+            {
+                _session?.Dispose();
+                using var options = new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount / 2) };
+                _session = new InferenceSession(modelPath, options);
+                _sessionModelKey = key;
+            }
+            return _session;
+        }
     }
 }

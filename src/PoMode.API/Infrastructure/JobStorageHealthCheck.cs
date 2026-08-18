@@ -4,15 +4,13 @@ using PoMode.API.Features.Analysis;
 namespace PoMode.API.Infrastructure;
 
 /// <summary>Verifies the job artifact root is writable and reports the blob mirror's reachability.</summary>
-public sealed class JobStorageHealthCheck(IConfiguration configuration, JobBlobStorage? blobs = null) : IHealthCheck
+public sealed class JobStorageHealthCheck(JobStore store, JobBlobStorage? blobs = null) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            var root = !string.IsNullOrEmpty(configuration["Jobs:RootPath"])
-                ? configuration["Jobs:RootPath"]!
-                : Path.Combine(AppContext.BaseDirectory, "jobs");
+            var root = store.RootPath;
             Directory.CreateDirectory(root);
             var probe = Path.Combine(root, $".healthprobe-{Guid.NewGuid():N}");
             File.WriteAllText(probe, "ok");

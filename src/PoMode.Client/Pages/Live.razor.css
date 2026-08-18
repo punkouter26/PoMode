@@ -1,0 +1,17 @@
+.live-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.live-hint {
+    margin: 0;
+    color: var(--pm-fg-muted);
+}
+
+.live-error {
+    margin: 0;
+    color: var(--pm-note-outside);
+}

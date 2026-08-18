@@ -3,6 +3,10 @@ namespace PoMode.API.Features.ChordRecognition;
 /// <summary>Matches a single chroma frame against the 24-triad template vocabulary.</summary>
 public static class ChordMatcher
 {
+    private static readonly (ChordCandidate Chord, float[] Template)[] OrderedTemplates = [.. ChordTemplates.All
+        .OrderBy(e => e.Chord.RootPitchClass)
+        .ThenBy(e => e.Chord.Quality == "maj" ? 0 : 1)];
+
     /// <summary>
     /// Finds the chord template with the highest cosine similarity to <paramref name="chroma"/>.
     /// Ties break deterministically by ascending root pitch class, major before minor.
@@ -20,23 +24,15 @@ public static class ChordMatcher
         var best = ChordTemplates.NoChord;
         var bestScore = double.NegativeInfinity;
 
-        foreach (var (chord, template) in ChordTemplates.All
-            .OrderBy(e => e.Chord.RootPitchClass)
-            .ThenBy(e => e.Chord.Quality == "maj" ? 0 : 1))
+        foreach (var (chord, template) in OrderedTemplates)
         {
-            var templateMagnitude = Math.Sqrt(template.Sum(v => (double)v * v));
-            if (templateMagnitude == 0)
-            {
-                continue;
-            }
-
             var dot = 0.0;
             for (var i = 0; i < chroma.Length; i++)
             {
                 dot += chroma[i] * template[i];
             }
 
-            var score = dot / (magnitude * templateMagnitude);
+            var score = dot / magnitude;
             if (score > bestScore)
             {
                 bestScore = score;

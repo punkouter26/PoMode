@@ -30,10 +30,14 @@ public sealed class MockDataState
 
     /// <summary>
     /// True when the plan is empty (unknown — treated conservatively as mock) or any stage ran on a
-    /// <c>Fake*</c> executor (e.g. <c>FakePitchTracker</c>, <c>FakeChordRecognizer</c>). CLAUDE.md
-    /// requires the "USING MOCK DATA" banner whenever displayed data is mock/local; a single fake
-    /// stage makes the whole result partly fabricated, so any fake stage keeps the banner on.
+    /// placeholder executor (the server marks those via <see cref="StagePlan.IsPlaceholder"/>).
+    /// The <c>Fake*</c> name check stays as a fallback: plans persisted before the flag existed
+    /// deserialize with <c>IsPlaceholder = false</c>, and jobs live for days — without it those
+    /// jobs would render fabricated data with no banner. CLAUDE.md requires the "USING MOCK DATA"
+    /// banner whenever displayed data is mock/local; a single fake stage makes the whole result
+    /// partly fabricated, so any fake stage keeps the banner on.
     /// </summary>
     public static bool PlanContainsFakeExecutor(IReadOnlyList<StagePlan> plan)
-        => plan.Count == 0 || plan.Any(p => p.Executor.StartsWith("Fake", StringComparison.Ordinal));
+        => plan.Count == 0
+            || plan.Any(p => p.IsPlaceholder || p.Executor.StartsWith("Fake", StringComparison.Ordinal));
 }

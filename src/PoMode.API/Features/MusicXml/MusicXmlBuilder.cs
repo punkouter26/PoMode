@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using PoMode.API.Features.ModalAnalysis;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.MusicXml;
@@ -12,9 +13,6 @@ public static class MusicXmlBuilder
 {
     private const int Divisions = 480; // ticks per quarter note
     private const int BeatsPerMeasure = 4;
-
-    private static readonly string[] SharpNames =
-        ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
     public static string Build(
         IReadOnlyList<NoteEvent> notes,
@@ -137,7 +135,7 @@ public static class MusicXmlBuilder
 
     private static XElement BuildNote(NoteEvent note, double secPerBeat)
     {
-        var name = SharpNames[((note.MidiPitch % 12) + 12) % 12];
+        var name = PitchNames.Name(note.MidiPitch);
         var octave = note.MidiPitch / 12 - 1;
         var ticks = Math.Max(Divisions / 4, (int)Math.Round(note.DurationSec / secPerBeat * Divisions));
         return new XElement("note",

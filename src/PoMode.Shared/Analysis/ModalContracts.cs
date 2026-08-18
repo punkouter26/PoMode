@@ -41,3 +41,12 @@ public sealed record ModalResult(
     double TempoBpm,
     bool TempoEstimated,
     IReadOnlyList<ModalWindow> Windows);
+
+public static class ModalResultExtensions
+{
+    /// <summary>Index of the window covering <paramref name="timeSec"/>, or null outside every
+    /// window. Windows are time-ordered, non-overlapping and half-open <c>[Start, End)</c>.</summary>
+    public static int? WindowIndexAt(this ModalResult result, double timeSec)
+        => TimelineSearch.IndexCovering(
+            result.Windows, timeSec, static w => w.StartSec, static w => w.EndSec);
+}

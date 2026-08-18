@@ -1,3 +1,4 @@
+using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.MusicXml;
 using PoMode.Shared.Analysis;
 using Xunit;
@@ -41,6 +42,11 @@ public sealed class RomanNumeralsTests
     [InlineData("H", -1)]
     public void Pitch_class_parsing_handles_accidentals_and_rejects_junk(string root, int expected)
     {
-        Assert.Equal(expected, RomanNumerals.ParsePitchClass(root));
+        var parsed = PitchNames.TryParseRoot(root, out var pitchClass);
+        Assert.Equal(expected >= 0, parsed);
+        if (parsed)
+        {
+            Assert.Equal(expected, pitchClass);
+        }
     }
 }

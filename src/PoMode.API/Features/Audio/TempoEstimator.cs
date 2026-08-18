@@ -58,20 +58,31 @@ public static class TempoEstimator
 
     private static readonly TempoEstimate Fallback = new(120.0, 0.0);
 
-    public static TempoEstimate Estimate(AudioBuffer buffer, double minBpm = 60, double maxBpm = 200)
+    /// <summary>The shared per-buffer front end: mono mix, frame energy, detrended onset envelope.
+    /// Null when the buffer is too short to frame. Computed once and reused by both the tempo
+    /// search and the beat-phase search, which need the identical envelope.</summary>
+    private readonly record struct OnsetEnvelope(double[] Detrended, int FrameCount, double FrameRate);
+
+    private static OnsetEnvelope? PrepareEnvelope(AudioBuffer buffer)
     {
         var mono = AudioDecoder.ToMono(buffer);
         var samples = mono.Samples;
-        var sampleRate = mono.SampleRate;
-
         var frameCount = samples.Length >= WindowSize ? ((samples.Length - WindowSize) / HopSize) + 1 : 0;
         if (frameCount < 2)
         {
-            return Fallback;
+            return null;
         }
-
         var energy = ComputeFrameEnergy(samples, frameCount);
-        var detrended = BuildDetrendedOnsetEnvelope(energy, frameCount);
+        return new OnsetEnvelope(
+            BuildDetrendedOnsetEnvelope(energy, frameCount), frameCount, mono.SampleRate / (double)HopSize);
+    }
+
+    public static TempoEstimate Estimate(AudioBuffer buffer, double minBpm = 60, double maxBpm = 200)
+        => PrepareEnvelope(buffer) is { } envelope ? EstimateFromEnvelope(envelope, minBpm, maxBpm) : Fallback;
+
+    private static TempoEstimate EstimateFromEnvelope(OnsetEnvelope envelope, double minBpm, double maxBpm)
+    {
+        var (detrended, frameCount, frameRate) = envelope;
 
         var totalEnvelopeEnergy = 0.0;
         foreach (var value in detrended)
@@ -83,7 +94,6 @@ public static class TempoEstimator
             return Fallback;
         }
 
-        var frameRate = sampleRate / (double)HopSize;
         var lagMin = Math.Max(1, (int)Math.Round(frameRate * 60.0 / maxBpm));
         var lagMax = Math.Min(frameCount - 1, (int)Math.Round(frameRate * 60.0 / minBpm));
         if (lagMax <= lagMin)
@@ -126,24 +136,17 @@ public static class TempoEstimator
     /// </summary>
     public static BeatGrid EstimateGrid(AudioBuffer buffer, double minBpm = 60, double maxBpm = 200)
     {
-        var estimate = Estimate(buffer, minBpm, maxBpm);
+        if (PrepareEnvelope(buffer) is not { } envelope)
+        {
+            return new BeatGrid(Fallback.Bpm, 0.0, Fallback.Confidence);
+        }
+        var estimate = EstimateFromEnvelope(envelope, minBpm, maxBpm);
         if (estimate.Confidence <= 0)
         {
             return new BeatGrid(estimate.Bpm, 0.0, estimate.Confidence);
         }
 
-        var mono = AudioDecoder.ToMono(buffer);
-        var samples = mono.Samples;
-        var frameCount = samples.Length >= WindowSize ? ((samples.Length - WindowSize) / HopSize) + 1 : 0;
-        if (frameCount < 2)
-        {
-            return new BeatGrid(estimate.Bpm, 0.0, 0.0);
-        }
-
-        var energy = ComputeFrameEnergy(samples, frameCount);
-        var detrended = BuildDetrendedOnsetEnvelope(energy, frameCount);
-
-        var frameRate = mono.SampleRate / (double)HopSize;
+        var (detrended, frameCount, frameRate) = envelope;
         var periodFrames = frameRate * 60.0 / estimate.Bpm;
         var offsetCount = Math.Max(1, (int)Math.Floor(periodFrames));
 

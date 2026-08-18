@@ -16,12 +16,16 @@ public static class ResilientHttp
 
     private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(1);
 
+    /// <param name="completionOption">Pass <see cref="HttpCompletionOption.ResponseHeadersRead"/>
+    /// for large bodies the caller streams (stem downloads) — the default buffers the whole body
+    /// in memory before returning. Status-based retry only needs the headers either way.</param>
     public static async Task<HttpResponseMessage> SendAsync(
         HttpClient client,
         Func<HttpRequestMessage> requestFactory,
         TimeProvider time,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
     {
         HttpResponseMessage? response = null;
         Exception? transportFailure = null;
@@ -43,7 +47,7 @@ public static class ResilientHttp
             {
                 // A sent HttpRequestMessage cannot be sent again, so each attempt builds a fresh one.
                 using var request = requestFactory();
-                response = await client.SendAsync(request, ct);
+                response = await client.SendAsync(request, completionOption, ct);
                 transportFailure = null;
             }
             catch (HttpRequestException ex)

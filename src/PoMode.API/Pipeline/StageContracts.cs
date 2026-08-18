@@ -4,14 +4,41 @@ namespace PoMode.API.Pipeline;
 
 /// <summary>Per-job stage inputs. <paramref name="OnProgress"/> is an optional 0..1 in-stage
 /// progress hint for long stages (stem separation); executors may ignore it.</summary>
-public sealed record StageContext(string JobId, string JobDir, string InputPath, Action<double>? OnProgress = null);
-
-public static class StageNames
+public sealed record StageContext(string JobId, string JobDir, string InputPath, Action<double>? OnProgress = null)
 {
-    public const string Separating = "Separating";
-    public const string PitchTracking = "PitchTracking";
-    public const string ChordDetecting = "ChordDetecting";
-    public const string ModalAnalysis = "ModalAnalysis";
+    private (string Path, Features.Audio.AudioBuffer Buffer)? _decodedAnalysisAudio;
+
+    /// <summary>
+    /// The audio the post-separation stages should analyze: the instrumental stem when separation
+    /// produced one (vocal noise confuses beat and chord analysis), else the original upload.
+    /// </summary>
+    public string PreferredAnalysisPath
+    {
+        get
+        {
+            var instrumental = Path.Combine(JobDir, "instrumental.wav");
+            return File.Exists(instrumental) ? instrumental : InputPath;
+        }
+    }
+
+    /// <summary>
+    /// Decoded <see cref="PreferredAnalysisPath"/>, cached per path so back-to-back consumers in
+    /// one stage (chord recognition, then the beat grid) pay for a single decode. The cache pins
+    /// the whole PCM buffer, so the pipeline drops it via <see cref="ReleaseAnalysisAudio"/> as
+    /// soon as the stage that used it completes. Single-threaded by construction: stages run
+    /// sequentially for a job.
+    /// </summary>
+    public Features.Audio.AudioBuffer DecodePreferredAnalysisAudio()
+    {
+        var path = PreferredAnalysisPath;
+        if (_decodedAnalysisAudio is not { } cached || cached.Path != path)
+        {
+            _decodedAnalysisAudio = (path, Features.Audio.AudioDecoder.Decode(path));
+        }
+        return _decodedAnalysisAudio.Value.Buffer;
+    }
+
+    public void ReleaseAnalysisAudio() => _decodedAnalysisAudio = null;
 }
 
 public interface IStageExecutor
@@ -41,13 +68,18 @@ public interface IPitchTracker : IStageExecutor
     Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct);
 }
 
+/// <summary>
+/// Optional capability: transcribe an arbitrary audio file, outside the planned stage input. The
+/// pipeline uses it for the best-effort backing-notes transcription, picking any registered pitch
+/// tracker that offers it rather than binding to one concrete executor.
+/// </summary>
+public interface IFileTranscriber : IStageExecutor
+{
+    Task<IReadOnlyList<NoteEvent>> TranscribeFileAsync(string audioPath, CancellationToken ct);
+}
+
 public interface IChordRecognizer : IStageExecutor
 {
     Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct);
 }
 
-public interface IModalAnalyzer
-{
-    /// <summary>Writes result.json into <see cref="StageContext.JobDir"/>.</summary>
-    Task AnalyzeAsync(StageContext context, CancellationToken ct);
-}

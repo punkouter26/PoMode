@@ -10,12 +10,18 @@ public static class UrlIngestEndpoints
     {
         // Requires auth: this endpoint spends server bandwidth and disk on an arbitrary URL.
         app.MapPost("/api/analysis/from-url", async Task<Results<Ok<JobStatusDto>, BadRequest<string>, ProblemHttpResult>> (
-            AnalyzeUrlRequest request, UrlAudioService urls, AnalysisIntake intake, CancellationToken ct) =>
+            AnalyzeUrlRequest request, UrlAudioService urls, AnalysisIntake intake,
+            IConfiguration configuration, CancellationToken ct) =>
         {
             if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri)
                 || uri.Scheme is not ("http" or "https"))
             {
                 return TypedResults.BadRequest("Enter an absolute http(s) URL.");
+            }
+            if (!configuration.GetValue("UrlIngest:AllowPrivateHosts", false)
+                && await UrlHostGuard.PointsAtPrivateNetworkAsync(uri, ct))
+            {
+                return TypedResults.BadRequest("That URL points at a private or internal address.");
             }
             if (!await urls.IsAvailableAsync(ct))
             {

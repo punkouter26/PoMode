@@ -1,0 +1,140 @@
+@page "/library"
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject NavigationManager Navigation
+
+<PageTitle>PoMode</PageTitle>
+
+<RadzenCard>
+    <RadzenText TextStyle="TextStyle.H5" Text="Song library" />
+    <RadzenText Text="Every song analyzed on this machine. Open one, or pick two completed songs to compare their modal fingerprints." />
+
+    @if (_entries is null)
+    {
+        <div class="library-skeletons" aria-hidden="true">
+            <div class="pm-skeleton"></div>
+            <div class="pm-skeleton"></div>
+            <div class="pm-skeleton"></div>
+        </div>
+    }
+    else if (_entries.Count == 0)
+    {
+        <RadzenText class="library-empty" Text="Nothing here yet — analyze a song first." />
+    }
+    else
+    {
+        <div class="library-grid" data-library-count="@_entries.Count">
+            <RadzenDataGrid Data="@_entries" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact">
+                <Columns>
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song" />
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Analyzed" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px" />
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Key" Width="130px">
+                        <Template Context="entry">
+                            @(entry.TonicName is null ? "—" : $"{entry.TonicName} {entry.PrimaryMode ?? ""}")
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Tempo" Width="90px">
+                        <Template Context="entry">
+                            @(entry.TempoBpm is { } bpm ? $"{bpm:0} BPM" : "—")
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="Stage" Title="Status" Width="110px" />
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="200px">
+                        <Template Context="entry">
+                            <RadzenButton Text="Open" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
+                                          Click="@(() => Open(entry))" Disabled="@(entry.Stage != JobStage.Complete)" />
+                            <RadzenToggleButton Text="Compare" Size="ButtonSize.Small"
+                                                Value="@_compare.Contains(entry.JobId)"
+                                                Change="@(_ => ToggleCompareAsync(entry))"
+                                                Disabled="@(entry.Stage != JobStage.Complete)" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </div>
+    }
+</RadzenCard>
+
+@if (_compareResults.Count == 2)
+{
+    <RadzenCard class="compare-panel" data-compare-count="2">
+        <RadzenText TextStyle="TextStyle.H6" Text="Side by side" />
+        <div class="compare-cards">
+            @foreach (var (entry, result) in _compareResults)
+            {
+                <div class="compare-card">
+                    <div class="compare-title">@entry.FileName</div>
+                    <div class="compare-facts">
+                        <span>@result.TonicName @(result.PrimaryMode?.ToString() ?? "unclear")</span>
+                        <span>@($"{result.TempoBpm:0} BPM")</span>
+                        <span>@result.Windows.Count windows</span>
+                    </div>
+                    <div class="mode-timeline" title="Mode over time">
+                        @foreach (var window in result.Windows)
+                        {
+                            var mode = window is { InsufficientEvidence: false, Matches.Count: > 0 }
+                                ? window.Matches[0].Mode.ToString() : null;
+                            <span class="mode-segment @SegmentClass(mode)"
+                                  style="flex-grow: @SegmentGrow(window)" title="@(mode ?? "unclear")"></span>
+                        }
+                    </div>
+                    <div class="mode-legend">
+                        @foreach (var mode in ModesUsed(result))
+                        {
+                            <span class="legend-item"><span class="mode-segment @SegmentClass(mode)"></span>@mode</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </RadzenCard>
+}
+
+@code {
+    private List<LibraryEntryDto>? _entries;
+    private readonly HashSet<string> _compare = [];
+    private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
+
+    protected override async Task OnInitializedAsync()
+        => _entries = await Analysis.GetLibraryAsync() ?? [];
+
+    private void Open(LibraryEntryDto entry)
+        => Navigation.NavigateTo($"/?job={entry.JobId}");
+
+    private async Task ToggleCompareAsync(LibraryEntryDto entry)
+    {
+        if (!_compare.Remove(entry.JobId))
+        {
+            if (_compare.Count == 2)
+            {
+                return; // two is the comparison; a third selection is ignored until one is untoggled
+            }
+            _compare.Add(entry.JobId);
+        }
+
+        _compareResults.Clear();
+        if (_compare.Count == 2 && _entries is not null)
+        {
+            foreach (var selected in _entries.Where(e => _compare.Contains(e.JobId)))
+            {
+                if (await Analysis.GetResultAsync(selected.JobId) is { } result)
+                {
+                    _compareResults.Add((selected, result));
+                }
+            }
+        }
+    }
+
+    // Presentation-only mapping (the modes themselves were decided server-side).
+    private static string SegmentClass(string? mode)
+        => mode is null ? "mode-unclear" : $"mode-{mode.ToLowerInvariant()}";
+
+    private static string SegmentGrow(ModalWindow window)
+        => Math.Max(window.EndSec - window.StartSec, 0.1).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static IEnumerable<string> ModesUsed(ModalResult result)
+        => result.Windows
+            .Where(w => w is { InsufficientEvidence: false, Matches.Count: > 0 })
+            .Select(w => w.Matches[0].Mode.ToString())
+            .Distinct();
+}

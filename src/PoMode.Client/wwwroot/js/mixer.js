@@ -6,7 +6,8 @@
 // component renders. Blazor only hears about discrete events (loaded, mode changed, failed, and
 // keyboard-driven play/pause so the button label can follow).
 
-import { setPlayhead } from './canvas.js';
+import { setPlayhead, addLivePitch, clearLivePitch } from './canvas.js';
+import { detectPitch, openMicrophone } from './live-pitch.js';
 
 const states = new Map();
 
@@ -138,7 +139,15 @@ function scheduleVoice(state, note, when, source) {
     osc1.connect(filter);
     osc2.connect(filter);
     filter.connect(env);
-    env.connect(state.synthGain);
+    // A touch of stereo width, deterministic per pitch so a repeated note sits in the same place.
+    if (ctx.createStereoPanner) {
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = ((source === 'backing' ? -0.12 : 0.12) + (((note.midiPitch % 5) - 2) * 0.05));
+        env.connect(pan);
+        pan.connect(state.synthGain);
+    } else {
+        env.connect(state.synthGain);
+    }
 
     for (const osc of [osc1, osc2]) {
         osc.pmSource = source;
@@ -163,12 +172,20 @@ function scheduleSynth(state) {
         if (!state.noteSources[source]) {
             continue;
         }
-        for (const note of state.notes[source]) {
-            if (note.startSec >= state.synthCursor && note.startSec < windowEnd) {
-                const when = state.startedAt + (note.startSec - state.offset);
-                scheduleVoice(state, note, Math.max(when, state.context.currentTime), source);
-            }
+        const notes = state.notes[source];
+        let index = state.synthIndex[source];
+        while (index < notes.length && notes[index].startSec < state.synthCursor) {
+            index++;
         }
+        for (; index < notes.length; index++) {
+            const note = notes[index];
+            if (note.startSec >= windowEnd) {
+                break;
+            }
+            const when = state.startedAt + (note.startSec - state.offset);
+            scheduleVoice(state, note, Math.max(when, state.context.currentTime), source);
+        }
+        state.synthIndex[source] = index;
     }
     state.synthCursor = windowEnd;
 }
@@ -176,15 +193,15 @@ function scheduleSynth(state) {
 /// One metronome click: a short 1 kHz sine blip with a fast decay. Clicks are tagged like synth
 /// voices so pause, seek and the metronome toggle can silence pending ones without touching the
 /// note overlays.
-function scheduleClick(state, when) {
+function scheduleClick(state, when, accent) {
     const ctx = state.context;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.value = 1000;
+    osc.frequency.value = accent ? 1500 : 1000;
 
     const env = ctx.createGain();
     env.gain.setValueAtTime(0.0001, when);
-    env.gain.exponentialRampToValueAtTime(0.9, when + 0.002);
+    env.gain.exponentialRampToValueAtTime(accent ? 1.2 : 0.85, when + 0.002);
     env.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
 
     osc.connect(env);
@@ -210,11 +227,62 @@ function scheduleClicks(state) {
     const windowEnd = currentSeconds(state) + SYNTH_LOOKAHEAD_SECONDS;
     const period = 60 / grid.bpm;
     const k = Math.max(0, Math.ceil(((state.clickCursor - grid.firstBeatSec) / period) - 1e-9));
-    for (let t = grid.firstBeatSec + (k * period); t < windowEnd; t += period) {
+    let beatIndex = k;
+    for (let t = grid.firstBeatSec + (k * period); t < windowEnd; t += period, beatIndex++) {
         const when = state.startedAt + (t - state.offset);
-        scheduleClick(state, Math.max(when, state.context.currentTime));
+        // Accent every fourth beat — the same 4/4 lead-sheet approximation the exports use.
+        scheduleClick(state, Math.max(when, state.context.currentTime), beatIndex % 4 === 0);
     }
     state.clickCursor = windowEnd;
+}
+
+/// The shared output bus: everything routes through one master gain with an analyser tap, so the
+/// reactive background and the spectrum wall can read levels without touching the audio path.
+function ensureMasterGraph(state) {
+    if (state.master) {
+        return;
+    }
+    const ctx = state.context;
+    state.master = ctx.createGain();
+    state.master.gain.value = 1;
+    state.analyser = ctx.createAnalyser();
+    state.analyser.fftSize = 256;
+    state.analyser.smoothingTimeConstant = 0.8;
+    state.master.connect(state.analyser);
+    state.master.connect(ctx.destination);
+    state.levelData = new Uint8Array(state.analyser.fftSize);
+    state.freqData = new Uint8Array(state.analyser.frequencyBinCount);
+}
+
+/// Gentle tanh soft-clip: rounds off synth peaks into warmth instead of digital edge.
+function createSoftClip(ctx) {
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < curve.length; i++) {
+        const x = (i / (curve.length - 1)) * 2 - 1;
+        curve[i] = Math.tanh(1.5 * x);
+    }
+    shaper.curve = curve;
+    shaper.oversample = '2x';
+    return shaper;
+}
+
+/// A generated stereo impulse response (decaying noise) — a small room, no asset to ship.
+function buildImpulse(ctx) {
+    const seconds = 1.8;
+    const length = Math.floor(ctx.sampleRate * seconds);
+    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (let channel = 0; channel < 2; channel++) {
+        const data = impulse.getChannelData(channel);
+        let seed = channel === 0 ? 1234567 : 7654321;
+        for (let i = 0; i < length; i++) {
+            // A tiny deterministic PRNG: identical reverb every load, nothing to cache.
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+            const noise = (seed / 0x3fffffff) - 1;
+            data[i] = noise * Math.pow(1 - (i / length), 2.4);
+        }
+    }
+    return impulse;
 }
 
 /// AudioBufferSourceNodes are single-use, so every play and every seek builds a fresh set. They are
@@ -223,6 +291,7 @@ function startSources(state, offsetSeconds) {
     stopSources(state);
     stopSynthVoices(state);
     state.synthCursor = offsetSeconds;
+    state.synthIndex = { vocal: 0, backing: 0 };
     state.clickCursor = offsetSeconds;
     const when = state.context.currentTime + 0.02; // a beat of headroom so all three share a start
     for (const stem of STEMS) {
@@ -307,6 +376,12 @@ function onKeyDown(state, event) {
         || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))) {
         return;
     }
+    // A focused button/link must keep its own Space activation — hijacking it would make the
+    // whole page keyboard-hostile. The shortcut still works from the page body and the canvas.
+    if (target && typeof target.closest === 'function'
+        && target.closest('button, [role="button"], a, select, [tabindex]')) {
+        return;
+    }
     if (event.code === 'Space') {
         event.preventDefault();
         togglePlayback(state);
@@ -352,10 +427,19 @@ export function init(root, canvas, dotNetRef) {
         synthGain: null,
         synthVoices: [],
         synthCursor: 0,
+        synthIndex: { vocal: 0, backing: 0 },
         metronome: false,
         beatGrid: null,
         clickGain: null,
         clickCursor: 0,
+        karaoke: null,
+        master: null,
+        analyser: null,
+        levelData: null,
+        freqData: null,
+        synthShaper: null,
+        reverb: null,
+        drone: null,
     };
     state.onKeyDown = event => onKeyDown(state, event);
     document.addEventListener('keydown', state.onKeyDown);
@@ -391,6 +475,7 @@ export async function load(root, urls) {
         }
     }));
 
+    ensureMasterGraph(state);
     state.buffers = {};
     state.gains = {};
     for (const [stem, buffer] of loaded) {
@@ -400,19 +485,33 @@ export async function load(root, urls) {
         state.buffers[stem] = buffer;
         const gain = state.context.createGain();
         gain.gain.value = 0;
-        gain.connect(state.context.destination);
+        gain.connect(state.master);
         state.gains[stem] = gain;
     }
 
     if (!state.synthGain) {
-        state.synthGain = state.context.createGain();
+        const ctx = state.context;
+        state.synthGain = ctx.createGain();
         state.synthGain.gain.value = 0.35; // master synth level, below the stems' full-scale audio
-        state.synthGain.connect(state.context.destination);
+        // Synth bus: soft-clip warmth, then a dry path and a generated-impulse reverb send.
+        state.synthShaper = createSoftClip(ctx);
+        state.synthGain.connect(state.synthShaper);
+        const dry = ctx.createGain();
+        dry.gain.value = 0.85;
+        state.synthShaper.connect(dry);
+        dry.connect(state.master);
+        state.reverb = ctx.createConvolver();
+        state.reverb.buffer = buildImpulse(ctx);
+        const wet = ctx.createGain();
+        wet.gain.value = 0.25;
+        state.synthShaper.connect(state.reverb);
+        state.reverb.connect(wet);
+        wet.connect(state.master);
     }
     if (!state.clickGain) {
         state.clickGain = state.context.createGain();
         state.clickGain.gain.value = 0.5; // clicks sit under the stems but stay audible over them
-        state.clickGain.connect(state.context.destination);
+        state.clickGain.connect(state.master);
     }
 
     state.duration = Math.max(0, ...Object.values(state.buffers).map(buffer => buffer.duration));
@@ -422,6 +521,8 @@ export async function load(root, urls) {
     state.noteSources = { vocal: false, backing: false };
     state.metronome = false;
     state.beatGrid = null;
+    stopKaraoke(root);
+    stopDroneInternal(state);
     if (state.duration === 0) {
         report(state, 'unavailable');
         return 0;
@@ -453,6 +554,7 @@ export async function loadNotes(root, urls) {
     };
     const [vocal, backing] = await Promise.all([fetchList(urls.vocal), fetchList(urls.backing)]);
     state.notes = { vocal, backing };
+    state.synthIndex = { vocal: 0, backing: 0 };
     return [vocal.length, backing.length];
 }
 
@@ -533,6 +635,7 @@ export function setNoteSource(root, source, enabled) {
     } else if (state.playing && !anyBefore) {
         // The shared cursor stalled while both overlays were off; restart it at the playhead.
         state.synthCursor = currentSeconds(state);
+        state.synthIndex = { vocal: 0, backing: 0 };
     }
 }
 
@@ -550,9 +653,196 @@ export function setMetronome(root, enabled) {
     }
 }
 
-export function currentTime(root) {
+// ---- drone ----
+
+function stopDroneInternal(state) {
+    if (!state.drone) {
+        return;
+    }
+    const now = state.context.currentTime;
+    state.drone.gain.gain.cancelScheduledValues(now);
+    state.drone.gain.gain.setValueAtTime(state.drone.gain.gain.value, now);
+    state.drone.gain.gain.linearRampToValueAtTime(0.0001, now + 0.4);
+    for (const osc of state.drone.oscillators) {
+        osc.stop(now + 0.5);
+    }
+    state.drone = null;
+    state.root.dataset.mixerDrone = 'off';
+}
+
+/// A soft tonic pad: two detuned triangles under a slow breathing LFO, through the synth bus so
+/// it shares the reverb. The pitch itself was decided server-side (the detected tonic).
+export async function setDrone(root, midiPitch) {
     const state = states.get(root);
-    return state ? currentSeconds(state) : 0;
+    if (!state || !state.context) {
+        return;
+    }
+    stopDroneInternal(state);
+    if (midiPitch == null) {
+        return;
+    }
+    const ctx = state.context;
+    if (ctx.state === 'suspended') {
+        await ctx.resume();
+    }
+    const freq = 440 * Math.pow(2, (midiPitch - 69) / 12);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 1.2);
+
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.15;
+    const lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.04;
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(gain.gain);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 900;
+
+    const oscillators = [lfo];
+    for (const ratio of [1, 1.004]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.value = freq * ratio;
+        osc.connect(filter);
+        osc.start();
+        oscillators.push(osc);
+    }
+    filter.connect(gain);
+    gain.connect(state.synthGain);
+    lfo.start();
+
+    state.drone = { oscillators, gain };
+    state.root.dataset.mixerDrone = 'on';
+}
+
+// ---- analyser taps (for the reactive background and the spectrum wall) ----
+
+/// 0..1 RMS of whatever is currently audible, across all mixer instances (normally one).
+export function masterLevel() {
+    let level = 0;
+    for (const state of states.values()) {
+        if (!state.analyser || !(state.playing || state.drone)) {
+            continue;
+        }
+        state.analyser.getByteTimeDomainData(state.levelData);
+        let sum = 0;
+        for (let i = 0; i < state.levelData.length; i++) {
+            const v = (state.levelData[i] - 128) / 128;
+            sum += v * v;
+        }
+        level = Math.max(level, Math.sqrt(sum / state.levelData.length));
+    }
+    return level;
+}
+
+/// The active mixer's byte frequency bins, or null when nothing is playing.
+export function frequencyData() {
+    for (const state of states.values()) {
+        if (state.analyser && (state.playing || state.drone)) {
+            state.analyser.getByteFrequencyData(state.freqData);
+            return state.freqData;
+        }
+    }
+    return null;
+}
+
+// ---- karaoke ----
+
+/// The target note sounding at `seconds`, if any. Vocal notes are start-sorted; a few notes back
+/// from the insertion point is enough because melody notes barely overlap.
+function targetNoteAt(notes, seconds) {
+    let low = 0;
+    let high = notes.length;
+    while (low < high) {
+        const mid = (low + high) >> 1;
+        if (notes[mid].startSec <= seconds) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    for (let index = low - 1; index >= 0 && index >= low - 4; index--) {
+        const note = notes[index];
+        if (seconds >= note.startSec && seconds < note.startSec + note.durationSec) {
+            return note;
+        }
+    }
+    return null;
+}
+
+/// Octave-forgiving distance in semitones between a sung pitch and a target — singers routinely
+/// land the right degree an octave away from the transcription.
+function pitchClassDistance(sungMidi, targetMidi) {
+    const diff = Math.abs(sungMidi - targetMidi) % 12;
+    return Math.min(diff, 12 - diff);
+}
+
+function onKaraokeFrame(state, samples, sampleRate) {
+    const karaoke = state.karaoke;
+    if (!karaoke || !state.playing) {
+        return;
+    }
+    const seconds = currentSeconds(state);
+    const midi = detectPitch(samples, sampleRate);
+    if (midi !== null) {
+        addLivePitch(state.canvas, seconds, midi);
+    }
+
+    const target = targetNoteAt(state.notes.vocal, seconds);
+    if (target) {
+        karaoke.total++;
+        if (midi !== null && pitchClassDistance(midi, target.midiPitch) <= 0.75) {
+            karaoke.hits++;
+        }
+    }
+    state.root.dataset.karaokeScore = String(karaokeScore(karaoke));
+}
+
+function karaokeScore(karaoke) {
+    return karaoke.total === 0 ? 0 : Math.round((karaoke.hits / karaoke.total) * 100);
+}
+
+/// Karaoke mode: opens the microphone, traces the sung pitch onto the canvas, and scores it
+/// against the vocal transcription. The caller is expected to mute the vocal stem itself
+/// (setMode 'backing'). Returns false when the mic was denied or unavailable.
+export async function startKaraoke(root) {
+    const state = states.get(root);
+    if (!state || !state.context || state.karaoke) {
+        return state?.karaoke != null;
+    }
+    try {
+        const karaoke = { hits: 0, total: 0, mic: null };
+        karaoke.mic = await openMicrophone(
+            (samples, sampleRate) => onKaraokeFrame(state, samples, sampleRate),
+            state.context);
+        state.karaoke = karaoke;
+        clearLivePitch(state.canvas);
+        state.root.dataset.karaoke = 'on';
+        state.root.dataset.karaokeScore = '0';
+        return true;
+    } catch {
+        state.root.dataset.karaoke = 'denied';
+        return false;
+    }
+}
+
+export function stopKaraoke(root) {
+    const state = states.get(root);
+    if (!state || !state.karaoke) {
+        return;
+    }
+    state.karaoke.mic?.stop();
+    state.karaoke = null;
+    clearLivePitch(state.canvas);
+    state.root.dataset.karaoke = 'off';
+}
+
+export function karaokeScoreOf(root) {
+    const state = states.get(root);
+    return state?.karaoke ? karaokeScore(state.karaoke) : 0;
 }
 
 export function dispose(root) {
@@ -564,6 +854,8 @@ export function dispose(root) {
         cancelAnimationFrame(state.frame);
     }
     document.removeEventListener('keydown', state.onKeyDown);
+    stopKaraoke(root);
+    stopDroneInternal(state);
     stopSources(state);
     stopSynthVoices(state);
     states.delete(root);

@@ -146,9 +146,15 @@ async function transcribe(ort, session, samples) {
     const onsetsGlobal = Array.from({ length: totalFrames }, () => new Float32Array(pitchCount));
     const framesGlobal = Array.from({ length: totalFrames }, () => new Float32Array(pitchCount));
 
+    // Reused across windows: session.run copies the input into the runtime before returning, and
+    // windows run strictly sequentially, so the next iteration can safely overwrite it.
+    const windowData = new Float32Array(windowSamples);
     for (let windowStart = 0; ; windowStart += hopSamples) {
-        const windowData = new Float32Array(windowSamples);
-        windowData.set(padded.subarray(windowStart, Math.min(windowStart + windowSamples, padded.length)));
+        const copied = Math.min(windowStart + windowSamples, padded.length) - windowStart;
+        windowData.set(padded.subarray(windowStart, windowStart + copied));
+        if (copied < windowSamples) {
+            windowData.fill(0, copied);
+        }
 
         const { note, onset } = await run(windowData);
         const noteData = note.data;

@@ -23,12 +23,21 @@ public static class TonicDetector
         }
         foreach (var chord in chords)
         {
-            if (TryParseRoot(chord.Root, out var pitchClass))
+            if (PitchNames.TryParseRoot(chord.Root, out var pitchClass))
             {
                 histogram[pitchClass] += Math.Max(chord.EndSec - chord.StartSec, 0) * 0.5;
             }
         }
 
+        return DetectFromHistogram(histogram);
+    }
+
+    /// <summary>
+    /// The profile correlation over any 12-bin pitch-class weight histogram. Public so the
+    /// provisional preview can run it over raw chroma before any notes or chords exist.
+    /// </summary>
+    public static TonicEstimate DetectFromHistogram(double[] histogram)
+    {
         if (histogram.Sum() <= 0)
         {
             return new TonicEstimate(0, 0.0);
@@ -57,33 +66,6 @@ public static class TonicDetector
 
         var confidence = best <= 0 ? 0.0 : Math.Clamp((best - second) / best, 0.0, 1.0);
         return new TonicEstimate(bestPitchClass, confidence);
-    }
-
-    public static bool TryParseRoot(string root, out int pitchClass)
-    {
-        pitchClass = 0;
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            return false;
-        }
-
-        var baseClass = char.ToUpperInvariant(root[0]) switch
-        {
-            'C' => 0, 'D' => 2, 'E' => 4, 'F' => 5, 'G' => 7, 'A' => 9, 'B' => 11,
-            _ => -1,
-        };
-        if (baseClass < 0)
-        {
-            return false;
-        }
-
-        foreach (var accidental in root.Skip(1))
-        {
-            baseClass += accidental switch { '#' => 1, 'b' => -1, _ => 0 };
-        }
-
-        pitchClass = ((baseClass % 12) + 12) % 12;
-        return true;
     }
 
     private static double Correlate(double[] histogram, double[] profile, int rotation)

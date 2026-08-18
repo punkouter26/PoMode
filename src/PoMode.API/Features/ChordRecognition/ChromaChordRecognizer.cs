@@ -18,10 +18,7 @@ public sealed class ChromaChordRecognizer : IChordRecognizer
 
     public Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct)
     {
-        var instrumentalPath = Path.Combine(context.JobDir, "instrumental.wav");
-        var audioPath = File.Exists(instrumentalPath) ? instrumentalPath : context.InputPath;
-
-        var buffer = AudioDecoder.Decode(audioPath);
+        var buffer = context.DecodePreferredAnalysisAudio();
         var chromaGram = ChromaExtractor.Compute(buffer);
 
         var frames = chromaGram.Frames

@@ -16,7 +16,7 @@ public sealed record BatchTrack(string JobId, string FileName);
 public sealed class BatchStore(IConfiguration configuration, TimeProvider time, JobBlobStorage? blobs = null)
 {
     private const string BlobPrefix = "batches";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = JobStore.JsonOptions;
 
     public string RootPath
     {

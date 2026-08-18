@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PoMode.API.Features.Audio;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -70,8 +69,12 @@ public sealed class LalalStemSeparator(
                 ?? throw new InvalidOperationException(
                     "LALAL.AI returned no instrumental track that this executor recognises.");
 
-            await DownloadStemAsync(client, vocalsUrl, Path.Combine(context.JobDir, "vocals.wav"), ct);
-            await DownloadStemAsync(client, instrumentalUrl, Path.Combine(context.JobDir, "instrumental.wav"), ct);
+            // Independent URLs and destination files — download both stems concurrently.
+            await Task.WhenAll(
+                StemDownloader.DownloadStemAsync(
+                    client, vocalsUrl, Path.Combine(context.JobDir, "vocals.wav"), "LALAL.AI", time, logger, ct),
+                StemDownloader.DownloadStemAsync(
+                    client, instrumentalUrl, Path.Combine(context.JobDir, "instrumental.wav"), "LALAL.AI", time, logger, ct));
         }
         finally
         {
@@ -209,32 +212,6 @@ public sealed class LalalStemSeparator(
         return null;
     }
 
-    private async Task DownloadStemAsync(
-        HttpClient client, string url, string destination, CancellationToken ct)
-    {
-        using var response = await ResilientHttp.SendAsync(
-            client, () => new HttpRequestMessage(HttpMethod.Get, url), time, logger, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Could not download a separated stem from LALAL.AI ({(int)response.StatusCode}).");
-        }
-
-        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, $"{Guid.NewGuid():N}.download");
-        try
-        {
-            await File.WriteAllBytesAsync(temporary, await response.Content.ReadAsByteArrayAsync(ct), ct);
-            WavWriter.Write(destination, AudioDecoder.Decode(temporary));
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
-        }
-    }
-
     private async Task TryDeleteAsync(HttpClient client, string baseUrl, string key, string sourceId)
     {
         try
@@ -265,7 +242,6 @@ public sealed class LalalStemSeparator(
             throw new InvalidOperationException(
                 $"LALAL.AI refused to {action} ({(int)response.StatusCode}).");
         }
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        return document.RootElement.Clone(); // survives the document's disposal
+        return StemDownloader.ParseJson(await response.Content.ReadAsStringAsync(ct));
     }
 }

@@ -35,14 +35,14 @@ public static class ChromaExtractor
 
     /// <summary>Computes a chroma vector for one frame of samples. All-zero input yields an all-zero vector.</summary>
     public static float[] Frame(ReadOnlySpan<float> samples, int sampleRate)
+        => Frame(samples, sampleRate, new Complex[samples.Length], HannWindow(samples.Length));
+
+    private static float[] Frame(ReadOnlySpan<float> samples, int sampleRate, Complex[] buffer, double[] hannWindow)
     {
         var n = samples.Length;
-        var buffer = new Complex[n];
         for (var i = 0; i < n; i++)
         {
-            // Hann window.
-            var window = n > 1 ? 0.5 - (0.5 * Math.Cos(2 * Math.PI * i / (n - 1))) : 1.0;
-            buffer[i] = new Complex(samples[i] * window, 0);
+            buffer[i] = new Complex(samples[i] * hannWindow[i], 0);
         }
 
         Fft.Transform(buffer);
@@ -71,7 +71,13 @@ public static class ChromaExtractor
             chroma[PitchClass(lower + 1)] += magnitude * fraction;
         }
 
-        var norm = Math.Sqrt(chroma.Sum(v => v * v));
+        var normSquared = 0.0;
+        for (var i = 0; i < PitchClasses; i++)
+        {
+            normSquared += chroma[i] * chroma[i];
+        }
+
+        var norm = Math.Sqrt(normSquared);
         var result = new float[PitchClasses];
         if (norm > 0)
         {
@@ -84,6 +90,17 @@ public static class ChromaExtractor
     }
 
     private static int PitchClass(int midi) => ((midi % PitchClasses) + PitchClasses) % PitchClasses;
+
+    /// <summary>Hann window coefficients for an <paramref name="n"/>-sample frame.</summary>
+    private static double[] HannWindow(int n)
+    {
+        var window = new double[n];
+        for (var i = 0; i < n; i++)
+        {
+            window[i] = n > 1 ? 0.5 - (0.5 * Math.Cos(2 * Math.PI * i / (n - 1))) : 1.0;
+        }
+        return window;
+    }
 
     /// <summary>
     /// Computes a chroma vector every <paramref name="hopSize"/> samples across the whole buffer,
@@ -107,6 +124,8 @@ public static class ChromaExtractor
 
         var frames = new List<float[]>();
         var windowed = new float[windowSize];
+        var fftBuffer = new Complex[windowSize];
+        var hannWindow = HannWindow(windowSize);
         for (var start = 0; start < samples.Length; start += hopSize)
         {
             var available = Math.Min(windowSize, samples.Length - start);
@@ -115,7 +134,7 @@ public static class ChromaExtractor
             {
                 Array.Clear(windowed, available, windowSize - available);
             }
-            frames.Add(Frame(windowed, mono.SampleRate));
+            frames.Add(Frame(windowed, mono.SampleRate, fftBuffer, hannWindow));
         }
 
         var framesPerSecond = mono.SampleRate / (double)hopSize;

@@ -15,5 +15,11 @@ public sealed class JobState
     public List<StageRecord> StageHistory { get; set; } = [];
     public string? Error { get; set; }
 
-    public JobStatusDto ToDto() => new(JobId, Stage, Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory);
+    /// <summary>Headline facts stamped by the pipeline at completion, so listings (the library)
+    /// never have to open result.json. Null on jobs persisted before this field existed.</summary>
+    public string? TonicName { get; set; }
+    public string? PrimaryMode { get; set; }
+    public double? TempoBpm { get; set; }
+
+    public JobStatusDto ToDto() => new(JobId, Stage, Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName);
 }

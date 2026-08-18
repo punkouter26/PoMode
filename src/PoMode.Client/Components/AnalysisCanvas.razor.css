@@ -7,7 +7,9 @@
     width: 100%;
     height: 320px;
     border-radius: 6px;
-    touch-action: none; /* pointer events drive pan; let the module own the gesture */
+    /* The module only pans horizontally, so vertical swipes must stay with the page — a phone
+       user landing a thumb here has to be able to keep scrolling. */
+    touch-action: pan-y;
     cursor: crosshair;
 }
 

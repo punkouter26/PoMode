@@ -1,5 +1,4 @@
 using PoMode.API.Features.Audio;
-using PoMode.API.Features.PitchTracking;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 
@@ -12,7 +11,7 @@ public sealed class AnalysisPipeline(
     IEnumerable<IStemSeparator> stemSeparators,
     IEnumerable<IPitchTracker> pitchTrackers,
     IEnumerable<IChordRecognizer> chordRecognizers,
-    IModalAnalyzer modalAnalyzer,
+    Features.ModalAnalysis.ArtifactModalAnalyzer modalAnalyzer,
     IAnalysisNotifier notifier,
     ILogger<AnalysisPipeline> logger,
     TimeProvider? time = null)
@@ -56,6 +55,10 @@ public sealed class AnalysisPipeline(
                 _ = notifier.PublishAsync(state.ToDto(), CancellationToken.None);
             });
 
+            await WritePreviewAsync(state, context, ct);
+
+            var backingTask = Task.CompletedTask;
+
             if (!state.CompletedStages.Contains(StageNames.Separating))
             {
                 await EnterStageAsync(state, JobStage.Separating, StageNames.Separating, 0, ct);
@@ -73,7 +76,9 @@ public sealed class AnalysisPipeline(
                 var notes = await RunWithFallbackAsync(state, StageNames.PitchTracking, pitchTrackers,
                     (executor, token) => executor.TrackAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "notes.json", notes, ct);
-                await TranscribeBackingAsync(state, ct);
+                // Best-effort and independent of the remaining stages, so it runs alongside them
+                // instead of serializing the job; awaited before the job is marked complete.
+                backingTask = TranscribeBackingAsync(state, context, ct);
                 await CompleteStageAsync(state, StageNames.PitchTracking, 1, ct);
             }
 
@@ -83,7 +88,9 @@ public sealed class AnalysisPipeline(
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "chords.json", chords, ct);
-                await WriteBeatGridAsync(state, ct);
+                await WriteBeatGridAsync(state, context, ct);
+                // The recognizer and the beat grid shared one cached decode — drop the PCM now.
+                context.ReleaseAnalysisAudio();
                 await CompleteStageAsync(state, StageNames.ChordDetecting, 2, ct);
             }
 
@@ -92,6 +99,16 @@ public sealed class AnalysisPipeline(
                 await EnterStageAsync(state, JobStage.ModalAnalysis, StageNames.ModalAnalysis, 3, ct);
                 await modalAnalyzer.AnalyzeAsync(context, ct);
                 await CompleteStageAsync(state, StageNames.ModalAnalysis, 3, ct);
+            }
+
+            await backingTask; // never throws — it swallows its own failures
+
+            // Stamp the headline facts onto the job record so listings never open result.json.
+            if (await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct) is { } finalResult)
+            {
+                state.TonicName = finalResult.TonicName;
+                state.PrimaryMode = finalResult.PrimaryMode?.ToString();
+                state.TempoBpm = finalResult.TempoBpm;
             }
 
             state.Stage = JobStage.Complete;
@@ -113,23 +130,73 @@ public sealed class AnalysisPipeline(
     }
 
     /// <summary>
-    /// Best-effort second transcription: the instrumental stem through the local ONNX tracker, for
-    /// the client's "music notes" playback. Deliberately outside the tier-fallback machinery — when
-    /// the stem or the local model is missing (Tier 2/cloud paths), or the run fails, the job simply
-    /// has no notes-backing.json and the client keeps that mode silent.
+    /// Best-effort second transcription: the instrumental stem through any tracker that can
+    /// transcribe a file, for the client's "music notes" playback. Deliberately outside the
+    /// tier-fallback machinery — when the stem or a capable tracker is missing (Tier 2/cloud
+    /// paths), or the run fails, the job simply has no notes-backing.json and the client keeps
+    /// that mode silent.
     /// </summary>
-    private async Task TranscribeBackingAsync(JobState state, CancellationToken ct)
+    private async Task TranscribeBackingAsync(JobState state, StageContext context, CancellationToken ct)
     {
-        var instrumentalPath = Path.Combine(store.JobDir(state.JobId), "instrumental.wav");
-        var onnxTracker = pitchTrackers.OfType<OnnxPitchTracker>().FirstOrDefault();
-        if (onnxTracker is null || !File.Exists(instrumentalPath) || !await onnxTracker.IsAvailableAsync(ct))
+        try
+        {
+            var instrumentalPath = Path.Combine(context.JobDir, "instrumental.wav");
+            // Same tier ordering the planner uses — never DI registration order — and placeholders
+            // are excluded outright: fake backing notes would bypass the plan (and its mock banner),
+            // and no backing notes is strictly better than fabricated ones.
+            var transcriber = pitchTrackers.OfType<IFileTranscriber>()
+                .Where(t => !t.IsPlaceholder)
+                .OrderBy(ExecutionPlanner.EffectiveRank)
+                .FirstOrDefault();
+            if (transcriber is null || !File.Exists(instrumentalPath) || !await transcriber.IsAvailableAsync(ct))
+            {
+                return;
+            }
+            var backingNotes = await transcriber.TranscribeFileAsync(instrumentalPath, ct);
+            await store.WriteArtifactAsync(state.JobId, "notes-backing.json", backingNotes, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // The task runs concurrently with later stages, so it must end quietly on cancel —
+            // the pipeline's own cancel path owns the job's terminal state.
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Backing transcription failed for job {JobId}; continuing without it.", state.JobId);
+        }
+    }
+
+    /// <summary>
+    /// A fast first look, written before the slow stages start: raw-chroma key guess plus a tempo
+    /// estimate on the untouched upload. Seconds of work against minutes of pipeline, so the UI
+    /// can show "likely G, ~128 BPM" almost immediately. Best-effort; skipped when it already
+    /// exists (restart) and never allowed to fail the job.
+    /// </summary>
+    private async Task WritePreviewAsync(JobState state, StageContext context, CancellationToken ct)
+    {
+        if (File.Exists(Path.Combine(context.JobDir, "preview.json")))
         {
             return;
         }
         try
         {
-            var backingNotes = await onnxTracker.TranscribeAsync(instrumentalPath, ct);
-            await store.WriteArtifactAsync(state.JobId, "notes-backing.json", backingNotes, ct);
+            var buffer = context.DecodePreferredAnalysisAudio();
+            var chroma = Features.ChordRecognition.ChromaExtractor.Compute(buffer);
+            var histogram = new double[12];
+            foreach (var frame in chroma.Frames)
+            {
+                for (var pitchClass = 0; pitchClass < 12; pitchClass++)
+                {
+                    histogram[pitchClass] += frame[pitchClass];
+                }
+            }
+            var tonic = Features.ModalAnalysis.TonicDetector.DetectFromHistogram(histogram);
+            var tempo = TempoEstimator.Estimate(buffer);
+            await store.WriteArtifactAsync(state.JobId, "preview.json",
+                new AnalysisPreviewDto(
+                    Features.ModalAnalysis.PitchNames.Name(tonic.PitchClass),
+                    tempo.Bpm,
+                    Math.Min(tonic.Confidence, tempo.Confidence)), ct);
         }
         catch (OperationCanceledException)
         {
@@ -137,7 +204,12 @@ public sealed class AnalysisPipeline(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Backing transcription failed for job {JobId}; continuing without it.", state.JobId);
+            logger.LogInformation(ex, "Preview estimation failed for job {JobId}; continuing without it.", state.JobId);
+        }
+        finally
+        {
+            // The preview decoded the raw upload; drop that PCM before the long stages run.
+            context.ReleaseAnalysisAudio();
         }
     }
 
@@ -147,13 +219,11 @@ public sealed class AnalysisPipeline(
     /// to the original upload. A failure only costs the metronome, never the job, and a
     /// low-confidence grid is written as-is so the client can gate on it.
     /// </summary>
-    private async Task WriteBeatGridAsync(JobState state, CancellationToken ct)
+    private async Task WriteBeatGridAsync(JobState state, StageContext context, CancellationToken ct)
     {
         try
         {
-            var instrumentalPath = Path.Combine(store.JobDir(state.JobId), "instrumental.wav");
-            var audioPath = File.Exists(instrumentalPath) ? instrumentalPath : store.InputPath(state);
-            var grid = TempoEstimator.EstimateGrid(AudioDecoder.Decode(audioPath));
+            var grid = TempoEstimator.EstimateGrid(context.DecodePreferredAnalysisAudio());
             await store.WriteArtifactAsync(
                 state.JobId, "beats.json", new BeatGridDto(grid.Bpm, grid.FirstBeatSec, grid.Confidence), ct);
         }
@@ -193,7 +263,12 @@ public sealed class AnalysisPipeline(
                 var result = await run(candidate, ct);
                 if (candidate.Name != planned.Executor)
                 {
-                    state.Plan[state.Plan.IndexOf(planned)] = planned with { Tier = candidate.Tier, Executor = candidate.Name };
+                    state.Plan[state.Plan.IndexOf(planned)] = planned with
+                    {
+                        Tier = candidate.Tier,
+                        Executor = candidate.Name,
+                        IsPlaceholder = candidate.IsPlaceholder,
+                    };
                     await PersistAsync(state, ct);
                     logger.LogWarning("Stage {Stage} fell back from {Planned} to {Actual}.", stage, planned.Executor, candidate.Name);
                 }

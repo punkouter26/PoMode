@@ -6,14 +6,17 @@ using PoMode.Shared.Analysis;
 namespace PoMode.API.Features.ModalAnalysis;
 
 /// <summary>Stage 4: reads notes.json + chords.json, runs the deterministic engine, writes result.json.</summary>
-public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalAnalyzer> logger) : IModalAnalyzer
+public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalAnalyzer> logger)
 {
+    /// <summary>Writes result.json into <see cref="StageContext.JobDir"/>. Deliberately not behind
+    /// a seam: the modal stage has one implementation and no tier fallback, so an interface here
+    /// was indirection with no consumer.</summary>
     public async Task AnalyzeAsync(StageContext context, CancellationToken ct)
     {
         var notes = await store.ReadArtifactListAsync<NoteEvent>(context.JobId, "notes.json", ct);
         var chords = await store.ReadArtifactListAsync<ChordSpan>(context.JobId, "chords.json", ct);
 
-        var (bpm, estimated) = EstimateTempo(context);
+        var (bpm, estimated) = await EstimateTempoAsync(context, ct);
 
         var result = ModalAnalysisEngine.Analyze(notes, chords, bpm, estimated);
 
@@ -21,18 +24,22 @@ public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalA
     }
 
     /// <summary>
-    /// Prefers the separated instrumental stem over the raw input so vocal noise doesn't confuse
-    /// the beat tracker. A missing or undecodable file must never fail the whole job — it just
-    /// means the tempo stays at the Phase-3 default and is still labelled estimated.
+    /// The chord stage already estimated the tempo on the preferred audio and persisted it as
+    /// beats.json — reuse that instead of re-decoding the whole track. Only when the artifact is
+    /// missing (its best-effort write failed) does this fall back to estimating directly. A
+    /// failure must never fail the whole job — the tempo stays at the Phase-3 default and is
+    /// still labelled estimated.
     /// </summary>
-    private (double Bpm, bool Estimated) EstimateTempo(StageContext context)
+    private async Task<(double Bpm, bool Estimated)> EstimateTempoAsync(StageContext context, CancellationToken ct)
     {
         try
         {
-            var instrumentalPath = Path.Combine(context.JobDir, "instrumental.wav");
-            var audioPath = File.Exists(instrumentalPath) ? instrumentalPath : context.InputPath;
+            if (await store.ReadArtifactAsync<BeatGridDto>(context.JobId, "beats.json", ct) is { } grid)
+            {
+                return grid.Confidence > 0 ? (grid.Bpm, false) : (120.0, true);
+            }
 
-            var buffer = AudioDecoder.Decode(audioPath);
+            var buffer = AudioDecoder.Decode(context.PreferredAnalysisPath);
             var estimate = TempoEstimator.Estimate(buffer);
 
             return estimate.Confidence > 0 ? (estimate.Bpm, false) : (120.0, true);

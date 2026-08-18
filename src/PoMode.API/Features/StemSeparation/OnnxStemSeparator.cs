@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
 using PoMode.API.Features.Audio;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
@@ -110,6 +109,15 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
         var vocalsRight = new float[totalFrames];
         var weight = new float[totalFrames];
 
+        // Row-major [1, 2, windowSamples]: the left channel occupies the first windowSamples floats,
+        // the right channel the next windowSamples.
+        var inputBuffer = new float[2 * windowSamples];
+        using var inputValue = OrtValue.CreateTensorValueFromMemory(inputBuffer, Array.ConvertAll(inputDims, d => (long)d));
+        using var runOptions = new RunOptions();
+        string[] inputNames = [inputName];
+        OrtValue[] inputValues = [inputValue];
+        string[] outputNames = [outputName];
+
         for (var chunkIndex = 0; chunkIndex < starts.Count; chunkIndex++)
         {
             ct.ThrowIfCancellationRequested();
@@ -117,24 +125,32 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
             var chunkStart = starts[chunkIndex];
             var available = Math.Min(windowSamples, totalFrames - chunkStart);
 
-            var inputTensor = new DenseTensor<float>(inputDims);
-            for (var i = 0; i < available; i++)
+            left.AsSpan(chunkStart, available).CopyTo(inputBuffer.AsSpan(0, available));
+            right.AsSpan(chunkStart, available).CopyTo(inputBuffer.AsSpan(windowSamples, available));
+            if (available < windowSamples)
             {
-                inputTensor[0, 0, i] = left[chunkStart + i];
-                inputTensor[0, 1, i] = right[chunkStart + i];
+                // The final, short chunk: zero-pad the tail of each channel.
+                Array.Clear(inputBuffer, available, windowSamples - available);
+                Array.Clear(inputBuffer, windowSamples + available, windowSamples - available);
             }
-            // Samples beyond `available` (the final, short chunk) stay zero — zero-padding the tail.
 
-            var inputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor(inputName, inputTensor) };
-            using var results = session.Run(inputs, [outputName]);
-            var stems = results[0].AsTensor<float>();
+            using var results = session.Run(runOptions, inputNames, inputValues, outputNames);
+            var stems = results[0].GetTensorDataAsSpan<float>();
+
+            // Row-major [1, stems, channels, samples]: base offsets of the vocals stem's two
+            // channels, from the run's ACTUAL shape — declared metadata can carry -1 for a
+            // dynamic axis, which would turn these offsets negative.
+            var outputShape = results[0].GetTensorTypeAndShape().Shape;
+            var outputSamples = (int)outputShape[^1];
+            var vocalsLeftOffset = VocalsStemIndex * (int)outputShape[2] * outputSamples;
+            var vocalsRightOffset = vocalsLeftOffset + outputSamples;
 
             for (var i = 0; i < available; i++)
             {
                 var globalIndex = chunkStart + i;
                 var w = crossfade[i];
-                vocalsLeft[globalIndex] += stems[0, VocalsStemIndex, 0, i] * w;
-                vocalsRight[globalIndex] += stems[0, VocalsStemIndex, 1, i] * w;
+                vocalsLeft[globalIndex] += stems[vocalsLeftOffset + i] * w;
+                vocalsRight[globalIndex] += stems[vocalsRightOffset + i] * w;
                 weight[globalIndex] += w;
             }
 

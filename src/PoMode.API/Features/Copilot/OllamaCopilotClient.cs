@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Infrastructure;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Copilot;
@@ -18,8 +19,6 @@ public sealed class OllamaCopilotClient(
     IHttpClientFactory httpClientFactory,
     ILogger<OllamaCopilotClient> logger)
 {
-    private const string DefaultBaseUrl = "http://localhost:11434";
-
     /// <summary>
     /// Spec §5's preference order. §13.1 recorded that none of these is actually installed on the dev
     /// machine (it has <c>gemma4:26b</c>), so the list is a *preference* and the client falls through
@@ -28,7 +27,25 @@ public sealed class OllamaCopilotClient(
     private static readonly string[] PreferredModels = ["qwen2.5:7b", "llama3.3:8b", "llama3.2:3b"];
 
     private static readonly TimeSpan ListTimeout = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan GenerateTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long one generate call may take, configurable for slow machines: a large local model
+    /// (the dev box runs gemma4:26b) can spend most of a minute just loading into memory on the
+    /// first call. Capped at 95 s because the Blazor client's default HttpClient gives up at 100 s
+    /// — a server that waits longer only produces a client-side failure instead of a clean reason.
+    /// </summary>
+    private TimeSpan GenerateTimeout => TimeSpan.FromSeconds(
+        Math.Clamp(configuration.GetValue("Copilot:GenerateTimeoutSeconds", 90), 5, 95));
+
+    /// <summary>
+    /// The reply is specified as exactly two sentences, so cap generation — an unbounded answer
+    /// from a big slow model is the difference between "slow" and "timed out".
+    /// </summary>
+    private const int MaxAnswerTokens = 220;
+
+    /// <summary>Keep the model loaded between requests: the first answer pays the load cost once,
+    /// then Regenerate and later windows answer fast instead of re-loading a many-GB model.</summary>
+    private const string KeepAlive = "15m";
 
     /// <summary>Bounds how many unusable models the user waits through before we give up.</summary>
     private const int MaxModelAttempts = 3;
@@ -74,7 +91,8 @@ public sealed class OllamaCopilotClient(
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
-            return new CopilotReply(false, null, null, "Ollama did not answer in time.");
+            return new CopilotReply(false, null, null,
+                "Ollama did not answer in time — a large model may still be loading. Try Regenerate; the model stays loaded after its first answer.");
         }
     }
 
@@ -85,7 +103,7 @@ public sealed class OllamaCopilotClient(
         client.Timeout = GenerateTimeout;
         using var response = await client.PostAsJsonAsync(
             $"{baseUrl}/api/generate",
-            new { model, prompt, stream = false },
+            new { model, prompt, stream = false, keep_alive = KeepAlive, options = new { num_predict = MaxAnswerTokens } },
             ct);
 
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -134,50 +152,14 @@ public sealed class OllamaCopilotClient(
     {
         using var client = httpClientFactory.CreateClient("ollama");
         client.Timeout = ListTimeout;
-        using var response = await client.GetAsync($"{baseUrl}/api/tags", ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            return [];
-        }
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        if (!document.RootElement.TryGetProperty("models", out var models))
-        {
-            return [];
-        }
-
-        var installed = models.EnumerateArray()
-            .Select(model => model.TryGetProperty("name", out var name) ? name.GetString() : null)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name!)
-            .ToArray();
+        var installed = await OllamaEndpoint.ListInstalledModelsAsync(client, baseUrl, ct);
 
         // Spec-preferred models first, in spec order, then everything else in Ollama's own order.
         return [.. PreferredModels.Where(installed.Contains), .. installed.Except(PreferredModels)];
     }
 
-    /// <summary>
-    /// Accepts <c>Copilot:BaseUrl</c> only when it points at loopback. Configurable enough for tests to
-    /// stand up a fixture server, never enough to reach a remote host.
-    /// </summary>
     private bool TryGetLoopbackBaseUrl(out string baseUrl, out string? rejection)
-    {
-        baseUrl = (configuration["Copilot:BaseUrl"] ?? DefaultBaseUrl).TrimEnd('/');
-        rejection = null;
-
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            rejection = "The configured copilot address is not a valid URL.";
-            return false;
-        }
-        if (uri.IsLoopback)
-        {
-            return true;
-        }
-
-        rejection = "The copilot only ever talks to a local Ollama, and the configured address is not local.";
-        return false;
-    }
+        => OllamaEndpoint.TryResolveLoopbackBaseUrl(configuration, out baseUrl, out rejection);
 
     private static string BuildPrompt(ModalResult result, ModalWindow window)
     {

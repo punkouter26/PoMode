@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace PoMode.API.Features.Audio;
 
 /// <summary>
@@ -27,10 +29,22 @@ public static class WavWriter
         writer.Write((short)16); // bits per sample
         writer.Write("data"u8);
         writer.Write(dataSize);
+        var block = new byte[64 * 1024];
+        var offset = 0;
         foreach (var sample in buffer.Samples)
         {
             var clamped = Math.Clamp(sample, -1f, 1f);
-            writer.Write((short)(clamped * short.MaxValue));
+            BinaryPrimitives.WriteInt16LittleEndian(block.AsSpan(offset), (short)(clamped * short.MaxValue));
+            offset += 2;
+            if (offset == block.Length)
+            {
+                stream.Write(block, 0, offset);
+                offset = 0;
+            }
+        }
+        if (offset > 0)
+        {
+            stream.Write(block, 0, offset);
         }
     }
 }

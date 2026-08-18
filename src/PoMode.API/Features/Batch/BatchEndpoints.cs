@@ -11,8 +11,6 @@ public static class BatchEndpoints
 {
     private const int MaxTracks = 20;
 
-    private static readonly JobStage[] TerminalStages = [JobStage.Complete, JobStage.Failed, JobStage.Cancelled];
-
     public static IEndpointRouteBuilder MapBatch(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/analysis/batch");
@@ -45,19 +43,18 @@ public static class BatchEndpoints
                 return TypedResults.BadRequest($"A batch is limited to {MaxTracks} tracks.");
             }
 
-            // Validate everything up front: a batch either starts whole or not at all.
+            // Validate everything up front: a batch either starts whole or not at all. The throw
+            // arm makes an unhandled UploadRejection fail closed instead of accepting the file.
             foreach (var file in form.Files)
             {
-                if (file.Length > AudioFormatValidator.MaxBytes)
+                if (await AudioFormatValidator.ValidateAsync(file, ct) is { } rejection)
                 {
-                    return TypedResults.BadRequest($"'{file.FileName}' exceeds the 100 MB limit.");
-                }
-                await using var probe = file.OpenReadStream();
-                var header = new byte[12];
-                var read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-                if (!AudioFormatValidator.IsSupported(header.AsSpan(0, read), out _))
-                {
-                    return TypedResults.BadRequest($"'{file.FileName}' is not a supported .mp3 or .wav file.");
+                    return TypedResults.BadRequest(rejection switch
+                    {
+                        UploadRejection.TooLarge => $"'{file.FileName}' exceeds the 100 MB limit.",
+                        UploadRejection.UnsupportedFormat => $"'{file.FileName}' is not a supported .mp3 or .wav file.",
+                        _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Unhandled upload rejection."),
+                    });
                 }
             }
 
@@ -95,7 +92,7 @@ public static class BatchEndpoints
 
         // 409 until every track is terminal; the archive then contains the artifacts of each
         // completed track (JSON + MIDI + MusicXML) and an error.txt for each failed one.
-        group.MapGet("/{batchId}/zip", async Task<Results<FileContentHttpResult, NotFound, Conflict<string>>> (
+        group.MapGet("/{batchId}/zip", async Task<Results<FileStreamHttpResult, NotFound, Conflict<string>>> (
             string batchId, BatchStore batches, JobStore store, CancellationToken ct) =>
         {
             var manifest = await batches.LoadAsync(batchId, ct);
@@ -109,12 +106,14 @@ public static class BatchEndpoints
             {
                 states.Add((track, await store.LoadAsync(track.JobId, ct)));
             }
-            if (states.Any(s => s.State is not null && !TerminalStages.Contains(s.State.Stage)))
+            if (states.Any(s => s.State is not null && !s.State.Stage.IsTerminal()))
             {
                 return TypedResults.Conflict("The batch is still processing — poll the batch status until every track finishes.");
             }
 
-            using var buffer = new MemoryStream();
+            // Not `using`: the file result takes ownership and disposes the stream after the
+            // response — a second ToArray copy of the whole archive would be pure waste.
+            var buffer = new MemoryStream();
             using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
             {
                 for (var index = 0; index < states.Count; index++)
@@ -147,7 +146,8 @@ public static class BatchEndpoints
                     }
                 }
             }
-            return TypedResults.File(buffer.ToArray(), "application/zip", $"pomode-batch-{batchId}.zip");
+            buffer.Position = 0;
+            return TypedResults.Stream(buffer, "application/zip", $"pomode-batch-{batchId}.zip");
         });
 
         return app;

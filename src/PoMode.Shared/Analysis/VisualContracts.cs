@@ -24,7 +24,6 @@ public sealed record VisualNote(
     int MidiPitch,
     double StartSec,
     double DurationSec,
-    int Velocity,
     NoteRole Role,
     string PitchLabel,
     string DegreeLabel);

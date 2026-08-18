@@ -8,7 +8,8 @@ namespace PoMode.API.Features.Analysis;
 /// write is mirrored to blob storage and reads fall back to it when the local file is gone.</summary>
 public sealed class JobStore(IConfiguration configuration, TimeProvider time, JobBlobStorage? blobs = null)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    // Shared with BatchStore so both stores persist with the same shape.
+    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     // The API and worker share one process, so an in-process, per-job lock is sufficient to stop
     // a status-poll read (GET /{jobId}) from colliding with the pipeline's write of the same
@@ -31,6 +32,25 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
 
     public string InputPath(JobState state)
         => Path.Combine(JobDir(state.JobId), "input" + Path.GetExtension(state.InputFileName));
+
+    /// <summary>Every job folder currently on disk, newest knowledge left to the caller — the
+    /// library endpoint loads each job's state (and restores from blob) through the normal reads.</summary>
+    public IReadOnlyList<string> ListJobIds()
+        => Directory.Exists(RootPath)
+            ? [.. Directory.GetDirectories(RootPath).Select(Path.GetFileName).OfType<string>()]
+            : [];
+
+    /// <summary>
+    /// The stored upload's path without needing the job state, or null when the job folder is gone
+    /// (purged by the nightly sweep, or deleted mid-flight) — callers degrade instead of throwing.
+    /// </summary>
+    public string? TryFindInputPath(string jobId)
+    {
+        var jobDir = JobDir(jobId);
+        return Directory.Exists(jobDir)
+            ? Directory.EnumerateFiles(jobDir, "input.*").FirstOrDefault()
+            : null;
+    }
 
     private string StatePath(string jobId) => Path.Combine(JobDir(jobId), "job.json");
 
@@ -57,26 +77,8 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
         return state;
     }
 
-    public async Task SaveAsync(JobState state, CancellationToken ct)
-    {
-        var gate = LockFor(state.JobId);
-        await gate.WaitAsync(ct);
-        try
-        {
-            var path = StatePath(state.JobId);
-            var tempPath = path + ".tmp";
-            await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(state, JsonOptions), ct);
-            File.Move(tempPath, path, overwrite: true);
-            if (blobs is not null)
-            {
-                await blobs.MirrorFileAsync(state.JobId, "job.json", path, ct);
-            }
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
+    public Task SaveAsync(JobState state, CancellationToken ct)
+        => WriteArtifactAsync(state.JobId, "job.json", state, ct);
 
     public async Task<JobState?> LoadAsync(string jobId, CancellationToken ct)
     {
@@ -164,6 +166,27 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
         }
     }
 
+    /// <summary>
+    /// Local path of an artifact, restoring it from the blob mirror first when the local copy is
+    /// gone. For large binaries (stem WAVs) endpoints stream this path with range support instead
+    /// of materialising the whole file in memory; those files are written once, before the job
+    /// completes, so serving them outside the per-job lock is safe.
+    /// </summary>
+    public async Task<string?> GetArtifactPathAsync(string jobId, string fileName, CancellationToken ct)
+    {
+        var gate = LockFor(jobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var path = Path.Combine(JobDir(jobId), fileName);
+            return File.Exists(path) || await TryRestoreFromBlobAsync(jobId, fileName, path, ct) ? path : null;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     /// <summary>Mirrors every file in the job folder to blob storage. Stem executors write
     /// .wav files straight into the folder, bypassing WriteArtifactAsync's own mirroring.</summary>
     public async Task MirrorToBlobAsync(string jobId, CancellationToken ct)
@@ -227,8 +250,28 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
 
             if (createdAt < cutoff)
             {
-                Directory.Delete(dir, recursive: true);
-                blobs?.DeleteJobBlobs(Path.GetFileName(dir));
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // A file can be open mid-stream (a stem being range-served) — skip this job
+                    // and let the next sweep retry rather than aborting the whole pass.
+                    continue;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    continue;
+                }
+                var purgedJobId = Path.GetFileName(dir);
+                blobs?.DeleteJobBlobs(purgedJobId);
+                // The per-job lock has no job left to guard — drop it, or the dictionary grows
+                // by one semaphore per job for the process lifetime.
+                if (_locks.TryRemove(purgedJobId, out var gate))
+                {
+                    gate.Dispose();
+                }
                 purged++;
             }
         }

@@ -33,7 +33,12 @@ public static class AudioDecoder
         var provider = reader.ToSampleProvider();
         var format = provider.WaveFormat;
 
-        var buffer = new List<float>(capacity: 1 << 20);
+        // Capacity hint only — TotalTime can be inexact for compressed formats, so the read loop
+        // below still owns the true length. The ceiling guards against corrupt headers that
+        // declare absurd rates: 1 << 27 floats (~512 MB) covers the duration cap at 48 kHz
+        // stereo with headroom, and a genuine longer file just grows past the hint normally.
+        var estimatedSamples = (long)Math.Ceiling(totalSeconds * format.SampleRate * format.Channels);
+        var buffer = new List<float>(capacity: (int)Math.Clamp(estimatedSamples, 1 << 20, 1 << 27));
         var chunk = new float[format.SampleRate * format.Channels];
         int count;
         while ((count = provider.Read(chunk.AsSpan())) > 0)

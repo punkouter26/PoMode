@@ -41,17 +41,16 @@ public static class AnalysisEndpoints
             {
                 return TypedResults.BadRequest("No file uploaded.");
             }
-            if (file.Length > AudioFormatValidator.MaxBytes)
+            // The throw arm makes an unhandled UploadRejection fail closed (500) instead of
+            // silently accepting a file the validator just rejected.
+            if (await AudioFormatValidator.ValidateAsync(file, ct) is { } rejection)
             {
-                return TypedResults.BadRequest("File exceeds the 100 MB limit.");
-            }
-
-            await using var stream = file.OpenReadStream();
-            var header = new byte[12];
-            var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-            if (!AudioFormatValidator.IsSupported(header.AsSpan(0, read), out _))
-            {
-                return TypedResults.BadRequest("Only .mp3 and .wav files are supported.");
+                return TypedResults.BadRequest(rejection switch
+                {
+                    UploadRejection.TooLarge => "File exceeds the 100 MB limit.",
+                    UploadRejection.UnsupportedFormat => "Only .mp3 and .wav files are supported.",
+                    _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Unhandled upload rejection."),
+                });
             }
 
             await using var fresh = file.OpenReadStream();
@@ -78,8 +77,7 @@ public static class AnalysisEndpoints
             {
                 return TypedResults.NotFound();
             }
-            if (!cancellations.TryCancel(jobId)
-                && state.Stage is not (JobStage.Complete or JobStage.Failed or JobStage.Cancelled))
+            if (!cancellations.TryCancel(jobId) && !state.Stage.IsTerminal())
             {
                 state.Stage = JobStage.Cancelled;
                 await store.SaveAsync(state, ct);
@@ -91,6 +89,7 @@ public static class AnalysisEndpoints
         MapArtifact(group, "notes-backing", "notes-backing.json");
         MapArtifact(group, "chords", "chords.json");
         MapArtifact(group, "beats", "beats.json");
+        MapArtifact(group, "preview", "preview.json");
         MapArtifact(group, "result", "result.json");
 
         // The canvas payload is derived, not stored: one request instead of three, and every colouring
@@ -125,18 +124,18 @@ public static class AnalysisEndpoints
             }
 
             // The job folder can be gone — purged by the nightly sweep, or deleted mid-flight — so a
-            // missing directory must degrade to "duration unknown" rather than throwing a 500. The
+            // missing input must degrade to "duration unknown" rather than throwing a 500. The
             // validator then bounds times by the upload path's own ceiling instead.
-            var jobDir = store.JobDir(jobId);
-            var inputPath = Directory.Exists(jobDir)
-                ? Directory.EnumerateFiles(jobDir, "input.*").FirstOrDefault()
-                : null;
+            var inputPath = store.TryFindInputPath(jobId);
             var duration = inputPath is null ? null : AudioDecoder.TryReadDurationSeconds(inputPath);
 
             if (ClientResultValidator.Validate(notes, duration) is { } problem)
             {
                 return TypedResults.BadRequest(problem);
             }
+            // The canvas and mixer virtualize over start-sorted notes; the bundled decoder sorts,
+            // but a third-party client is not obliged to — enforce the ordering contract here.
+            notes = [.. notes.OrderBy(note => note.StartSec)];
             // Racing another post: whoever completes the waiter first wins, the loser gets a 404.
             return registry.TryComplete(jobId, notes)
                 ? TypedResults.Ok()
@@ -145,7 +144,9 @@ public static class AnalysisEndpoints
 
         // Stem audio for the Web Audio mixer (spec §7). The caller's {name} selects from a fixed
         // allow-list and never becomes part of a path, so there is no traversal surface here at all.
-        group.MapGet("/{jobId}/stems/{name}", async Task<Results<FileContentHttpResult, NotFound>> (
+        // Served from disk with range support: stems are ~40MB and written once before the job
+        // completes, so buffering them per request would only churn the large-object heap.
+        group.MapGet("/{jobId}/stems/{name}", async Task<Results<PhysicalFileHttpResult, NotFound>> (
             string jobId, string name, JobStore store, CancellationToken ct) =>
         {
             string fileName;
@@ -176,8 +177,10 @@ public static class AnalysisEndpoints
                     return TypedResults.NotFound();
             }
 
-            var bytes = await store.ReadArtifactBytesAsync(jobId, fileName, ct);
-            return bytes is null ? TypedResults.NotFound() : TypedResults.File(bytes, contentType);
+            var path = await store.GetArtifactPathAsync(jobId, fileName, ct);
+            return path is null
+                ? TypedResults.NotFound()
+                : TypedResults.PhysicalFile(path, contentType, enableRangeProcessing: true);
         });
 
         return app;

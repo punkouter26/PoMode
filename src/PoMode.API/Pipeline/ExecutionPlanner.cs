@@ -54,7 +54,7 @@ public sealed class ExecutionPlanner(
         {
             if (await candidate.IsAvailableAsync(ct))
             {
-                return new StagePlan(stage, candidate.Tier, candidate.Name);
+                return new StagePlan(stage, candidate.Tier, candidate.Name, candidate.IsPlaceholder);
             }
         }
         throw new InvalidOperationException($"No executor is available for stage {stage}.");

@@ -5,6 +5,11 @@
     <div class="progress-header">
         <RadzenText TextStyle="TextStyle.H6" Text="Analysis progress" />
         <span class="percent">@($"{Status.Progress * 100:0}%")</span>
+        @if (IsRunning && OnCancel.HasDelegate)
+        {
+            <RadzenButton class="cancel-button" Text="Cancel" Size="ButtonSize.ExtraSmall"
+                          ButtonStyle="ButtonStyle.Light" Click="@(() => OnCancel.InvokeAsync())" />
+        }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
     @if (CurrentStepText is { } step)
@@ -55,10 +60,12 @@
     [Parameter, EditorRequired]
     public required JobStatusDto Status { get; set; }
 
+    /// <summary>Raised by the Cancel button; the parent owns the actual API call.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
     private Timer? _elapsedTimer;
 
-    private bool IsRunning
-        => Status.Stage is not (JobStage.Complete or JobStage.Failed or JobStage.Cancelled);
+    private bool IsRunning => !Status.Stage.IsTerminal();
 
     protected override void OnInitialized()
         // Repaint once a second so the active stage's elapsed time counts up live.
@@ -74,10 +81,10 @@
 
     private static string FriendlyName(string stage) => stage switch
     {
-        "Separating" => "Separating stems",
-        "PitchTracking" => "Transcribing melody",
-        "ChordDetecting" => "Detecting chords",
-        "ModalAnalysis" => "Analyzing modes",
+        StageNames.Separating => "Separating stems",
+        StageNames.PitchTracking => "Transcribing melody",
+        StageNames.ChordDetecting => "Detecting chords",
+        StageNames.ModalAnalysis => "Analyzing modes",
         _ => stage,
     };
 
@@ -101,9 +108,7 @@
     }
 
     private bool IsActive(StagePlan stage)
-        => Status.Stage.ToString() == stage.Stage
-            // AwaitingClient is the pitch stage parked on the browser, so that row stays active.
-            || (Status.Stage == JobStage.AwaitingClient && stage.Stage == "PitchTracking");
+        => StageNames.ForStage(Status.Stage) == stage.Stage;
 
     private string? DurationText(StagePlan stage)
     {

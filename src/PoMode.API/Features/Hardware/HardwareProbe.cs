@@ -24,21 +24,17 @@ public sealed class HardwareProbe(
 
     private async Task<IReadOnlyList<string>> ProbeOllamaAsync(CancellationToken ct)
     {
+        // Same loopback-only policy as the copilot itself: a remote BaseUrl must not make /diag
+        // report models the copilot will refuse to use (nor trigger an outbound call).
+        if (!OllamaEndpoint.TryResolveLoopbackBaseUrl(configuration, out var baseUrl, out _))
+        {
+            return [];
+        }
         try
         {
             using var client = httpClientFactory.CreateClient("ollama-probe");
             client.Timeout = TimeSpan.FromSeconds(1);
-            using var response = await client.GetAsync("http://localhost:11434/api/tags", ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                return [];
-            }
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-            return document.RootElement.GetProperty("models").EnumerateArray()
-                .Select(model => model.GetProperty("name").GetString())
-                .Where(name => name is not null)
-                .Select(name => name!)
-                .ToArray();
+            return await OllamaEndpoint.ListInstalledModelsAsync(client, baseUrl, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException)
         {

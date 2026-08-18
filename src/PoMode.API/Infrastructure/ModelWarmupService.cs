@@ -18,7 +18,8 @@ public sealed class ModelWarmupService(
     ModelRegistry registry,
     IConfiguration configuration,
     ILogger<ModelWarmupService> logger,
-    IReadOnlyList<ModelDescriptor>? catalog = null) : BackgroundService
+    IReadOnlyList<ModelDescriptor>? catalog = null,
+    Features.PitchTracking.OnnxPitchTracker? pitchTracker = null) : BackgroundService
 {
     private readonly IReadOnlyList<ModelDescriptor> _catalog = catalog ?? ModelCatalog.All;
 
@@ -63,6 +64,28 @@ public sealed class ModelWarmupService(
                     ex,
                     "Failed to warm up model {Key}; it remains unavailable until a later attempt.",
                     descriptor.Key);
+            }
+        }
+
+        // Downloading made the model reachable; building the session now makes the first job fast.
+        // Only Basic Pitch — its session is cached and small. HTDemucs stays per-run: keeping a
+        // multi-GB separation graph resident between jobs is not worth the memory.
+        if (pitchTracker is not null && !stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (await pitchTracker.IsAvailableAsync(stoppingToken))
+                {
+                    await pitchTracker.WarmUpAsync(stoppingToken);
+                    logger.LogInformation("Basic Pitch inference session warmed up.");
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Basic Pitch session warmup failed; the first job pays the load cost instead.");
             }
         }
     }

@@ -11,7 +11,10 @@ public sealed class OllamaHealthCheck(IConfiguration configuration, IHttpClientF
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        var baseUrl = (configuration["Copilot:BaseUrl"] ?? "http://localhost:11434").TrimEnd('/');
+        if (!OllamaEndpoint.TryResolveLoopbackBaseUrl(configuration, out var baseUrl, out var rejection))
+        {
+            return HealthCheckResult.Degraded(rejection!);
+        }
         try
         {
             using var client = httpClientFactory.CreateClient();

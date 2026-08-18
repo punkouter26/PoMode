@@ -303,8 +303,8 @@ public class VisualizationBuilderTests
     {
         var result = ResultWith(ScaleMode.Ionian, startSec: 0.0, endSec: 4.0);
 
-        Assert.Equal(0, VisualizationBuilder.WindowIndexAt(result, 0.0));
-        Assert.Equal(0, VisualizationBuilder.WindowIndexAt(result, 3.99));
+        Assert.Equal(0, result.WindowIndexAt(0.0));
+        Assert.Equal(0, result.WindowIndexAt(3.99));
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public class VisualizationBuilderTests
         var second = new ModalWindow(1, 2.0, 4.0, "G", 1, 0, [], false, [new ModalMatch(ScaleMode.Ionian, 0.9, [], [])]);
         var result = ResultWith(ScaleMode.Ionian) with { Windows = [first, second] };
 
-        Assert.Equal(1, VisualizationBuilder.WindowIndexAt(result, 2.0));
+        Assert.Equal(1, result.WindowIndexAt(2.0));
     }
 
     [Fact]
@@ -322,8 +322,8 @@ public class VisualizationBuilderTests
     {
         var result = ResultWith(ScaleMode.Ionian, startSec: 1.0, endSec: 4.0);
 
-        Assert.Null(VisualizationBuilder.WindowIndexAt(result, 4.0));
-        Assert.Null(VisualizationBuilder.WindowIndexAt(result, 0.5));
+        Assert.Null(result.WindowIndexAt(4.0));
+        Assert.Null(result.WindowIndexAt(0.5));
     }
 
     // ---- End to end through the real engine ----

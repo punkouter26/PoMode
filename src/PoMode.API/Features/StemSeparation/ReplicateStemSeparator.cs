@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PoMode.API.Features.Audio;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -65,8 +64,12 @@ public sealed class ReplicateStemSeparator(
             ?? throw new InvalidOperationException(
                 "The Replicate prediction returned no instrumental stem URL that this executor recognises.");
 
-        await DownloadStemAsync(client, vocalsUrl, Path.Combine(context.JobDir, "vocals.wav"), ct);
-        await DownloadStemAsync(client, instrumentalUrl, Path.Combine(context.JobDir, "instrumental.wav"), ct);
+        // Independent URLs and destination files — download both stems concurrently.
+        await Task.WhenAll(
+            StemDownloader.DownloadStemAsync(
+                client, vocalsUrl, Path.Combine(context.JobDir, "vocals.wav"), "Replicate", time, logger, ct),
+            StemDownloader.DownloadStemAsync(
+                client, instrumentalUrl, Path.Combine(context.JobDir, "instrumental.wav"), "Replicate", time, logger, ct));
     }
 
     /// <summary>
@@ -115,7 +118,7 @@ public sealed class ReplicateStemSeparator(
             throw new InvalidOperationException(
                 $"Replicate refused to create a prediction ({(int)response.StatusCode}).");
         }
-        return Parse(await response.Content.ReadAsStringAsync(ct));
+        return StemDownloader.ParseJson(await response.Content.ReadAsStringAsync(ct));
     }
 
     private async Task<JsonElement> PollAsync(
@@ -166,7 +169,7 @@ public sealed class ReplicateStemSeparator(
                 throw new InvalidOperationException(
                     $"Replicate refused to report prediction status ({(int)response.StatusCode}).");
             }
-            current = Parse(await response.Content.ReadAsStringAsync(ct));
+            current = StemDownloader.ParseJson(await response.Content.ReadAsStringAsync(ct));
         }
     }
 
@@ -198,38 +201,4 @@ public sealed class ReplicateStemSeparator(
         return output.ValueKind == JsonValueKind.String && index == 0 ? output.GetString() : null;
     }
 
-    /// <summary>
-    /// Downloads the stem, then re-encodes it through <see cref="WavWriter"/>. The provider may hand
-    /// back any container it likes; every downstream stage expects <c>vocals.wav</c> to really be a wav.
-    /// </summary>
-    private async Task DownloadStemAsync(HttpClient client, string url, string destination, CancellationToken ct)
-    {
-        using var response = await ResilientHttp.SendAsync(
-            client, () => new HttpRequestMessage(HttpMethod.Get, url), time, logger, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Could not download a separated stem from Replicate ({(int)response.StatusCode}).");
-        }
-
-        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, $"{Guid.NewGuid():N}.download");
-        try
-        {
-            await File.WriteAllBytesAsync(temporary, await response.Content.ReadAsByteArrayAsync(ct), ct);
-            WavWriter.Write(destination, AudioDecoder.Decode(temporary));
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
-        }
-    }
-
-    private static JsonElement Parse(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        return document.RootElement.Clone(); // the document is disposed; Clone survives it
-    }
 }

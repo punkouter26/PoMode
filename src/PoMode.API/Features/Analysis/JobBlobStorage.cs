@@ -59,14 +59,11 @@ public sealed class JobBlobStorage(
         {
             return;
         }
-        foreach (var file in Directory.EnumerateFiles(directory))
-        {
-            if (Path.GetExtension(file) == ".tmp")
-            {
-                continue;
-            }
-            await MirrorFileAsync(jobId, Path.GetFileName(file), file, ct);
-        }
+        // Uploads are independent (and MirrorFileAsync swallows its own failures), so run them
+        // concurrently — the job folder holds two ~40MB stem WAVs plus the input.
+        await Task.WhenAll(Directory.EnumerateFiles(directory)
+            .Where(file => Path.GetExtension(file) != ".tmp")
+            .Select(file => MirrorFileAsync(jobId, Path.GetFileName(file), file, ct)));
     }
 
     public async Task<byte[]?> TryDownloadAsync(string jobId, string fileName, CancellationToken ct)

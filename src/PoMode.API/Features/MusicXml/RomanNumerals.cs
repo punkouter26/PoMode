@@ -1,3 +1,4 @@
+using PoMode.API.Features.ModalAnalysis;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.MusicXml;
@@ -14,8 +15,7 @@ public static class RomanNumerals
 
     public static string Analyze(ChordSpan chord, int tonicPitchClass)
     {
-        var rootPitchClass = ParsePitchClass(chord.Root);
-        if (rootPitchClass < 0)
+        if (!PitchNames.TryParseRoot(chord.Root, out var rootPitchClass))
         {
             return chord.Symbol; // "N" (no chord) or an unexpected root — show the raw symbol
         }
@@ -32,31 +32,5 @@ public static class RomanNumerals
             _ => "",
         };
         return numeral + suffix;
-    }
-
-    /// <summary>"C" → 0 … "B" → 11; supports # and b accidentals. -1 when unparseable.</summary>
-    public static int ParsePitchClass(string root)
-    {
-        if (string.IsNullOrEmpty(root))
-        {
-            return -1;
-        }
-        var natural = char.ToUpperInvariant(root[0]) switch
-        {
-            'C' => 0, 'D' => 2, 'E' => 4, 'F' => 5, 'G' => 7, 'A' => 9, 'B' => 11,
-            _ => -1,
-        };
-        if (natural < 0)
-        {
-            return -1;
-        }
-        var shift = root[1..] switch
-        {
-            "" => 0,
-            "#" or "♯" => 1,
-            "b" or "♭" => -1,
-            _ => int.MinValue,
-        };
-        return shift == int.MinValue ? -1 : ((natural + shift) % 12 + 12) % 12;
     }
 }

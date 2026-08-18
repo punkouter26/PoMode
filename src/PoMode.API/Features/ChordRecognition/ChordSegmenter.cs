@@ -11,13 +11,6 @@ namespace PoMode.API.Features.ChordRecognition;
 public static class ChordSegmenter
 {
     /// <summary>
-    /// Segments a per-frame chord label sequence into time-ordered <see cref="ChordSpan"/>s.
-    /// Pipeline: median-filter labels over <paramref name="medianWindow"/> frames (mode of the
-    /// window, ties broken by the centre frame) → merge equal runs into spans → absorb spans
-    /// shorter than <paramref name="minDurationSec"/> into the longer neighbour → drop "N"
-    /// (no chord) spans from the output.
-    /// </summary>
-    /// <summary>
     /// Beat-synchronous segmentation (§13.6 fix b): chord changes land on beats, so each beat
     /// interval takes the majority label of its frames and boundaries fall exactly on the grid —
     /// no arbitrary duration floor absorbing flicker. When the grid's confidence is below
@@ -61,28 +54,17 @@ public static class ChordSegmenter
         // Majority label per beat interval; an interval too short to contain a frame centre
         // inherits its left neighbour so it merges away instead of inventing a label.
         var labels = new ChordCandidate?[boundaries.Count - 1];
+        var frameIndex = 0;
         for (var interval = 0; interval < labels.Length; interval++)
         {
-            var start = boundaries[interval];
             var end = boundaries[interval + 1];
-            var counts = new Dictionary<ChordCandidate, int>();
-            var firstSeen = new List<ChordCandidate>();
-            for (var i = 0; i < smoothed.Count; i++)
+            var firstFrame = frameIndex;
+            while (frameIndex < smoothed.Count && (frameIndex + 0.5) / framesPerSecond < end)
             {
-                var centre = (i + 0.5) / framesPerSecond;
-                if (centre < start || centre >= end)
-                {
-                    continue;
-                }
-                if (!counts.ContainsKey(smoothed[i]))
-                {
-                    counts[smoothed[i]] = 0;
-                    firstSeen.Add(smoothed[i]);
-                }
-                counts[smoothed[i]]++;
+                frameIndex++;
             }
-            labels[interval] = counts.Count > 0
-                ? firstSeen.MaxBy(c => counts[c])
+            labels[interval] = frameIndex > firstFrame
+                ? MajorityLabel(smoothed, firstFrame, frameIndex - 1)
                 : interval > 0 ? labels[interval - 1] : null;
         }
         // A frameless leading interval takes the first real label so it merges forward.
@@ -108,10 +90,7 @@ public static class ChordSegmenter
             }
         }
 
-        return spans
-            .Where(s => s.Chord.Symbol != "N")
-            .Select(s => new ChordSpan(s.Chord.Symbol, s.Chord.Root, s.Chord.Quality, s.Start, s.End))
-            .ToArray();
+        return ToChordSpans(spans);
     }
 
     public static IReadOnlyList<ChordSpan> Segment(
@@ -130,11 +109,15 @@ public static class ChordSegmenter
         AbsorbShortSpans(spans, minDurationSec);
         var merged = MergeAdjacentEqual(spans);
 
-        return merged
+        return ToChordSpans(merged);
+    }
+
+    /// <summary>Emits the final spans, dropping "N" (no chord) entries.</summary>
+    private static ChordSpan[] ToChordSpans(List<(ChordCandidate Chord, double Start, double End)> spans)
+        => spans
             .Where(s => s.Chord.Symbol != "N")
             .Select(s => new ChordSpan(s.Chord.Symbol, s.Chord.Root, s.Chord.Quality, s.Start, s.End))
             .ToArray();
-    }
 
     private static List<ChordCandidate> MedianSmooth(
         IReadOnlyList<(ChordCandidate Chord, double Score)> frames, int medianWindow)
@@ -142,25 +125,34 @@ public static class ChordSegmenter
         var n = frames.Count;
         var radius = Math.Max(0, medianWindow) / 2;
 
+        var labels = new List<ChordCandidate>(n);
+        for (var i = 0; i < n; i++)
+        {
+            labels.Add(frames[i].Chord);
+        }
+
         var result = new List<ChordCandidate>(n);
         for (var i = 0; i < n; i++)
         {
             var start = Math.Max(0, i - radius);
             var end = Math.Min(n - 1, i + radius);
-            result.Add(ModeOfWindow(frames, start, end, i));
+            result.Add(MajorityLabel(labels, start, end, i));
         }
         return result;
     }
 
-    /// <summary>Mode of the chord labels in [start, end] (inclusive); ties broken by the centre frame.</summary>
-    private static ChordCandidate ModeOfWindow(
-        IReadOnlyList<(ChordCandidate Chord, double Score)> frames, int start, int end, int centreIndex)
+    /// <summary>
+    /// Mode of the labels in [start, end] (inclusive); ties broken by <paramref name="centreIndex"/>'s
+    /// label when given and among the tied, otherwise by first-seen order.
+    /// </summary>
+    private static ChordCandidate MajorityLabel(
+        IReadOnlyList<ChordCandidate> labels, int start, int end, int? centreIndex = null)
     {
         var counts = new Dictionary<ChordCandidate, int>();
         var firstSeenOrder = new List<ChordCandidate>();
         for (var i = start; i <= end; i++)
         {
-            var candidate = frames[i].Chord;
+            var candidate = labels[i];
             if (!counts.ContainsKey(candidate))
             {
                 counts[candidate] = 0;
@@ -176,8 +168,15 @@ public static class ChordSegmenter
             return tied[0];
         }
 
-        var centreLabel = frames[centreIndex].Chord;
-        return tied.Contains(centreLabel) ? centreLabel : tied[0];
+        if (centreIndex is { } centre)
+        {
+            var centreLabel = labels[centre];
+            if (tied.Contains(centreLabel))
+            {
+                return centreLabel;
+            }
+        }
+        return tied[0];
     }
 
     private static List<(ChordCandidate Chord, double Start, double End)> MergeRuns(

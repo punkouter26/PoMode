@@ -1,4 +1,3 @@
-using PoMode.API.Pipeline;
 using PoMode.Client.Services;
 using PoMode.Shared.Analysis;
 using Xunit;
@@ -22,12 +21,12 @@ public sealed class MockDataStateTests
     }
 
     [Fact]
-    public void Plan_with_a_fake_executor_is_mock()
+    public void Plan_with_a_placeholder_executor_is_mock()
     {
         var plan = new[]
         {
             new StagePlan(StageNames.Separating, ExecutionTier.Local, "OnnxStemSeparator"),
-            new StagePlan(StageNames.PitchTracking, ExecutionTier.Local, "FakePitchTracker"),
+            new StagePlan(StageNames.PitchTracking, ExecutionTier.Local, "FakePitchTracker", IsPlaceholder: true),
             new StagePlan(StageNames.ChordDetecting, ExecutionTier.Local, "RealChordRecognizer"),
             new StagePlan(StageNames.ModalAnalysis, ExecutionTier.Local, "ModalAnalysisEngine"),
         };

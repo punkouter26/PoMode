@@ -1,16 +1,102 @@
 @inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject AnalysisClient Analysis
+@implements IAsyncDisposable
+
+<a class="skip-link" href="#main-content">Skip to content</a>
+<canvas class="fx-background" @ref="_background" aria-hidden="true"></canvas>
 
 <header class="app-header">
     <div class="brand">PoMode</div>
-    <nav class="actions">
-        <RadzenLink Path="/" Text="Analyze" />
-        <RadzenLink Path="/diagnostics" Text="Diagnostics" />
+    <nav class="actions" aria-label="Main navigation">
+        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Analyze</NavLink>
+        <NavLink class="nav-link" href="library">Library</NavLink>
+        <NavLink class="nav-link" href="live">Live</NavLink>
+        <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
     </nav>
-    <div class="session">Guest</div>
+    <div class="session">
+        <RadzenButton class="theme-toggle" Text="@ThemeLabel" ButtonStyle="ButtonStyle.Light"
+                      Size="ButtonSize.Small" Click="@CycleThemeAsync"
+                      title="Theme: follows the system by default; click to override" />
+        <span>@_userName</span>
+    </div>
 </header>
 
 <MockDataBanner />
+<RadzenNotification />
 
-<main class="app-main">
+<main id="main-content" class="app-main">
     @Body
 </main>
+
+@code {
+    private ElementReference _background;
+    private IJSObjectReference? _fx;
+    private IJSObjectReference? _theme;
+    private string _themeMode = "system";
+    private string _userName = "Guest";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // The session slot shows who the server authenticated, not a hardcoded label.
+            if (await Analysis.GetSessionAsync() is { } session && !string.IsNullOrWhiteSpace(session.UserName))
+            {
+                _userName = session.UserName;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // Offline or unauthenticated: the default label stands.
+        }
+    }
+
+    private string ThemeLabel => _themeMode switch
+    {
+        "light" => "Theme: Light",
+        "dark" => "Theme: Dark",
+        _ => "Theme: Auto",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+        _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
+        _themeMode = await _theme.InvokeAsync<string>("init");
+        _fx = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-background.js");
+        await _fx.InvokeVoidAsync("init", _background);
+        StateHasChanged();
+    }
+
+    private async Task CycleThemeAsync()
+    {
+        if (_theme is not null)
+        {
+            _themeMode = await _theme.InvokeAsync<string>("cycle");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_fx is not null)
+            {
+                await _fx.InvokeVoidAsync("dispose", _background);
+                await _fx.DisposeAsync();
+            }
+            if (_theme is not null)
+            {
+                await _theme.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone during teardown.
+        }
+    }
+}

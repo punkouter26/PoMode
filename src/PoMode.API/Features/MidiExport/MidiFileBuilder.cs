@@ -63,7 +63,7 @@ public static class MidiFileBuilder
         var events = new List<(long Tick, MidiEvent Event)>();
         foreach (var chord in chords)
         {
-            if (!TonicDetector.TryParseRoot(chord.Root, out var rootClass))
+            if (!PitchNames.TryParseRoot(chord.Root, out var rootClass))
             {
                 continue;
             }
