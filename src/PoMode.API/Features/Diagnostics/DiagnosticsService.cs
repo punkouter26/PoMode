@@ -5,7 +5,7 @@ using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
 
-namespace PoMode.API.Features.Hardware;
+namespace PoMode.API.Features.Diagnostics;
 
 /// <summary>Builds the /diag report. Reports secret PRESENCE only — never values.</summary>
 public sealed class DiagnosticsService(

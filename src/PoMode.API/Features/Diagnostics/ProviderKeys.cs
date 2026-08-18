@@ -1,4 +1,4 @@
-namespace PoMode.API.Features.Hardware;
+namespace PoMode.API.Features.Diagnostics;
 
 /// <summary>
 /// Single source of truth for the configuration keys backing external provider credentials.

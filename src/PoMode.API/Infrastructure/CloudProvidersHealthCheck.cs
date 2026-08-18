@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using PoMode.API.Features.Cloud;
-using PoMode.API.Features.Hardware;
+using PoMode.API.Features.Diagnostics;
 
 namespace PoMode.API.Infrastructure;
 

@@ -5,7 +5,7 @@ using PoMode.API.Features.Batch;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Features.Copilot;
-using PoMode.API.Features.Hardware;
+using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Library;
 using PoMode.API.Features.Live;
 using PoMode.API.Features.MidiExport;

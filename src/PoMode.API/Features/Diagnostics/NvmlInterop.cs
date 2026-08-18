@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using PoMode.Shared.Hardware;
 
-namespace PoMode.API.Features.Hardware;
+namespace PoMode.API.Features.Diagnostics;
 
 /// <summary>Thin NVML wrapper. Best-effort: any missing DLL/entry point or non-zero return yields null.</summary>
 public static partial class NvmlInterop

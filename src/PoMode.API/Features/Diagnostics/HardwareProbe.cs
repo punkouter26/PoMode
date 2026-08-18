@@ -2,7 +2,7 @@ using System.Text.Json;
 using PoMode.API.Infrastructure;
 using PoMode.Shared.Hardware;
 
-namespace PoMode.API.Features.Hardware;
+namespace PoMode.API.Features.Diagnostics;
 
 /// <summary>Runtime capability probe feeding /diag and (in later phases) executor availability.</summary>
 public sealed class HardwareProbe(

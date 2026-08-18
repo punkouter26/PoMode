@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using PoMode.API.Features.Cloud;
-using PoMode.API.Features.Hardware;
+using PoMode.API.Features.Diagnostics;
 using Xunit;
 
 namespace PoMode.Unit.Cloud;
