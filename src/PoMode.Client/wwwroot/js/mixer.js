@@ -516,7 +516,11 @@ export async function load(root, urls) {
 
     report(state, 'loading');
     state.context ??= new (window.AudioContext || window.webkitAudioContext)();
+    try {
+        state.dotnet?.invokeMethodAsync('OnStemLoadProgress', 'Downloading audio stems (mix, vocals, backing)…');
+    } catch { }
 
+    let downloadedCount = 0;
     const loaded = await Promise.all(STEMS.map(async stem => {
         const url = urls[stem];
         if (!url) {
@@ -527,7 +531,12 @@ export async function load(root, urls) {
             if (!response.ok) {
                 return [stem, null];
             }
-            return [stem, await state.context.decodeAudioData(await response.arrayBuffer())];
+            const buffer = await response.arrayBuffer();
+            downloadedCount++;
+            try {
+                state.dotnet?.invokeMethodAsync('OnStemLoadProgress', `Decoding ${stem} stem (${downloadedCount}/3)…`);
+            } catch { }
+            return [stem, await state.context.decodeAudioData(buffer)];
         } catch {
             return [stem, null]; // an undecodable stem must not break the whole mixer
         }
@@ -602,6 +611,9 @@ export async function loadNotes(root, urls) {
     if (!state) {
         return [0, 0];
     }
+    try {
+        state.dotnet?.invokeMethodAsync('OnStemLoadProgress', 'Loading melody notes & beat grid…');
+    } catch { }
     const fetchList = async url => {
         try {
             const response = await fetch(url);

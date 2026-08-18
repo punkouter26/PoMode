@@ -1,0 +1,220 @@
+.stats-card {
+    margin-top: 1rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    background: var(--pm-surface, #1e1e24);
+    border: 1px solid var(--pm-border, #333);
+    border-radius: 8px;
+}
+
+.stats-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stats-subtitle {
+    font-size: 0.85rem;
+    color: var(--pm-muted, #888);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.stat-box {
+    background: var(--pm-surface-subtle, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--pm-border, #333);
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.stat-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-muted, #888);
+    font-weight: 600;
+}
+
+.stat-highlight {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.range-span {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--pm-text, #fff);
+}
+
+.stat-badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background: var(--pm-accent-subtle, rgba(99, 102, 241, 0.15));
+    color: var(--pm-accent, #818cf8);
+    font-weight: 600;
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+}
+
+.stat-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--pm-muted, #aaa);
+}
+
+.stat-row strong {
+    color: var(--pm-text, #fff);
+}
+
+.role-bars, .mode-distribution-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.role-bar-row, .mode-dist-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 40px;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.mode-dist-row {
+    grid-template-columns: 110px 1fr 65px;
+}
+
+.role-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--pm-text, #ccc);
+    white-space: nowrap;
+}
+
+.swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.swatch.chord-tone { background: #10b981; }
+.swatch.characteristic { background: #ec4899; }
+.swatch.in-mode { background: #6366f1; }
+.swatch.outside { background: #ef4444; }
+
+.bar-track {
+    height: 6px;
+    background: var(--pm-border, #333);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.chord-tone-fill { background: #10b981; }
+.characteristic-fill { background: #ec4899; }
+.in-mode-fill { background: #6366f1; }
+.outside-fill { background: #ef4444; }
+.mode-dist-fill { background: #818cf8; }
+
+.role-val, .mode-dist-percent {
+    text-align: right;
+    color: var(--pm-muted, #aaa);
+    font-weight: 500;
+}
+
+.mode-dist-name {
+    color: var(--pm-text, #eee);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chroma-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--pm-border, #333);
+}
+
+.chroma-bars {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 0.35rem;
+    align-items: end;
+    min-height: 80px;
+}
+
+.chroma-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: default;
+}
+
+.chroma-bar-container {
+    height: 55px;
+    display: flex;
+    align-items: flex-end;
+    width: 100%;
+}
+
+.chroma-bar {
+    width: 100%;
+    background: var(--pm-accent-muted, #4f46e5);
+    border-radius: 2px 2px 0 0;
+    transition: height 0.3s ease;
+}
+
+.chroma-tonic .chroma-bar {
+    background: #f59e0b;
+}
+
+.chroma-label {
+    font-size: 0.75rem;
+    color: var(--pm-muted, #888);
+    font-weight: 600;
+}
+
+.chroma-tonic .chroma-label {
+    color: #f59e0b;
+}
+
+.tonic-indicator {
+    font-size: 0.65rem;
+    color: #f59e0b;
+    margin-top: -0.3rem;
+}

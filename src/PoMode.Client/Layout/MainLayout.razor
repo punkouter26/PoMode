@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject AnalysisClient Analysis
+@inject AnalysisViewState ViewState
 @implements IAsyncDisposable
 
 <a class="skip-link" href="#main-content">Skip to content</a>
@@ -12,8 +13,21 @@
         <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Analyze</NavLink>
         <NavLink class="nav-link" href="library">Library</NavLink>
         <NavLink class="nav-link" href="live">Live</NavLink>
+        <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
     </nav>
     <div class="session">
+        <div class="nav-scene-switcher" role="tablist" aria-label="Analysis view mode">
+            <button class="nav-scene-btn @(ViewState.IsBasic ? "active" : "")" type="button" role="tab"
+                    aria-selected="@ViewState.IsBasic" @onclick="@(() => ViewState.SetViewMode("basic"))"
+                    title="Switch to Basic View">
+                🎯 Basic
+            </button>
+            <button class="nav-scene-btn @(ViewState.IsAdvanced ? "active" : "")" type="button" role="tab"
+                    aria-selected="@ViewState.IsAdvanced" @onclick="@(() => ViewState.SetViewMode("advanced"))"
+                    title="Switch to Advanced View">
+                🔬 Advanced
+            </button>
+        </div>
         <button class="icon-button theme-toggle" type="button" @onclick="CycleThemeAsync"
                 title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {ThemeLabel}")">
             @ThemeGlyph
@@ -92,6 +106,13 @@
 
     private void CloseShortcutsAsync() => _shortcutsOpen = false;
 
+    protected override void OnInitialized()
+    {
+        ViewState.Changed += OnViewStateChanged;
+    }
+
+    private void OnViewStateChanged() => InvokeAsync(StateHasChanged);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
@@ -115,6 +136,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        ViewState.Changed -= OnViewStateChanged;
         try
         {
             if (_fx is not null)

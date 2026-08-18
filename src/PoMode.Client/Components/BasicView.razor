@@ -1,0 +1,76 @@
+@using PoMode.Shared.Analysis
+
+<div class="basic-container">
+    <RadzenCard class="basic-main-card">
+        <!-- Compact Header: Stats + Actions on a single row -->
+        <div class="basic-header-row">
+            <div class="basic-meta-group">
+                <div class="basic-badge-key">
+                    <span class="basic-badge-label">Key & Mode</span>
+                    <span class="basic-badge-value">@PrimaryHeadline</span>
+                    @if (Result.PrimaryMode is not null)
+                    {
+                        <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0}")</span>
+                    }
+                </div>
+
+                <div class="basic-badge-item">
+                    <span class="basic-badge-label">Tempo</span>
+                    <span class="basic-badge-value">@($"{Result.TempoBpm:0} BPM")</span>
+                </div>
+
+                <div class="basic-badge-item">
+                    <span class="basic-badge-label">Length</span>
+                    <span class="basic-badge-value">@($"{Visual.DurationSec:0.0}s")</span>
+                    <span class="basic-badge-sub">@($"{Visual.Notes.Count} notes")</span>
+                </div>
+            </div>
+
+            <div class="basic-actions-group">
+                @if (OnAnalyzeNew.HasDelegate)
+                {
+                    <button class="basic-btn-secondary" type="button" @onclick="() => OnAnalyzeNew.InvokeAsync()"
+                            title="Analyze a different audio file">
+                        + New Track
+                    </button>
+                }
+                <a class="basic-btn-secondary" href="@($"api/analysis/{Status.JobId}/midi")" target="_blank" rel="noopener"
+                   title="Download melody as standard MIDI file">
+                    📥 MIDI
+                </a>
+            </div>
+        </div>
+
+        <!-- Compact Piano Roll -->
+        <div class="basic-canvas-section">
+            <AnalysisCanvas Model="Visual" SelectedWindowIndex="SelectedWindowIndex"
+                            PlayheadSec="PlayheadSec" OnSeek="OnSeek"
+                            OnReady="@(element => _canvasElement = element)" />
+        </div>
+
+        <!-- Streamlined Stem Player Bar -->
+        @if (_canvasElement is { } canvasElement)
+        {
+            <div class="basic-player-section">
+                <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
+                           TonicName="@Result.TonicName" TonicPitchClass="@Result.TonicPitchClass" Basic="true" />
+            </div>
+        }
+    </RadzenCard>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required JobStatusDto Status { get; set; }
+    [Parameter, EditorRequired] public required ModalResult Result { get; set; }
+    [Parameter, EditorRequired] public required VisualizationPayload Visual { get; set; }
+    [Parameter] public int? SelectedWindowIndex { get; set; }
+    [Parameter] public double PlayheadSec { get; set; }
+    [Parameter] public EventCallback<double> OnSeek { get; set; }
+    [Parameter] public EventCallback OnAnalyzeNew { get; set; }
+
+    private ElementReference? _canvasElement;
+
+    private string PrimaryHeadline => Result.PrimaryMode is null
+        ? $"{Result.TonicName} (Mode unclear)"
+        : $"{Result.TonicName} {Result.PrimaryMode}";
+}

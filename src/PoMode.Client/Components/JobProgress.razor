@@ -14,18 +14,20 @@
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
     @if (CurrentStepText is { } step)
     {
-        <RadzenText class="current-step" Text="@step" />
+        <div class="current-step-wrap">
+            <span class="active-pulse" aria-hidden="true"></span>
+            <RadzenText class="current-step" Text="@step" />
+        </div>
+        @if (ActiveStageDetail is { } detail)
+        {
+            <RadzenText class="stage-detail-hint" Text="@detail" />
+        }
     }
     <ul class="stages">
         @foreach (var stage in Status.Plan)
         {
             <li class="@StageClass(stage)">
-                @* Local is the default — show its tier only when the cost is real (Cloud) or unusual
-                   (Browser). Four identical "💻 Ran locally" rows on every job is visual noise. *@
-                @if (stage.Tier != ExecutionTier.Local)
-                {
-                    <span class="tier"><TierBadge Tier="stage.Tier" /></span>
-                }
+                <span class="tier"><TierBadge Tier="stage.Tier" /></span>
                 <span class="name">@FriendlyName(stage.Stage)</span>
                 <span class="executor">@stage.Executor</span>
                 @if (DurationText(stage) is { } duration)
@@ -93,6 +95,31 @@
         _ => stage,
     };
 
+    private static string StageDescription(string stage) => stage switch
+    {
+        StageNames.Separating => "Separating audio into vocal and instrumental tracks with neural AI model…",
+        StageNames.PitchTracking => "Transcribing vocal melody and pitch contours with Basic Pitch…",
+        StageNames.ChordDetecting => "Detecting harmony and chord progressions over time…",
+        StageNames.ModalAnalysis => "Computing modal scale distribution and determining key & tonic…",
+        _ => "Processing analysis stage…",
+    };
+
+    private string? ActiveStageDetail
+    {
+        get
+        {
+            if (!IsRunning) return null;
+            for (var index = 0; index < Status.Plan.Count; index++)
+            {
+                if (IsActive(Status.Plan[index]))
+                {
+                    return StageDescription(Status.Plan[index].Stage);
+                }
+            }
+            return null;
+        }
+    }
+
     private string? CurrentStepText
     {
         get
@@ -105,7 +132,10 @@
             {
                 if (IsActive(Status.Plan[index]))
                 {
-                    return $"Step {index + 1} of {Status.Plan.Count}: {FriendlyName(Status.Plan[index].Stage)}…";
+                    var stage = Status.Plan[index];
+                    var dur = DurationText(stage);
+                    var durNote = dur is not null ? $" ({dur})" : "";
+                    return $"Step {index + 1} of {Status.Plan.Count}: {FriendlyName(stage.Stage)}{durNote}";
                 }
             }
             return "Waiting to start…";

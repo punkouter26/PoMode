@@ -243,7 +243,7 @@ function frame(state, now) {
 
 /// Starts the spectrum strip on `canvas`. Renders nothing under prefers-reduced-motion.
 export function init(canvas) {
-    if (states.has(canvas)) {
+    if (!canvas || typeof canvas.getContext !== 'function' || states.has(canvas)) {
         return;
     }
     const state = {
@@ -290,6 +290,9 @@ export function init(canvas) {
 
 /// Stops frames and polls, releases GL resources, and forgets the canvas.
 export function dispose(canvas) {
+    if (!canvas) {
+        return;
+    }
     const state = states.get(canvas);
     if (!state) {
         return;

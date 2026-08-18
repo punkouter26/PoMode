@@ -101,10 +101,37 @@
     color: var(--pm-border);
 }
 
+.mixer-status-line {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.15rem 0;
+}
+
+.mixer-pulse-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--pm-accent);
+    box-shadow: 0 0 6px var(--pm-accent);
+    animation: mixer-pulse 1s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes mixer-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.7); }
+}
+
 .mixer-note {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     color: var(--pm-fg-muted);
+}
+
+.loading-active .mixer-note {
+    color: var(--pm-fg);
+    font-weight: 500;
 }
 
 .karaoke-error {
@@ -117,6 +144,90 @@
     height: 3.2rem;
     border-radius: 0.4rem;
     background: transparent;
+}
+
+.mixer-debug-toggle {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--pm-border);
+    color: var(--pm-fg-muted);
+    font-size: 0.72rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.mixer-debug-toggle:hover {
+    color: var(--pm-fg);
+    border-color: var(--pm-accent);
+}
+
+.mixer-debug-panel {
+    flex-basis: 100%;
+    background: var(--pm-surface);
+    border: 1px solid var(--pm-border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin: 0.25rem 0;
+    font-size: 0.78rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.debug-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    color: var(--pm-fg-muted);
+}
+
+.debug-row span {
+    min-width: 110px;
+}
+
+.debug-row strong {
+    color: var(--pm-fg);
+}
+
+.debug-row code {
+    color: var(--pm-accent);
+    font-family: ui-monospace, monospace;
+}
+
+.debug-row.debug-error strong {
+    color: var(--pm-note-outside, #ef4444);
+}
+
+.mixer-error-bar {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    margin: 0.25rem 0;
+    font-size: 0.8rem;
+    color: #ef4444;
+}
+
+.mixer-retry-btn {
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mixer-retry-btn:hover {
+    background: #dc2626;
 }
 
 .mixer-loading {

@@ -466,7 +466,10 @@ function onPointerUp(state, event) {
     if (event.type === 'pointercancel' || !drag || drag.moved > DRAG_THRESHOLD_PX || !state.dotNet) {
         return;
     }
-    state.dotNet.invokeMethodAsync('OnCanvasSeek', xToTime(state, event.clientX));
+    const seekTime = xToTime(state, event.clientX);
+    state.playhead = seekTime;
+    invalidate(state);
+    state.dotNet.invokeMethodAsync('OnCanvasSeek', seekTime);
 }
 
 // ---- exports ----

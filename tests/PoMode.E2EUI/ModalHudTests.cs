@@ -60,8 +60,8 @@ public class ModalHudTests(AppFixture app)
         await Assertions.Expect(page.GetByText("Primary mode")).ToBeVisibleAsync(Visible);
         // Tonic C with a C-Am-F-G progression; the engine names Ionian from the sung material.
         await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("C");
-        await Assertions.Expect(page.GetByText("Harmonic context")).ToBeVisibleAsync(Visible);
-        await Assertions.Expect(page.GetByText("Scale degrees")).ToBeVisibleAsync(Visible);
+        await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("Ionian");
+        await Assertions.Expect(page.GetByText("confidence")).ToBeVisibleAsync(Visible);
     }
 
     [Fact]
@@ -127,6 +127,7 @@ public class ModalHudTests(AppFixture app)
         await Assertions.Expect(page.GetByText("No window had enough sung material to name a mode."))
             .ToBeVisibleAsync(Visible);
         await Assertions.Expect(page.GetByText("(estimated)")).ToBeVisibleAsync(Visible);
+        await page.Locator(".export-toggle").ClickAsync();
         await Assertions.Expect(page.GetByText("Download MIDI")).ToBeVisibleAsync(Visible);
     }
 

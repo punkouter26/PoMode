@@ -100,7 +100,7 @@ public class CanvasTests(AppFixture app)
         // and the lower part of the canvas sits below the fold on this page.
         await ClickCanvasAsync(canvas, 0.75f, 0.3f);
 
-        await Assertions.Expect(canvas).Not.ToHaveAttributeAsync("data-playhead", "0",
+        await Assertions.Expect(canvas).Not.ToHaveAttributeAsync("data-playhead", "0.000",
             new() { Timeout = AppFixture.ExpectTimeoutMs });
         Assert.True(await PlayheadAsync(canvas) > 0, "playhead did not move");
     }

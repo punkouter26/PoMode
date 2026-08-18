@@ -9,10 +9,39 @@
     color: var(--pm-accent);
 }
 
+.current-step-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.active-pulse {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--pm-accent);
+    box-shadow: 0 0 8px var(--pm-accent);
+    animation: pulse-glow 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.75); }
+}
+
 .current-step {
-    margin-top: 0.35rem;
     font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--pm-fg);
+}
+
+.stage-detail-hint {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
     color: var(--pm-fg-muted);
+    font-style: italic;
 }
 
 .spinner {
