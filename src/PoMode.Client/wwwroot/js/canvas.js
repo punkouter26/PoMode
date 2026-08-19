@@ -1,4 +1,6 @@
-// Dual-lane analysis canvas (spec §7): note capsules on top, chord blocks below.
+// Analysis canvas (spec §7): a tempo line on top, note capsules in the middle, chord blocks below.
+// The tempo lane shares the other two lanes' time axis, which is the whole reason it is drawn here
+// rather than as a separate chart above the canvas — pan and zoom keep all three aligned.
 //
 // Every musical decision — which colour class a note belongs to, its labels, its measure number —
 // was already made server-side by VisualizationBuilder and arrives in the payload. This module only
@@ -19,6 +21,11 @@ const ROLE_VARIABLES = {
 };
 
 const NOTE_LANE_FRACTION = 0.68;
+/// Fixed pixels, not a fraction: the tempo line needs a readable strip rather than a share of the
+/// box, so a short canvas shrinks the note lane instead of squashing this into nothing. Capped
+/// against the canvas height below so it can never take over a very short one.
+const TEMPO_LANE_PX = 38;
+const TEMPO_LANE_PAD_PX = 7;
 const LANE_GAP_PX = 6;
 const MIN_LABEL_WIDTH_PX = 38;
 const MIN_LABEL_ROW_HEIGHT_PX = 9;
@@ -47,6 +54,9 @@ function readColours(canvas) {
         chordBlock: read('--pm-chord-block', '#e2e8f0'),
         chordSelected: read('--pm-accent', '#6750a4'),
         playhead: read('--pm-playhead', '#e11d48'),
+        tempoLine: read('--pm-tempo-line', '#818cf8'),
+        // Amber, matching the tempo chart in the stats panel, so a change reads the same everywhere.
+        tempoChange: read('--pm-tempo-change', '#fbbf24'),
     };
 }
 
@@ -144,9 +154,26 @@ function draw(state) {
 
     ctx.clearRect(0, 0, width, height);
 
-    const noteLaneHeight = Math.max((height - LANE_GAP_PX) * NOTE_LANE_FRACTION, 1);
+    // The strip only exists when there is a line to draw, so a song with no tempo map keeps the
+    // whole box for notes and chords exactly as before.
+    const tempoPoints = state.model && state.model.tempo ? state.model.tempo : [];
+    const hasTempo = tempoPoints.length > 1;
+    const tempoLaneHeight = hasTempo ? Math.min(TEMPO_LANE_PX, height * 0.25) : 0;
+    const bodyTop = hasTempo ? tempoLaneHeight + LANE_GAP_PX : 0;
+    const bodyHeight = Math.max(height - bodyTop, 1);
+
+    const noteLaneHeight = Math.max((bodyHeight - LANE_GAP_PX) * NOTE_LANE_FRACTION, 1);
     const chordLaneTop = noteLaneHeight + LANE_GAP_PX;
-    const chordLaneHeight = Math.max(height - chordLaneTop, 1);
+    const chordLaneHeight = Math.max(bodyHeight - chordLaneTop, 1);
+
+    if (hasTempo) {
+        drawTempo(state, ctx, width, tempoLaneHeight, tempoPoints);
+    }
+
+    // The note and chord lanes are still drawn in their own coordinates and shifted as a block, so
+    // reserving the strip above needed no change to any of the drawing below.
+    ctx.save();
+    ctx.translate(0, bodyTop);
 
     ctx.fillStyle = colours.lane;
     ctx.fillRect(0, 0, width, noteLaneHeight);
@@ -174,6 +201,10 @@ function draw(state) {
         drawParticles(state, ctx, width, noteLaneHeight);
     }
 
+    ctx.restore();
+
+    // Full height on purpose: one playhead crossing all three lanes ties the tempo reading to the
+    // moment it belongs to.
     drawPlayhead(state, ctx, width, height);
 
     // Animations in flight (view glide, live particles, the end-of-song drop) need the next frame.
@@ -201,6 +232,91 @@ function draw(state) {
         dataset.drawn = drawnText;
     }
     dataset.painted = '1';
+}
+
+/// The tempo line: higher is faster, on the same time axis as the notes below it.
+///
+/// Drawn as a step, not a smooth curve. Each measure carries one measured tempo that holds until the
+/// next downbeat, so interpolating between them would draw a gradual accelerando the analysis never
+/// claimed. The vertical jumps sit exactly where the tempo changed, which is the thing worth seeing.
+///
+/// The vertical scale spans only this song's own tempo range. An absolute 0-200 scale would flatten
+/// a performance drifting 96-104 BPM into a straight line and hide every real change.
+function drawTempo(state, ctx, width, laneHeight, points) {
+    const colours = state.colours;
+
+    ctx.fillStyle = colours.lane;
+    ctx.fillRect(0, 0, width, laneHeight);
+    ctx.strokeStyle = colours.border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, width - 1, laneHeight - 1);
+
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of points) {
+        min = Math.min(min, point.bpm);
+        max = Math.max(max, point.bpm);
+    }
+
+    const usable = Math.max(laneHeight - (TEMPO_LANE_PAD_PX * 2), 1);
+    const range = max - min;
+    // A steady song has no range to scale against. Centring it draws the flat line it has earned,
+    // instead of dividing by zero or magnifying rounding noise into a mountain range.
+    const yFor = (bpm) => (range < 0.05
+        ? TEMPO_LANE_PAD_PX + (usable / 2)
+        : TEMPO_LANE_PAD_PX + (usable * (1 - ((bpm - min) / range))));
+
+    const span = Math.max(state.viewEnd - state.viewStart, 1e-6);
+    const xFor = (seconds) => ((seconds - state.viewStart) / span) * width;
+    const songEnd = state.model.durationSec > 0
+        ? state.model.durationSec
+        : points[points.length - 1].startSec;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(1, 1, width - 2, laneHeight - 2);
+    ctx.clip();
+
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i++) {
+        const y = yFor(points[i].bpm);
+        const from = xFor(points[i].startSec);
+        const to = xFor(i + 1 < points.length ? points[i + 1].startSec : songEnd);
+        if (i === 0) {
+            ctx.moveTo(from, y);
+        } else {
+            ctx.lineTo(from, y); // the vertical step into this measure's tempo
+        }
+        ctx.lineTo(to, y);
+    }
+    ctx.strokeStyle = colours.tempoLine;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // A dot on each measure that changed — the moments the step line exists to show.
+    ctx.fillStyle = colours.tempoChange;
+    for (const point of points) {
+        if (!point.changed) {
+            continue;
+        }
+        const x = xFor(point.startSec);
+        if (x < -4 || x > width + 4) {
+            continue;
+        }
+        ctx.beginPath();
+        ctx.arc(x, yFor(point.bpm), 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    // The two ends of the scale, so the line's height means something without a full axis.
+    ctx.fillStyle = colours.muted;
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(String(Math.round(max)), 5, 3);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(Math.round(min) + ' BPM', 5, laneHeight - 3);
 }
 
 function drawNotes(state, ctx, width, laneHeight) {

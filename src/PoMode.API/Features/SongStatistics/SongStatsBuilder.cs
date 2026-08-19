@@ -34,7 +34,8 @@ public static class SongStatsBuilder
         VisualizationPayload visual,
         IReadOnlyList<ChordSpan> chords,
         ModalResult result,
-        BeatGridDto? beats)
+        BeatGridDto? beats,
+        TempoMapDto? tempoMap = null)
     {
         // Every melody stat reads notes in time order; the artifact is already sorted, but a stat
         // that silently depends on that is a trap for whoever changes the pitch tracker next.
@@ -78,6 +79,7 @@ public static class SongStatsBuilder
             ChordTones: chordTones,
             ModeVotes: BuildModeVotes(result),
             ScaleDegrees: BuildScaleDegrees(notes, result),
+            TempoMap: tempoMap,
             Fingerprint: "");
 
         return stats with { Fingerprint = SongFingerprint.Write(stats) };

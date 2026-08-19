@@ -25,4 +25,5 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(SongInterpretationDto))]
 [JsonSerializable(typeof(List<InterpreterOptionDto>))]
 [JsonSerializable(typeof(BeatGridDto))]
+[JsonSerializable(typeof(TempoMapDto))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

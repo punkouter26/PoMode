@@ -315,3 +315,78 @@
         transition: none;
     }
 }
+
+/* ---- Two audiences ----
+   The theory half is set apart by a rule and a label rather than hidden behind a toggle: a reader
+   who does not want it can skip a labelled block at a glance, and one who does want it should not
+   have to discover a control to reach it. */
+
+.summary-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.summary-theory {
+    border-top: 1px dashed var(--pm-border);
+    padding-top: 0.9rem;
+    margin-top: 0.3rem;
+}
+
+.summary-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    color: var(--pm-accent);
+}
+
+/* ---- Tempo track ----
+   A column per measure rather than a line chart: the question is "did this bar change?", which a
+   discrete bar answers directly, and it needs no axis machinery to read. */
+
+.tempo-track {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 68px;
+    padding: 0.35rem;
+    background: var(--pm-lane-bg);
+    border: 1px solid var(--pm-border);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.tempo-bar {
+    flex: 1 0 6px;
+    min-width: 6px;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+}
+
+.tempo-fill {
+    width: 100%;
+    background: #818cf8;
+    border-radius: 2px 2px 0 0;
+    transition: height 0.35s ease;
+}
+
+/* Amber marks the bar where the tempo moved — the thing worth looking at. */
+.tempo-changed .tempo-fill {
+    background: #fbbf24;
+}
+
+.tempo-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--pm-fg-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tempo-fill {
+        transition: none;
+    }
+}

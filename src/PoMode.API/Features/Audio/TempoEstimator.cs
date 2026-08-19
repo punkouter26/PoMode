@@ -319,6 +319,213 @@ public static class TempoEstimator
     /// neighbours before interpolating around it. Falls back to an untouched integer lag when a
     /// neighbour is unavailable or the three points do not form a usable parabola.
     /// </summary>
+    /// <summary>
+    /// A per-measure tempo reading: the tempo the music was actually running at over that measure.
+    /// </summary>
+    /// <param name="Number">1-based measure number, matching the numbering the canvas shows.</param>
+    /// <param name="Changed">This measure's tempo differs audibly from the previous measure's.</param>
+    public sealed record TempoMeasure(int Number, double StartSec, double Bpm, bool Changed);
+
+    /// <summary>
+    /// How the tempo moves across a song. <paramref name="IsSteady"/> is the headline answer: for a
+    /// programmed track it is true and the per-measure list is uninteresting, while for a human
+    /// performance it is false and the list is the point.
+    /// </summary>
+    public sealed record TempoMap(
+        double MedianBpm,
+        double MinBpm,
+        double MaxBpm,
+        bool IsSteady,
+        double Confidence,
+        IReadOnlyList<TempoMeasure> Measures);
+
+    private static readonly TempoMap EmptyMap = new(0, 0, 0, IsSteady: true, 0, []);
+
+    /// <summary>
+    /// A measure counts as a tempo change when it differs from the previous one by at least this
+    /// much. Below roughly 2 BPM the difference is inside the snapping resolution — one envelope
+    /// frame at 22 kHz is about 23 ms, which at 120 BPM is already ~1 BPM of apparent change — so a
+    /// smaller threshold would flag measurement noise as musical rubato.
+    /// </summary>
+    private const double ChangeThresholdBpm = 2.0;
+
+    /// <summary>A song whose whole range fits inside this is "steady" and needs no tempo track.</summary>
+    private const double SteadyRangeBpm = 4.0;
+
+    /// <summary>Assumed metre. The rest of the app already numbers measures in four beats.</summary>
+    private const int BeatsPerMeasure = 4;
+
+    /// <summary>
+    /// Measures the tempo separately for each measure, rather than assuming one tempo for the song.
+    ///
+    /// <para>The method is the obvious one: take the global grid, predict where each downbeat should
+    /// fall, then snap each prediction to the strongest onset near it and read the real tempo off the
+    /// gap between consecutive snapped downbeats. A song that speeds up shows successive gaps
+    /// shortening, which is exactly what a listener hears.</para>
+    ///
+    /// <para>Snapping is bounded to half a beat either side of the prediction. Without that bound a
+    /// measure with no clear downbeat would latch onto whatever onset happened to be loudest nearby
+    /// and report a wild tempo; with it, an unclear measure simply keeps the predicted position and
+    /// reports the global tempo, which is the honest fallback.</para>
+    ///
+    /// <para>Returns an empty map — never a fabricated one — when the global estimate has no
+    /// confidence, because every downbeat prediction would then be meaningless.</para>
+    /// </summary>
+    public static TempoMap EstimateTempoMap(AudioBuffer buffer, double minBpm = 60, double maxBpm = 200)
+    {
+        if (PrepareEnvelope(buffer) is not { } envelope)
+        {
+            return EmptyMap;
+        }
+
+        var estimate = EstimateFromEnvelope(envelope, minBpm, maxBpm);
+        if (estimate.Confidence <= 0 || estimate.Bpm <= 0)
+        {
+            return EmptyMap;
+        }
+
+        var grid = EstimateGrid(buffer, minBpm, maxBpm);
+        var (detrended, frameCount, frameRate) = envelope;
+
+        var beatFrames = frameRate * 60.0 / estimate.Bpm;
+        var measureFrames = beatFrames * BeatsPerMeasure;
+        var searchFrames = Math.Max(1, (int)Math.Round(beatFrames / 2.0));
+
+        // Each downbeat is predicted from the PREVIOUS one plus the most recently measured measure
+        // length — not from a fixed grid laid down at the global tempo.
+        //
+        // Predicting from the fixed grid fails exactly where this feature is meant to work. On a
+        // track accelerating 1 BPM per beat, the fixed prediction fell further behind the music every
+        // measure until the error passed half a beat and the snap grabbed the *next* onset instead:
+        // the reported tempo alternated 166, 128, 175, 134, 185 — a sawtooth, when the truth was a
+        // smooth climb. Following the performance keeps the prediction locked on.
+        var downbeats = new List<double>();
+        var span = measureFrames;
+        for (var expected = grid.FirstBeatSec * frameRate; expected < frameCount; expected += span)
+        {
+            var snapped = SnapToNearestOnset(detrended, frameCount, expected, searchFrames);
+            downbeats.Add(snapped);
+
+            if (downbeats.Count >= 2)
+            {
+                var measured = downbeats[^1] - downbeats[^2];
+                // Track the player, but never let one bad snap run away with every later prediction.
+                if (measured >= measureFrames / 2 && measured <= measureFrames * 2)
+                {
+                    span = measured;
+                }
+            }
+
+            // The loop increments from `expected`, so re-anchor it on where the downbeat actually
+            // landed; otherwise the snap correction is thrown away each iteration.
+            expected = snapped;
+        }
+
+        if (downbeats.Count < 2)
+        {
+            return EmptyMap;
+        }
+
+        var raw = new double[downbeats.Count - 1];
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var spanFrames = downbeats[i + 1] - downbeats[i];
+            var bpm = spanFrames > 0
+                ? BeatsPerMeasure * 60.0 * frameRate / spanFrames
+                : estimate.Bpm;
+
+            // A span outside half to double the expected one means the snap found the wrong onset,
+            // not that the band doubled its tempo for one bar. Fall back rather than report it.
+            raw[i] = bpm < estimate.Bpm / 2 || bpm > estimate.Bpm * 2 ? estimate.Bpm : bpm;
+        }
+
+        var smoothed = MedianSmooth(raw);
+
+        var measures = new List<TempoMeasure>(smoothed.Length);
+        for (var i = 0; i < smoothed.Length; i++)
+        {
+            var bpm = Math.Round(smoothed[i], 1);
+            measures.Add(new TempoMeasure(
+                Number: i + 1,
+                StartSec: downbeats[i] / frameRate,
+                Bpm: bpm,
+                Changed: i > 0 && Math.Abs(bpm - Math.Round(smoothed[i - 1], 1)) >= ChangeThresholdBpm));
+        }
+
+        var sorted = measures.Select(measure => measure.Bpm).Order().ToArray();
+        var median = sorted.Length % 2 == 1
+            ? sorted[sorted.Length / 2]
+            : (sorted[(sorted.Length / 2) - 1] + sorted[sorted.Length / 2]) / 2.0;
+
+        return new TempoMap(
+            MedianBpm: Math.Round(median, 1),
+            MinBpm: sorted[0],
+            MaxBpm: sorted[^1],
+            IsSteady: sorted[^1] - sorted[0] <= SteadyRangeBpm,
+            Confidence: estimate.Confidence,
+            Measures: measures);
+    }
+
+    /// <summary>
+    /// A three-point median filter over the per-measure tempos.
+    ///
+    /// <para>Where every beat carries equal weight — a steady quaver line with no accent on the
+    /// downbeat — the snap has nothing to distinguish beat one from beat two, and alternates between
+    /// two neighbouring onsets. That produced a 117/105/117/105 sawtooth on a track whose tempo never
+    /// moved, and reported it as "not steady". A median of three removes a one-measure excursion
+    /// outright while leaving a genuine ramp untouched, because the median of three consecutive
+    /// rising values is the middle one.</para>
+    ///
+    /// <para>The first and last measures keep their raw value: there is no window around them, and
+    /// borrowing one would shift the ends of the curve.</para>
+    /// </summary>
+    private static double[] MedianSmooth(double[] values)
+    {
+        if (values.Length < 3)
+        {
+            return values;
+        }
+
+        var smoothed = new double[values.Length];
+        smoothed[0] = values[0];
+        smoothed[^1] = values[^1];
+        for (var i = 1; i < values.Length - 1; i++)
+        {
+            var a = values[i - 1];
+            var b = values[i];
+            var c = values[i + 1];
+            smoothed[i] = Math.Max(Math.Min(a, b), Math.Min(Math.Max(a, b), c));
+        }
+        return smoothed;
+    }
+
+    /// <summary>
+    /// The strongest onset within <paramref name="searchFrames"/> of <paramref name="predictedFrame"/>,
+    /// or the prediction itself when nothing nearby stands out.
+    /// </summary>
+    private static double SnapToNearestOnset(
+        double[] detrended, int frameCount, double predictedFrame, int searchFrames)
+    {
+        var centre = (int)Math.Round(predictedFrame);
+        var from = Math.Max(0, centre - searchFrames);
+        var to = Math.Min(frameCount - 1, centre + searchFrames);
+
+        var bestFrame = centre;
+        var bestValue = double.NegativeInfinity;
+        for (var frame = from; frame <= to; frame++)
+        {
+            if (detrended[frame] > bestValue)
+            {
+                bestValue = detrended[frame];
+                bestFrame = frame;
+            }
+        }
+
+        // A flat stretch of envelope has no onset to snap to; keeping the prediction there stops a
+        // silent passage from inventing a tempo change.
+        return bestValue > 0 ? bestFrame : predictedFrame;
+    }
+
     private static double RefinePeakLag(int bestLag, double[] rawScores, int paddedMin)
     {
         var bestLagIndex = bestLag - paddedMin;

@@ -41,6 +41,15 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<SongStats?> GetStatsAsync(string jobId)
         => http.GetFromJsonAsync<SongStats>($"api/analysis/{jobId}/stats");
 
+    /// <summary>The per-measure tempo track, or null for a job analysed before it existed.</summary>
+    public async Task<TempoMapDto?> GetTempoMapAsync(string jobId)
+    {
+        var response = await http.GetAsync($"api/analysis/{jobId}/tempo-map");
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<TempoMapDto>()
+            : null;
+    }
+
     /// <summary>The interpreters this server can run, with live availability.</summary>
     public Task<List<InterpreterOptionDto>?> GetInterpretersAsync()
         => http.GetFromJsonAsync<List<InterpreterOptionDto>>("api/analysis/interpreters");

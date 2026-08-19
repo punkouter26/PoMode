@@ -98,6 +98,7 @@ public static class AnalysisEndpoints
         MapArtifact(group, "notes-backing", "notes-backing.json");
         MapArtifact(group, "chords", "chords.json");
         MapArtifact(group, "beats", "beats.json");
+        MapArtifact(group, "tempo-map", "tempo-map.json");
         MapArtifact(group, "preview", "preview.json");
         MapArtifact(group, "result", "result.json");
 
@@ -114,7 +115,9 @@ public static class AnalysisEndpoints
             }
             var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
             var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
-            return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result));
+            // Null for a job analysed before the tempo map existed; the canvas then draws no tempo lane.
+            var tempoMap = await store.ReadArtifactAsync<TempoMapDto>(jobId, "tempo-map.json", ct);
+            return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result, tempoMap));
         });
 
         // The chord pad is derived, not stored: chords.json → triad NoteEvents so the mixer's

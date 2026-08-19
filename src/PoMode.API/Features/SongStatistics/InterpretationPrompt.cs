@@ -16,33 +16,115 @@ namespace PoMode.API.Features.SongStatistics;
 public static class InterpretationPrompt
 {
     /// <summary>
-    /// Written for someone who loves music but has never studied it. The fingerprint paragraph sits
-    /// directly above this in the UI and already states every figure precisely, so repeating numbers
-    /// here is both redundant and exactly what made the section a wall of percentages — hence the
-    /// instruction to turn them into words. The grounding rules are unchanged: they are what stops a
-    /// model naming an artist or a genre it thinks it recognises.
+    /// The line an interpreter puts between its two audiences. Distinctive enough that no ordinary
+    /// prose produces it by accident, so <see cref="Split"/> can never cut a paragraph in half.
+    /// </summary>
+    public const string Delimiter = "===FOR MUSICIANS===";
+
+    /// <summary>
+    /// Asks for both audiences in a single response.
+    ///
+    /// <para>One call, not two, and the reason is latency: a local model takes tens of seconds, and
+    /// two calls would double a wait the user is already sitting through. Writing both halves at once
+    /// also keeps them consistent — the theory section explains the same reading of the song the plain
+    /// section gave, rather than a second independent take on it.</para>
+    ///
+    /// <para>The grounding rules apply to both halves and are what stop a model naming an artist or a
+    /// genre it thinks it recognises. The plain half additionally forbids numbers, because the
+    /// fingerprint paragraph directly above it in the UI already states every figure exactly.</para>
     /// </summary>
     public const string System =
-        "You are explaining one song to a curious listener who loves music but has never studied "
-        + "music theory. You will be given measurements taken from the song's audio. Your job is to "
-        + "say what they mean for how the song sounds, how it feels, and what it would be like to sing.\n"
+        "You will be given measurements taken from one song's audio. Write TWO summaries of it, one "
+        + "after the other, separated by a line containing only " + Delimiter + "\n"
         + "\n"
-        + "How to write:\n"
+        + "PART 1 — for a curious listener who loves music but has never studied music theory.\n"
+        + "- Say what the measurements mean for how the song sounds, how it feels, and what it would "
+        + "be like to sing.\n"
         + "- Warm, plain, everyday English. Short sentences.\n"
         + "- Avoid jargon. If you must use a musical term, explain it in ordinary words in the same "
         + "sentence.\n"
         + "- Use very few numbers. Pick the two or three that matter most and turn the rest into "
         + "words: 'almost every note', 'about half the time', 'now and then'.\n"
         + "- Never make the reader do arithmetic. 'Two thirds of the time' beats '66.7%'.\n"
-        + "- Describe what a listener would actually hear, and what a singer would actually feel.\n"
-        + "- Three short paragraphs. No headings, no bullet points, no markdown.\n"
+        + "- Three short paragraphs.\n"
         + "\n"
-        + "Rules you must not break:\n"
+        + "PART 2 — for a trained musician.\n"
+        + "- Assume full command of theory. Use the proper terms without explaining them: mode, "
+        + "characteristic degree, tessitura, harmonic rhythm, chord tone, syncopation.\n"
+        + "- Be precise and quantitative here. Cite the actual figures.\n"
+        + "- Discuss the modal evidence: which degrees the melody emphasises, whether they support the "
+        + "named mode, and what the mode changes imply.\n"
+        + "- Discuss how the melody sits against the harmony — which chord degrees it lands on, and "
+        + "what the tension proportion means for the writing.\n"
+        + "- Note anything a musician would find unusual or contradictory in the data.\n"
+        + "- Two or three paragraphs.\n"
+        + "\n"
+        + "Rules you must not break, in BOTH parts:\n"
         + "- Use ONLY the measurements provided. Never invent a statistic, a section, a lyric, a "
         + "genre presented as fact, an artist, or a song title.\n"
         + "- If something is not in the data, do not mention it.\n"
         + "- Do not list the measurements back. Say what they mean.\n"
-        + "- Be confident. Do not hedge about data you were given.";
+        + "- Be confident. Do not hedge about data you were given.\n"
+        + "- Plain prose only. No headings, no bullet points, no markdown, no part labels.";
+
+    /// <summary>
+    /// Splits a raw interpretation into its plain-English and theory halves at the first delimiter
+    /// line.
+    ///
+    /// <para>Matching is deliberately tolerant rather than exact. A model asked to reproduce a
+    /// literal token sometimes mangles it — gemma4:26b emitted <c>===FOR MUSICIating===</c>, having
+    /// written both halves perfectly — and an exact match would have thrown the entire theory
+    /// section into the plain summary, delimiter and all, in front of the reader. So a line counts
+    /// as the delimiter when its letters begin "FOR MUSIC", provided it is punctuated or short
+    /// enough to be a marker rather than a sentence that happens to open "For musicians, ...".</para>
+    ///
+    /// <para>A response with no delimiter at all is treated as a single plain-English summary and the
+    /// theory half comes back null; the UI then omits that section. Everything after the first
+    /// delimiter is the theory half, so a repeated marker cannot fragment the output.</para>
+    /// </summary>
+    public static (string Plain, string? Theory) Split(string raw)
+    {
+        var lines = raw.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!IsDelimiterLine(lines[i]))
+            {
+                continue;
+            }
+
+            var plain = string.Join("\n", lines[..i]).Trim();
+            var theory = string.Join("\n", lines[(i + 1)..]).Trim();
+
+            // A delimiter with nothing on one side of it is not two summaries.
+            return (plain.Length == 0 ? theory : plain,
+                plain.Length == 0 || theory.Length == 0 ? null : theory);
+        }
+
+        return (raw.Trim(), null);
+    }
+
+    /// <summary>Longest a delimiter line can be before it is more plausibly a sentence.</summary>
+    private const int MaxDelimiterLength = 40;
+
+    private static bool IsDelimiterLine(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var letters = string.Concat(trimmed.Where(char.IsLetter)).ToUpperInvariant();
+        if (!letters.StartsWith("FORMUSIC", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Either it is decorated like a marker, or it is too short to be prose. Both guards exist so
+        // a theory paragraph opening "For musicians the notable feature is ..." is never eaten.
+        return trimmed.Contains('=', StringComparison.Ordinal)
+            || trimmed.Length <= MaxDelimiterLength;
+    }
 
     /// <summary>The measured facts, one per line. Deliberately terse — this is data, not prose.</summary>
     public static string User(SongStats stats)
@@ -57,6 +139,15 @@ public static class InterpretationPrompt
         Add(text, "Tempo", stats.TempoBpm > 0
             ? $"{N(stats.TempoBpm, 0)} BPM{(stats.TempoEstimated ? " (estimated)" : "")}"
             : "not determined");
+        if (stats.TempoMap is { Measures.Count: > 1 } map)
+        {
+            Add(text, "Tempo steadiness", map.IsSteady
+                ? $"steady throughout ({N(map.MinBpm, 0)}-{N(map.MaxBpm, 0)} BPM across "
+                    + $"{map.Measures.Count} measures)"
+                : $"drifts — {N(map.MinBpm, 0)} to {N(map.MaxBpm, 0)} BPM across {map.Measures.Count} "
+                    + $"measures, median {N(map.MedianBpm, 0)}");
+        }
+
         Add(text, "Duration", $"{N(stats.DurationSec, 0)} seconds");
         Add(text, "Melody notes", $"{stats.MelodyNoteCount} ({N(stats.NotesPerSecond, 2)} per second, "
             + $"average length {N(stats.AverageNoteSec, 2)}s)");

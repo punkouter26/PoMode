@@ -24,9 +24,12 @@
     private sealed record CanvasChord(
         string Symbol, double StartSec, double EndSec, int MeasureNumber, string? ModeTag);
 
+    private sealed record CanvasTempo(double StartSec, double Bpm, bool Changed);
+
     private sealed record CanvasPayload(
         IReadOnlyList<CanvasNote> Notes, IReadOnlyList<CanvasChord> Chords,
-        double DurationSec, int MinPitch, int MaxPitch);
+        double DurationSec, int MinPitch, int MaxPitch,
+        IReadOnlyList<CanvasTempo> Tempo);
 
     [Parameter, EditorRequired] public VisualizationPayload? Model { get; set; }
 
@@ -104,7 +107,8 @@
                 note.Role.ToString(), note.PitchLabel, note.DegreeLabel))],
             [.. model.Chords.Select(chord => new CanvasChord(
                 chord.Symbol, chord.StartSec, chord.EndSec, chord.MeasureNumber, chord.ModeTag))],
-            model.DurationSec, model.MinPitch, model.MaxPitch);
+            model.DurationSec, model.MinPitch, model.MaxPitch,
+            [.. model.Tempo.Select(point => new CanvasTempo(point.StartSec, point.Bpm, point.Changed))]);
 
     public async ValueTask DisposeAsync()
     {

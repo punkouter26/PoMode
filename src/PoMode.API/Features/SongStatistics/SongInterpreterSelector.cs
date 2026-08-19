@@ -65,12 +65,17 @@ public sealed class SongInterpreterSelector(
 
             try
             {
-                var text = await interpreter.InterpretAsync(stats, ct);
+                // Every interpreter returns one string with both audiences separated by the shared
+                // delimiter; splitting here means the template and the LLMs need no separate handling
+                // and a model that ignores the delimiter degrades to a single summary rather than an
+                // error.
+                var (plain, theory) = InterpretationPrompt.Split(await interpreter.InterpretAsync(stats, ct));
                 return new SongInterpretationDto(
                     Interpreter: interpreter.Name,
                     Tier: interpreter.Tier,
                     UsedLlm: !interpreter.IsClassicFallback,
-                    Text: text);
+                    Text: plain,
+                    TheoryText: theory);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

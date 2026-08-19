@@ -21,7 +21,8 @@ public static class VisualizationBuilder
     public static VisualizationPayload Build(
         IReadOnlyList<NoteEvent> notes,
         IReadOnlyList<ChordSpan> chords,
-        ModalResult result)
+        ModalResult result,
+        TempoMapDto? tempoMap = null)
     {
         var visualNotes = new List<VisualNote>(notes.Count);
         foreach (var note in notes)
@@ -59,8 +60,15 @@ public static class VisualizationBuilder
             notes.Count == 0 ? 0.0 : notes.Max(note => note.StartSec + note.DurationSec),
             chords.Count == 0 ? 0.0 : chords.Max(chord => chord.EndSec));
 
+        // Only worth drawing when there is a line to draw: a single measure is a point, and a job
+        // analysed before the tempo map existed has none at all.
+        IReadOnlyList<VisualTempoPoint> tempo = tempoMap is { Measures.Count: > 1 }
+            ? [.. tempoMap.Measures.Select(measure =>
+                new VisualTempoPoint(measure.StartSec, measure.Bpm, measure.Changed))]
+            : [];
+
         return new VisualizationPayload(
-            SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch);
+            SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch, tempo);
     }
 
     /// <summary>

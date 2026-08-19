@@ -260,9 +260,21 @@ public sealed class AnalysisPipeline(
     {
         try
         {
-            var grid = TempoEstimator.EstimateGrid(context.DecodePreferredAnalysisAudio());
+            var audio = context.DecodePreferredAnalysisAudio();
+            var grid = TempoEstimator.EstimateGrid(audio);
             await store.WriteArtifactAsync(
                 state.JobId, "beats.json", new BeatGridDto(grid.Bpm, grid.FirstBeatSec, grid.Confidence), ct);
+
+            // Written alongside the grid, not instead of it: everything downstream still runs on the
+            // single tempo, and this is the honest record of what the tempo actually did.
+            var map = TempoEstimator.EstimateTempoMap(audio);
+            await store.WriteArtifactAsync(
+                state.JobId, "tempo-map.json",
+                new TempoMapDto(
+                    map.MedianBpm, map.MinBpm, map.MaxBpm, map.IsSteady, map.Confidence,
+                    [.. map.Measures.Select(measure => new TempoMeasureDto(
+                        measure.Number, measure.StartSec, measure.Bpm, measure.Changed))]),
+                ct);
         }
         catch (OperationCanceledException)
         {

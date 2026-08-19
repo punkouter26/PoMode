@@ -193,6 +193,46 @@
                 }
             </div>
 
+            @* Shown only when there is something to see. A flat line across a programmed track is
+               noise; the chart earns its space when the tempo actually moves. *@
+            @if (stats.TempoMap is { Measures.Count: > 1 } tempo)
+            {
+                <div class="chart-block">
+                    <span class="stat-title">Does the tempo hold steady?</span>
+                    <p class="chart-caption">
+                        Measured bar by bar, from the gap between one downbeat and the next.
+                        @if (tempo.IsSteady)
+                        {
+                            <text>
+                                It holds at about @($"{tempo.MedianBpm:0}") BPM the whole way through
+                                — machine-steady.
+                            </text>
+                        }
+                        else
+                        {
+                            <text>
+                                It moves: from @($"{tempo.MinBpm:0}") up to @($"{tempo.MaxBpm:0}") BPM,
+                                sitting around @($"{tempo.MedianBpm:0}"). Marked bars are where it changed.
+                            </text>
+                        }
+                    </p>
+                    <div class="tempo-track">
+                        @foreach (var measure in tempo.Measures)
+                        {
+                            <div class="tempo-bar @(measure.Changed ? "tempo-changed" : "")"
+                                 title="@($"Bar {measure.Number} · {measure.Bpm:0.0} BPM at {Clock(measure.StartSec)}")">
+                                <div class="tempo-fill" style="height:@(Height(tempo, measure))"></div>
+                            </div>
+                        }
+                    </div>
+                    <div class="tempo-scale">
+                        <span>@($"{tempo.MinBpm:0}")</span>
+                        <span>bar 1 → @tempo.Measures[^1].Number</span>
+                        <span>@($"{tempo.MaxBpm:0}")</span>
+                    </div>
+                </div>
+            }
+
             <div class="chart-block">
                 <span class="stat-title">Which notes of the scale does the vocal sing?</span>
                 <p class="chart-caption">
@@ -270,17 +310,33 @@
                         <span class="interpretation-tag tag-local">local model</span>
                     }
                 </p>
-                @foreach (var paragraph in Paragraphs(interpretation.Text))
+                <div class="summary-block">
+                    <span class="summary-label">In plain English</span>
+                    @foreach (var paragraph in Paragraphs(interpretation.Text))
+                    {
+                        <p class="interpretation-text">@paragraph</p>
+                    }
+                </div>
+
+                @* Only when a second half was actually written — a heading over nothing would read
+                   as a failure rather than as an absence. *@
+                @if (interpretation.TheoryText is { } theory)
                 {
-                    <p class="interpretation-text">@paragraph</p>
+                    <div class="summary-block summary-theory">
+                        <span class="summary-label">For musicians</span>
+                        @foreach (var paragraph in Paragraphs(theory))
+                        {
+                            <p class="interpretation-text">@paragraph</p>
+                        }
+                    </div>
                 }
             }
             else
             {
                 @* "above" would be a lie in Basic, where no detail boxes render. *@
                 <p class="interpretation-hint">
-                    Every statistic is measured, never guessed. Press Interpret to have a model
-                    explain what they mean for this song.
+                    Every statistic is measured, never guessed. Press Interpret for two write-ups:
+                    one in plain English, and one in proper theory terms.
                 </p>
             }
         </div>
@@ -399,6 +455,19 @@
     {
         var peak = stats.ScaleDegrees.Max(entry => entry.Percent);
         return peak <= 0 ? 0 : degree.Percent / peak * 100.0;
+    }
+
+    /// <summary>
+    /// Bar height across the observed range rather than from zero. A song drifting 96-104 BPM would
+    /// otherwise render as twelve bars of identical height, hiding the very thing the chart is for.
+    /// A steady song is given a flat mid-height line instead of an arbitrary magnification of noise.
+    /// </summary>
+    private static string Height(TempoMapDto map, TempoMeasureDto measure)
+    {
+        var range = map.MaxBpm - map.MinBpm;
+        var fraction = range <= 0.001 ? 0.5 : (measure.Bpm - map.MinBpm) / range;
+        // Never zero: a bar at the slowest tempo still has to be visible.
+        return $"{(15 + (fraction * 85)).ToString("0.##", CultureInfo.InvariantCulture)}%";
     }
 
     private static string Width(double percent)

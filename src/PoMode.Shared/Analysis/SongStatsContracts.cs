@@ -173,18 +173,26 @@ public sealed record SongStats(
     ChordToneProfile ChordTones,
     IReadOnlyList<ModeVote> ModeVotes,
     IReadOnlyList<DegreeUsage> ScaleDegrees,
+    TempoMapDto? TempoMap,
     string Fingerprint);
 
 /// <summary>
-/// One written interpretation of a song's statistics. <paramref name="UsedLlm"/> is false when the
-/// deterministic template wrote it, so the client can label the difference honestly rather than
-/// implying a model was involved.
+/// One written interpretation of a song's statistics, for two audiences.
+///
+/// <para><paramref name="Text"/> is the plain-English summary for someone with no theory training.
+/// <paramref name="TheoryText"/> is the same song discussed in proper terms for a trained musician,
+/// and is null when the writer produced only one summary — the client then omits that section rather
+/// than showing an empty heading.</para>
+///
+/// <para><paramref name="UsedLlm"/> is false when the deterministic template wrote it, so the client
+/// can label the difference honestly rather than implying a model was involved.</para>
 /// </summary>
 public sealed record SongInterpretationDto(
     string Interpreter,
     ExecutionTier Tier,
     bool UsedLlm,
-    string Text);
+    string Text,
+    string? TheoryText);
 
 /// <summary>
 /// One selectable interpreter for the picker. Unlike <see cref="ExecutorOptionDto"/> this does list

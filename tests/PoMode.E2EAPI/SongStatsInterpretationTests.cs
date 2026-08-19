@@ -186,9 +186,17 @@ public sealed class SongStatsInterpretationTests(ITestOutputHelper output) : IDi
         Assert.NotNull(interpretation);
         Assert.Equal("TemplateSongInterpreter", interpretation.Interpreter);
         Assert.False(interpretation.UsedLlm);
-        // It opens with the fingerprint and adds its own two paragraphs.
+        // The plain half opens with the fingerprint and adds its own two paragraphs.
         Assert.Contains("For a singer:", interpretation.Text, StringComparison.Ordinal);
         Assert.Contains("In character:", interpretation.Text, StringComparison.Ordinal);
+
+        // The theory half must be a separate section, not spliced into the plain one.
+        Assert.NotNull(interpretation.TheoryText);
+        Assert.Contains("Modal evidence:", interpretation.TheoryText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Modal evidence:", interpretation.Text, StringComparison.Ordinal);
+        // The delimiter is a transport detail and must never reach a reader.
+        Assert.DoesNotContain("FOR MUSICIANS", interpretation.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("FOR MUSICIANS", interpretation.TheoryText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -258,5 +266,21 @@ public sealed class SongStatsInterpretationTests(ITestOutputHelper output) : IDi
         // It must not have been handed the template's text and echoed it back.
         Assert.NotEqual(stats.Fingerprint, interpretation.Text);
         Assert.DoesNotContain(stats.Fingerprint, interpretation.Text, StringComparison.Ordinal);
+
+        // Both audiences, from the one call. A model that ignores the delimiter is allowed to
+        // return only the plain half — but it must never leak the delimiter into the prose.
+        Assert.DoesNotContain("FOR MUSICIANS", interpretation.Text, StringComparison.OrdinalIgnoreCase);
+        if (interpretation.TheoryText is { } theory)
+        {
+            output.WriteLine("--- theory half ---");
+            output.WriteLine(theory);
+            Assert.True(theory.Length > 150, $"the theory half was only {theory.Length} characters");
+            Assert.DoesNotContain("FOR MUSICIANS", theory, StringComparison.OrdinalIgnoreCase);
+            Assert.NotEqual(interpretation.Text, theory);
+        }
+        else
+        {
+            output.WriteLine("NOTE: the model returned one summary; the theory section is omitted.");
+        }
     }
 }

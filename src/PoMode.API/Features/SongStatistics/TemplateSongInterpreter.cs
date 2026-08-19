@@ -38,11 +38,114 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
         var text = new StringBuilder();
         text.Append(stats.Fingerprint);
         text.Append("\n\n");
-
         text.Append(SingerParagraph(stats));
         text.Append("\n\n");
         text.Append(CharacterParagraph(stats));
+
+        // The same delimiter the LLM prompt asks for, so the selector splits every interpreter's
+        // output the same way and the UI never has to know which one wrote it.
+        text.Append("\n\n");
+        text.Append(InterpretationPrompt.Delimiter);
+        text.Append("\n\n");
+        text.Append(ModalParagraph(stats));
+        text.Append("\n\n");
+        text.Append(HarmonyParagraph(stats));
         return text.ToString();
+    }
+
+    /// <summary>
+    /// The theory half: what the modal engine decided and on what evidence. Written in proper terms
+    /// on purpose — this section is only ever shown to a reader who asked for it.
+    /// </summary>
+    private static string ModalParagraph(SongStats stats)
+    {
+        if (stats.ModeVotes.Count == 0)
+        {
+            return "The modal engine found no window with sufficient evidence, so no mode is claimed.";
+        }
+
+        var text = new StringBuilder();
+        var winner = stats.ModeVotes[0];
+        text.Append(CultureInfo.InvariantCulture,
+            $"Modal evidence: {winner.Mode} took {Round(winner.WindowPercent, 0)}% of the decided "
+            + $"windows at a mean confidence of {Round(winner.AverageConfidence, 2)}");
+
+        if (winner.CharacteristicDegrees.Count > 0)
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $", identified by its {string.Join(" and ", winner.CharacteristicDegrees)}");
+        }
+        text.Append('.');
+
+        var sung = stats.ScaleDegrees
+            .Where(degree => degree.IsCharacteristic && degree.NoteCount > 0)
+            .ToArray();
+        if (sung.Length > 0)
+        {
+            var spelled = string.Join(" and ", sung.Select(degree =>
+                $"the {degree.DegreeLabel} ({degree.NoteName}, {Round(degree.Percent, 1)}%)"));
+            text.Append(CultureInfo.InvariantCulture, $" The melody sings {spelled}, so the ");
+            text.Append("characteristic degrees are present rather than merely assumed.");
+        }
+        else if (winner.CharacteristicDegrees.Count > 0)
+        {
+            // Worth stating plainly: the mode was named on window scoring the sung line never confirms.
+            text.Append(" The melody never sings those degrees, so the reading rests on the harmony "
+                + "rather than on the vocal.");
+        }
+
+        if (stats.ModeVotes.Count > 1)
+        {
+            var runner = stats.ModeVotes[1];
+            text.Append(CultureInfo.InvariantCulture,
+                $" The nearest rival is {runner.Mode} at {Round(runner.WindowPercent, 0)}%");
+            text.Append(stats.ModulationCount > 0
+                ? $", across {stats.ModulationCount} mode changes."
+                : ".");
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>The theory half, part two: melody against harmony, quantified.</summary>
+    private static string HarmonyParagraph(SongStats stats)
+    {
+        var text = new StringBuilder();
+
+        if (stats.ChordTones.ClassifiedNotes > 0)
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $"Against the sounding chord the line lands on the root {Round(stats.ChordTones.RootPercent, 1)}%, "
+                + $"the third {Round(stats.ChordTones.ThirdPercent, 1)}%, "
+                + $"the fifth {Round(stats.ChordTones.FifthPercent, 1)}% and "
+                + $"the seventh {Round(stats.ChordTones.SeventhPercent, 1)}%, leaving "
+                + $"{Round(stats.ChordTones.TensionPercent, 1)}% as other tension. ");
+        }
+
+        if (stats.HarmonicRhythm is { BeatGridUsable: true, AverageChordBeats: > 0 })
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $"Harmonic rhythm averages {Round(stats.HarmonicRhythm.AverageChordBeats, 2)} beats per "
+                + $"chord over {stats.ChordVocabulary.UniqueChords} distinct symbols. ");
+        }
+
+        if (stats.Rhythm.BeatGridUsable)
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $"Onsets sit {Round(stats.Rhythm.OnBeatPercent, 1)}% on the beat and "
+                + $"{Round(stats.Rhythm.SyncopationPercent, 1)}% on the off-beat. ");
+        }
+
+        if (stats.Tessitura is { } voice)
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $"Tessitura runs {voice.LowLabel}-{voice.HighLabel} about a median {voice.MedianLabel}, "
+                + $"with {Round(stats.Motion.LeapPercent, 1)}% of intervals a leap of a minor third or wider.");
+        }
+
+        return text.Length == 0
+            ? "No chord or beat data was available, so no harmonic reading is possible."
+            : text.ToString().TrimEnd();
     }
 
     /// <summary>What the numbers mean for whoever has to sing it.</summary>

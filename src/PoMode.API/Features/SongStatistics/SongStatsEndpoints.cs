@@ -64,8 +64,11 @@ public static class SongStatsEndpoints
         var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
         var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
         var beats = await store.ReadArtifactAsync<BeatGridDto>(jobId, "beats.json", ct);
+        // Absent on jobs analysed before the tempo map existed; the client shows "unknown" for those
+        // rather than back-filling a steady tempo that was never measured.
+        var tempoMap = await store.ReadArtifactAsync<TempoMapDto>(jobId, "tempo-map.json", ct);
 
         var visual = VisualizationBuilder.Build(notes, chords, result);
-        return SongStatsBuilder.Build(visual, chords, result, beats);
+        return SongStatsBuilder.Build(visual, chords, result, beats, tempoMap);
     }
 }

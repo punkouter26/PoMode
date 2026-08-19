@@ -65,6 +65,13 @@ public sealed record VisualWindow(
     IReadOnlyList<ModeAlternative> Alternatives);
 
 /// <summary>
+/// One step of the canvas's tempo line: this measure held this tempo from <paramref name="StartSec"/>
+/// until the next point. Drawn as a step rather than interpolated, because the measurement really is
+/// one value per measure and a smooth curve would imply a precision the data does not have.
+/// </summary>
+public sealed record VisualTempoPoint(double StartSec, double Bpm, bool Changed);
+
+/// <summary>
 /// Everything the canvas and HUD need, flattened into one payload so the client makes a single request,
 /// the Blazor render tree never holds per-note state, and clicking a chord needs no round trip.
 /// Derived on demand from the stored artifacts, so SchemaVersion has nothing to migrate yet — it exists
@@ -77,4 +84,5 @@ public sealed record VisualizationPayload(
     IReadOnlyList<VisualWindow> Windows,
     double DurationSec,
     int MinPitch,
-    int MaxPitch);
+    int MaxPitch,
+    IReadOnlyList<VisualTempoPoint> Tempo);

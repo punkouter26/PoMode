@@ -60,9 +60,16 @@ public static class SongFingerprint
             ? $"{stats.TonicName} {mode}"
             : $"{stats.TonicName} (mode unclear)";
 
-        var tempo = stats.TempoBpm > 0
-            ? $" at {Round(stats.TempoBpm, 0)} BPM{(stats.TempoEstimated ? " (estimated)" : "")}"
-            : "";
+        // A drifting tempo is worth a clause: "at 96 BPM" is misleading for a performance that
+        // ranged from 91 to 104, and the range is the more honest headline.
+        var tempo = stats.TempoBpm switch
+        {
+            > 0 when stats.TempoMap is { IsSteady: false, Measures.Count: > 1 } map =>
+                $" at around {Round(map.MedianBpm, 0)} BPM, drifting between "
+                + $"{Round(map.MinBpm, 0)} and {Round(map.MaxBpm, 0)}",
+            > 0 => $" at {Round(stats.TempoBpm, 0)} BPM{(stats.TempoEstimated ? " (estimated)" : "")}",
+            _ => "",
+        };
 
         return $"This song is in {key}{tempo}, running {Duration(stats.DurationSec)}.";
     }
