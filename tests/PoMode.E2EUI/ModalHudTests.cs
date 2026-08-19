@@ -28,6 +28,31 @@ public class ModalHudTests(AppFixture app)
         return bytes;
     }
 
+    /// <summary>
+    /// The C–Am–F–G progression with a sung lead riding over it. Since YinPitchTracker (real,
+    /// model-less) took over from FakePitchTracker in this no-model test host, the sung material
+    /// must actually exist in the audio for the engine to name a mode: four melody notes per
+    /// chord, together covering the full C-major scale, so the primary mode is genuinely Ionian.
+    /// </summary>
+    private static byte[] ProgressionWithMelody()
+    {
+        var tones = new List<(int Midi, double StartSec, double DurationSec, double Amplitude)>();
+        (int Root, string Quality)[] chords = [(0, "maj"), (9, "min"), (5, "maj"), (7, "maj")];
+        int[][] melody = [[72, 76, 79, 74], [69, 72, 76, 71], [65, 69, 72, 76], [67, 71, 74, 72]];
+        for (var chord = 0; chord < chords.Length; chord++)
+        {
+            foreach (var midi in TestAudio.Triad(chords[chord].Root, chords[chord].Quality))
+            {
+                tones.Add((midi, chord * 2.0, 2.0, 0.12));
+            }
+            for (var note = 0; note < melody[chord].Length; note++)
+            {
+                tones.Add((melody[chord][note], (chord * 2.0) + (note * 0.5), 0.45, 0.4));
+            }
+        }
+        return TestAudio.MakeSong(8.0, tones);
+    }
+
     private static async Task<IPage> AnalysedPageAsync(IBrowser browser, string baseUrl, byte[] audio)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
@@ -54,11 +79,11 @@ public class ModalHudTests(AppFixture app)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
-        var page = await AnalysedPageAsync(browser, app.BaseUrl, Progression(
-            (0, "maj", 2.0), (9, "min", 2.0), (5, "maj", 2.0), (7, "maj", 2.0)));
+        var page = await AnalysedPageAsync(browser, app.BaseUrl, ProgressionWithMelody());
 
         await Assertions.Expect(page.GetByText("Primary mode")).ToBeVisibleAsync(Visible);
-        // Tonic C with a C-Am-F-G progression; the engine names Ionian from the sung material.
+        // Tonic C with a C-Am-F-G progression; the engine names Ionian from the sung material —
+        // real melody notes in the fixture, really transcribed (YIN in this no-model host).
         await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("C");
         await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("Ionian");
         await Assertions.Expect(page.GetByText("confidence")).ToBeVisibleAsync(Visible);

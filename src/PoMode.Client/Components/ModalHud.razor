@@ -14,6 +14,9 @@
                 {
                     <RadzenProgressBar Value="@(Result.PrimaryConfidence * 100)" ShowValue="false" class="hud-bar" />
                     <RadzenText class="hud-sub" Text="@($"confidence {Result.PrimaryConfidence:P0}")" />
+                    @* The scale spelled out — server-decided tonic + mode, Shared lookup for the names. *@
+                    <RadzenText class="hud-sub hud-scale"
+                                Text="@($"Scale: {string.Join(" · ", Result.PrimaryScaleNoteNames()!)}")" />
                 }
                 else
                 {

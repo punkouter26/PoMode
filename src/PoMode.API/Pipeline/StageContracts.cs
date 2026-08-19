@@ -55,6 +55,20 @@ public interface IStageExecutor
     /// still before Cloud: mock data is a better automatic fallback than silently spending money.
     /// </summary>
     bool IsPlaceholder => false;
+
+    /// <summary>
+    /// True for the free, model-less classic-DSP alternatives (YIN pitch, Viterbi chord decoding).
+    /// They do real work, so they beat placeholders — but they rank after every model-backed free
+    /// tier (local ONNX, browser inference), so adding them never changes which executor a stage
+    /// runs by default. They exist to replace mock data with real math when no model can run.
+    /// </summary>
+    bool IsClassicFallback => false;
+
+    /// <summary>
+    /// True when this executor runs a downloaded local model file (ONNX) rather than plain code.
+    /// Display metadata for the executor pickers — declared here, never inferred from class names.
+    /// </summary>
+    bool UsesLocalModel => false;
 }
 
 public interface IStemSeparator : IStageExecutor

@@ -33,13 +33,17 @@
                     {
                         <RadzenButton Click="@(() => SelectBasicSourceAsync(mode))"
                                       Disabled="@(_status is "idle" or "loading")"
-                                      ButtonStyle="@(_mode == mode && !_stemsMuted && !_vocalSynthOn ? ButtonStyle.Primary : ButtonStyle.Light)"
+                                      ButtonStyle="@(_mode == mode && !_stemsMuted ? ButtonStyle.Primary : ButtonStyle.Light)"
                                       Text="@label" />
                     }
-                    <RadzenButton Click="@(() => SelectBasicSourceAsync("synth"))"
+                    <RadzenButton Click="@(() => ToggleBasicSoloAsync("vocal"))"
                                   Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                  ButtonStyle="@(_stemsMuted && _vocalSynthOn ? ButtonStyle.Primary : ButtonStyle.Light)"
-                                  Text="Solo Synth" title="Solo the transcribed vocal melody as synth MIDI lead (mutes audio stems)" />
+                                  ButtonStyle="@(_stemsMuted && SynthOn("vocal") ? ButtonStyle.Primary : ButtonStyle.Light)"
+                                  Text="Solo Synth" title="Toggle the transcribed vocal melody as synth MIDI lead (mutes audio stems; combines with Solo Chords)" />
+                    <RadzenButton Click="@(() => ToggleBasicSoloAsync("chords"))"
+                                  Disabled="@(_status is "idle" or "loading" || _chordNoteCount == 0)"
+                                  ButtonStyle="@(_stemsMuted && SynthOn("chords") ? ButtonStyle.Primary : ButtonStyle.Light)"
+                                  Text="Solo Chords" title="Toggle the detected chords as a sustained synth pad (mutes audio stems; combines with Solo Synth)" />
                 }
                 else
                 {
@@ -54,14 +58,6 @@
                                       ButtonStyle="@(_mode == mode && !_stemsMuted ? ButtonStyle.Primary : ButtonStyle.Light)"
                                       Text="@label" />
                     }
-                    <RadzenToggleButton Value="@_vocalSynthOn" Change="@(on => SetNotesAsync("vocal", on))"
-                                        Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Synth vocal" title="Play the transcribed vocal melody as a synth lead (MIDI)" />
-                    <RadzenToggleButton Value="@_backingSynthOn" Change="@(on => SetNotesAsync("backing", on))"
-                                        Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Synth backing" title="Play the transcribed backing notes as a synth pad (MIDI)" />
                 }
             </div>
 
@@ -69,6 +65,20 @@
             {
                 <div class="mixer-group mixer-group-layers" role="group" aria-label="Layers and helpers">
                     <span class="mixer-group-label">Layers</span>
+                    @* The synth layers live here, not under Source: they stack on top of whatever
+                       source plays (or on silence with Mute stems), they never replace it. *@
+                    <RadzenToggleButton Value="@SynthOn("vocal")" Change="@(on => SetNotesAsync("vocal", on))"
+                                        Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Synth vocal" title="Play the transcribed vocal melody as a synth lead (MIDI)" />
+                    <RadzenToggleButton Value="@SynthOn("backing")" Change="@(on => SetNotesAsync("backing", on))"
+                                        Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Synth backing" title="Play the transcribed backing notes as a synth pad (MIDI)" />
+                    <RadzenToggleButton Value="@SynthOn("chords")" Change="@(on => SetNotesAsync("chords", on))"
+                                        Disabled="@(_status is "idle" or "loading" || _chordNoteCount == 0)"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Synth chords" title="Play the detected chords as a sustained synth pad (MIDI)" />
                     <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetOverlayAsync("vocal", on))"
                                         Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
                                         ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
@@ -122,7 +132,7 @@
                 <kbd>,</kbd> restart <span class="key-sep">·</span>
                 <kbd>M</kbd> mute stems <span class="key-sep">·</span>
                 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> mix/vocals/backing <span class="key-sep">·</span>
-                <kbd>V</kbd>/<kbd>B</kbd> synth vocal/backing <span class="key-sep">·</span>
+                <kbd>V</kbd>/<kbd>B</kbd>/<kbd>C</kbd> synth vocal/backing/chords <span class="key-sep">·</span>
                 <kbd>K</kbd> karaoke
             </p>
         }
@@ -210,8 +220,34 @@
     private double _duration;
     private int _vocalNoteCount;
     private int _backingNoteCount;
-    private bool _vocalSynthOn;   // MIDI synth: routes through mixer.js oscillator bank
-    private bool _backingSynthOn; // MIDI synth: routes through mixer.js oscillator bank
+    private int _chordNoteCount;
+
+    /// <summary>mixer.js's note-source names — the one C# copy of its NOTE_SOURCE_NAMES.</summary>
+    private static readonly string[] SynthSources = ["vocal", "backing", "chords"];
+
+    /// <summary>Which synth layers are audible, keyed by <see cref="SynthSources"/> names —
+    /// the same shape as mixer.js's noteSources map.</summary>
+    private readonly Dictionary<string, bool> _synthOn = [];
+
+    private bool SynthOn(string source) => _synthOn.GetValueOrDefault(source);
+
+    private bool AnySynthOn => SynthSources.Any(SynthOn);
+
+    /// <summary>Writes the shared synth-layer state for one source; false for a source string
+    /// mixer.js does not own (then nothing is touched, never misrouted).</summary>
+    private bool ApplySynthFlags(string source, bool on)
+    {
+        if (!SynthSources.Contains(source))
+        {
+            return false;
+        }
+        _synthOn[source] = on;
+        if (source == "vocal")
+        {
+            _vocalNotesOn = on; // the canvas glow follows the vocal synth on/off
+        }
+        return true;
+    }
     private bool _vocalNotesOn;   // canvas overlay: glows vocal dots
     private bool _backingNotesOn; // canvas overlay: backing has no canvas yet, kept for parity
     private bool _metronomeOn;
@@ -246,9 +282,16 @@
                 var timeNote = _loadElapsedSec > 0 ? $" ({_loadElapsedSec}s elapsed)" : "";
                 return $"Preparing audio stems… {_loadingPhase}{timeNote}";
             }
-            if (_mode == "synth")
+            // Basic view only: the advanced view's "Mute stems" + synth layers is a deliberate
+            // mixing state, not a solo, and keeps its normal source label.
+            if (Basic && _stemsMuted && (SynthOn("vocal") || SynthOn("chords")))
             {
-                return $"Solo Synth · {_vocalNoteCount} melody notes · {_duration:0.0}s";
+                return (SynthOn("vocal"), SynthOn("chords")) switch
+                {
+                    (true, true) => $"Solo Synth + Chords · {_vocalNoteCount} melody notes · {_chordNoteCount} chord tones · {_duration:0.0}s",
+                    (true, false) => $"Solo Synth · {_vocalNoteCount} melody notes · {_duration:0.0}s",
+                    _ => $"Solo Chords · {_chordNoteCount} chord tones · {_duration:0.0}s",
+                };
             }
             var label = Modes.FirstOrDefault(entry => entry.Mode == _mode).Label ?? _mode;
             return $"{label} · {_duration:0.0}s of audio";
@@ -352,8 +395,7 @@
             }
 
             _sentSeek = null;
-            _vocalSynthOn = false;
-            _backingSynthOn = false;
+            _synthOn.Clear();
             _vocalNotesOn = false;
             _backingNotesOn = false;
             _metronomeOn = false;
@@ -375,9 +417,10 @@
                     {
                         vocal = $"api/analysis/{JobId}/notes",
                         backing = $"api/analysis/{JobId}/notes-backing",
+                        chords = $"api/analysis/{JobId}/notes-chords",
                     });
-                    _vocalNoteCount = counts.Length > 0 ? counts[0] : 0;
-                    _backingNoteCount = counts.Length > 1 ? counts[1] : 0;
+                    // loadNotes always answers [vocal, backing, chords].
+                    (_vocalNoteCount, _backingNoteCount, _chordNoteCount) = (counts[0], counts[1], counts[2]);
                     _beatBpm = await _module.InvokeAsync<double>("loadBeats", _root, $"api/analysis/{JobId}/beats");
                 }
                 catch
@@ -435,14 +478,15 @@
     [JSInvokable]
     public void OnSynthToggle(string source, bool on)
     {
+        if (!ApplySynthFlags(source, on))
+        {
+            return;
+        }
         if (source == "vocal")
         {
-            _vocalSynthOn = on;
-            _vocalNotesOn = on; // the canvas glow follows the synth on/off
-        }
-        else
-        {
-            _backingSynthOn = on;
+            // The keyboard path already toggled the audio JS-side; mirror the canvas glow too,
+            // so the V key behaves exactly like the Synth vocal button.
+            _ = _module?.InvokeVoidAsync("setOverlay", _root, source, on);
         }
         StateHasChanged();
     }
@@ -482,60 +526,66 @@
         await _module.InvokeVoidAsync("setMode", _root, mode);
     }
 
+    /// <summary>Basic view: picks which audio source plays, switching every solo layer off.</summary>
     private async Task SelectBasicSourceAsync(string source)
     {
         if (_module is null) return;
-        if (source == "synth")
+        _mode = source;
+        if (_stemsMuted)
         {
-            _mode = "synth";
-            _stemsMuted = true;
-            await _module.InvokeVoidAsync("setStemsMuted", _root, true);
-            await SetNotesAsync("vocal", true);
+            _stemsMuted = false;
+            await _module.InvokeVoidAsync("setStemsMuted", _root, false);
         }
-        else
+        foreach (var layer in SynthSources)
         {
-            _mode = source;
-            if (_stemsMuted)
+            if (SynthOn(layer))
             {
-                _stemsMuted = false;
-                await _module.InvokeVoidAsync("setStemsMuted", _root, false);
+                await SetNotesAsync(layer, false);
             }
-            if (_vocalSynthOn)
-            {
-                await SetNotesAsync("vocal", false);
-            }
-            await _module.InvokeVoidAsync("setMode", _root, source);
+        }
+        await _module.InvokeVoidAsync("setMode", _root, source);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Basic view's Solo Synth / Solo Chords: the layers combine freely, each click toggles its
+    /// own. The stems stay muted while any solo layer is on; when the last one turns off, the
+    /// audio source the user had before (still in _mode) comes back.
+    /// </summary>
+    private async Task ToggleBasicSoloAsync(string source)
+    {
+        if (_module is null) return;
+        await SetNotesAsync(source, !SynthOn(source));
+        // Every synth layer counts, including 'backing' (only reachable via the B key in Basic
+        // view): unmuting while any layer still sounds would stack it on top of the stems.
+        var anySolo = AnySynthOn;
+        if (_stemsMuted != anySolo)
+        {
+            _stemsMuted = anySolo;
+            await _module.InvokeVoidAsync("setStemsMuted", _root, anySolo);
         }
         StateHasChanged();
     }
 
     private async Task SetNotesAsync(string source, bool on)
     {
-        if (_module is null)
+        if (_module is null || !ApplySynthFlags(source, on))
         {
             return;
         }
-        if (source == "vocal")
-        {
-            _vocalSynthOn = on;
-        }
-        else
-        {
-            _backingSynthOn = on;
-        }
         await _module.InvokeVoidAsync("setNoteSource", _root, source, on);
         // The canvas glow channel follows the synth on/off so the user sees what's audible.
-        if (source == "vocal")
+        // Only vocal and backing have overlay channels; canvas.js ignores anything else anyway.
+        if (source is "vocal" or "backing")
         {
-            _vocalNotesOn = on;
-        }
-        try
-        {
-            await _module.InvokeVoidAsync("setOverlay", _root, source, on);
-        }
-        catch (JSDisconnectedException)
-        {
-            // circuit torn down
+            try
+            {
+                await _module.InvokeVoidAsync("setOverlay", _root, source, on);
+            }
+            catch (JSDisconnectedException)
+            {
+                // circuit torn down
+            }
         }
     }
 

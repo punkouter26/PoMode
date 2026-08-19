@@ -36,6 +36,17 @@ public static class StageNames
     public const string ChordDetecting = "ChordDetecting";
     public const string ModalAnalysis = "ModalAnalysis";
 
+    /// <summary>
+    /// Upload query keys for the per-stage executor picks — the one table both the client's
+    /// upload URL builder and the upload endpoint read, so the two sides can never drift.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Stage, string QueryKey)> ExecutorQueryKeys =
+    [
+        (Separating, "stemSeparator"),
+        (PitchTracking, "pitchTracker"),
+        (ChordDetecting, "chordRecognizer"),
+    ];
+
     /// <summary>The stage name a running job's <see cref="JobStage"/> corresponds to, or null for
     /// non-stage states. <see cref="JobStage.AwaitingClient"/> is the pitch stage parked on the
     /// browser, so it maps to <see cref="PitchTracking"/>.</summary>

@@ -107,7 +107,7 @@ public sealed class AudioDecoderTests : IDisposable
     [Fact]
     public void Decodes_a_real_mp3_via_the_nlayer_path()
     {
-        var source = Path.Combine(FindRepoRoot(), "2017_LonelyHill2.mp3");
+        var source = Path.Combine(TestPaths.RepoRoot(), "2017_LonelyHill2.mp3");
         if (!File.Exists(source))
         {
             Console.WriteLine($"SKIPPED: real-MP3 fixture not found at '{source}'; nothing to verify on this machine.");
@@ -125,13 +125,4 @@ public sealed class AudioDecoderTests : IDisposable
         Console.WriteLine($"Decoded '{source}': {buffer.SampleRate} Hz, {buffer.Channels} ch, {buffer.DurationSeconds:F2}s.");
     }
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PoMode.slnx")))
-        {
-            dir = dir.Parent;
-        }
-        return dir?.FullName ?? throw new InvalidOperationException("PoMode.slnx not found above test bin dir.");
-    }
 }

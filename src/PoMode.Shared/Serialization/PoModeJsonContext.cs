@@ -19,5 +19,6 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(HardwareReport))]
 [JsonSerializable(typeof(List<NoteEvent>))]
 [JsonSerializable(typeof(List<ChordSpan>))]
+[JsonSerializable(typeof(List<StageExecutorsDto>))]
 [JsonSerializable(typeof(ModalResult))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

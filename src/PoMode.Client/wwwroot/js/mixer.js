@@ -6,7 +6,7 @@
 // component renders. Blazor only hears about discrete events (loaded, mode changed, failed, and
 // keyboard-driven play/pause so the button label can follow).
 
-import { setPlayhead, addLivePitch, clearLivePitch } from './canvas.js';
+import { setPlayhead, addLivePitch, clearLivePitch, setOverlay as canvasSetOverlay } from './canvas.js';
 import { detectPitch, openMicrophone } from './live-pitch.js';
 
 const states = new Map();
@@ -20,9 +20,23 @@ const MODE_GAINS = {
     backing: { mix: 0, vocals: 0, instrumental: 1 },
 };
 
-/// The two synthesized note overlays. Each one toggles independently of the stem mode and of the
-/// other overlay, so "Vocal Notes" and "Music Notes" only ever add or remove their own notes.
-const NOTE_SOURCE_NAMES = ['vocal', 'backing'];
+/// The synthesized note overlays. Each one toggles independently of the stem mode and of the
+/// others, so vocal, backing and chord layers only ever add or remove their own notes.
+const NOTE_SOURCE_NAMES = ['vocal', 'backing', 'chords'];
+
+/// Per-source synth timbre, same table idiom as MODE_GAINS: the lead is bright and centred
+/// slightly right, the backing pad mellower and left, the chord pad darkest and quietest in the
+/// middle. A new source gets an explicit row here, never a silent fallthrough.
+const VOICE_TIMBRES = {
+    vocal: { wave: 'sawtooth', level: 1, cutoff: 3200, pan: 0.12 },
+    backing: { wave: 'triangle', level: 0.5, cutoff: 2000, pan: -0.12 },
+    chords: { wave: 'triangle', level: 0.4, cutoff: 1600, pan: 0 },
+};
+
+/// One `{ vocal: v, backing: v, chords: v }` object per call, derived from NOTE_SOURCE_NAMES so
+/// adding a source is a one-line change, not a hunt for every reset literal.
+const perSource = value => Object.fromEntries(
+    NOTE_SOURCE_NAMES.map(name => [name, typeof value === 'function' ? value() : value]));
 
 const RAMP_SECONDS = 0.05;
 
@@ -109,25 +123,26 @@ function stopSynthVoices(state, source) {
 
 /// One synthesized note: a detuned oscillator pair through a lowpass and an ADSR envelope (the
 /// timbre is borrowed from PoModeMm's midiPlayer.js). Vocal notes get a bright sawtooth lead;
-/// backing notes get a mellower, quieter triangle so the melody stays in front when both play.
+/// backing notes get a mellower, quieter triangle so the melody stays in front when both play;
+/// chord-pad notes get the darkest, quietest triangle so a sustained triad sits under everything.
 /// Envelope times are ordered even for very short notes.
 function scheduleVoice(state, note, when, source) {
     const ctx = state.context;
+    const timbre = VOICE_TIMBRES[source];
     const freq = 440 * Math.pow(2, (note.midiPitch - 69) / 12);
     const duration = Math.max(0.05, note.durationSec);
-    const level = source === 'backing' ? 0.5 : 1;
-    const velocity = ((note.velocity ?? 90) / 127) * level;
+    const velocity = ((note.velocity ?? 90) / 127) * timbre.level;
 
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
-    osc1.type = source === 'backing' ? 'triangle' : 'sawtooth';
-    osc2.type = source === 'backing' ? 'triangle' : 'sawtooth';
+    osc1.type = timbre.wave;
+    osc2.type = timbre.wave;
     osc1.frequency.value = freq;
     osc2.frequency.value = freq * 1.001; // gentle detune for warmth
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = source === 'backing' ? 2000 : 3200;
+    filter.frequency.value = timbre.cutoff;
     filter.Q.value = 0.7;
 
     const env = ctx.createGain();
@@ -142,7 +157,7 @@ function scheduleVoice(state, note, when, source) {
     // A touch of stereo width, deterministic per pitch so a repeated note sits in the same place.
     if (ctx.createStereoPanner) {
         const pan = ctx.createStereoPanner();
-        pan.pan.value = ((source === 'backing' ? -0.12 : 0.12) + (((note.midiPitch % 5) - 2) * 0.05));
+        pan.pan.value = timbre.pan + (((note.midiPitch % 5) - 2) * 0.05);
         env.connect(pan);
         pan.connect(state.synthGain);
     } else {
@@ -291,7 +306,7 @@ function startSources(state, offsetSeconds) {
     stopSources(state);
     stopSynthVoices(state);
     state.synthCursor = offsetSeconds;
-    state.synthIndex = { vocal: 0, backing: 0 };
+    state.synthIndex = perSource(0);
     state.clickCursor = offsetSeconds;
     const when = state.context.currentTime + 0.02; // a beat of headroom so all three share a start
     for (const stem of STEMS) {
@@ -413,6 +428,11 @@ function onKeyDown(state, event) {
         state.noteSources.backing = next;
         if (!next) stopSynthVoices(state, 'backing');
         state.dotNet?.invokeMethodAsync('OnSynthToggle', 'backing', next);
+    } else if (event.key === 'c' || event.key === 'C') {
+        const next = !state.noteSources.chords;
+        state.noteSources.chords = next;
+        if (!next) stopSynthVoices(state, 'chords');
+        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'chords', next);
     } else if (event.key === 'k' || event.key === 'K') {
         state.dotNet?.invokeMethodAsync('OnKaraokeShortcut');
     }
@@ -478,12 +498,12 @@ export function init(root, canvas, dotNetRef) {
         duration: 0,
         playing: false,
         frame: null,
-        notes: { vocal: [], backing: [] },
-        noteSources: { vocal: false, backing: false },
+        notes: perSource(() => []),
+        noteSources: perSource(false),
         synthGain: null,
         synthVoices: [],
         synthCursor: 0,
-        synthIndex: { vocal: 0, backing: 0 },
+        synthIndex: perSource(0),
         stemsMuted: false,
         bpmNudge: 0,
         metronome: false,
@@ -517,7 +537,7 @@ export async function load(root, urls) {
     report(state, 'loading');
     state.context ??= new (window.AudioContext || window.webkitAudioContext)();
     try {
-        state.dotnet?.invokeMethodAsync('OnStemLoadProgress', 'Downloading audio stems (mix, vocals, backing)…');
+        state.dotNet?.invokeMethodAsync('OnStemLoadProgress', 'Downloading audio stems (mix, vocals, backing)…');
     } catch { }
 
     let downloadedCount = 0;
@@ -534,7 +554,7 @@ export async function load(root, urls) {
             const buffer = await response.arrayBuffer();
             downloadedCount++;
             try {
-                state.dotnet?.invokeMethodAsync('OnStemLoadProgress', `Decoding ${stem} stem (${downloadedCount}/3)…`);
+                state.dotNet?.invokeMethodAsync('OnStemLoadProgress', `Decoding ${stem} stem (${downloadedCount}/3)…`);
             } catch { }
             return [stem, await state.context.decodeAudioData(buffer)];
         } catch {
@@ -585,7 +605,7 @@ export async function load(root, urls) {
     state.offset = 0;
     state.playing = false;
     // A new job starts with every overlay off, matching the Blazor toggles' reset.
-    state.noteSources = { vocal: false, backing: false };
+    state.noteSources = perSource(false);
     state.metronome = false;
     state.beatGrid = null;
     stopKaraoke(root);
@@ -603,16 +623,17 @@ export async function load(root, urls) {
     return state.duration;
 }
 
-/// Fetches the transcribed note lists for the notes modes: the vocal melody (notes.json) and the
-/// backing transcription (notes-backing.json). A missing or unreadable artifact leaves its mode
-/// silent rather than breaking the mixer. Returns [vocalCount, backingCount].
+/// Fetches the note lists for the notes modes: the vocal melody (notes.json), the backing
+/// transcription (notes-backing.json) and the server-voiced chord pad (notes-chords). A missing
+/// or unreadable artifact leaves its mode silent rather than breaking the mixer.
+/// Returns [vocalCount, backingCount, chordCount].
 export async function loadNotes(root, urls) {
     const state = states.get(root);
     if (!state) {
-        return [0, 0];
+        return [0, 0, 0];
     }
     try {
-        state.dotnet?.invokeMethodAsync('OnStemLoadProgress', 'Loading melody notes & beat grid…');
+        state.dotNet?.invokeMethodAsync('OnStemLoadProgress', 'Loading melody notes & beat grid…');
     } catch { }
     const fetchList = async url => {
         try {
@@ -622,10 +643,11 @@ export async function loadNotes(root, urls) {
             return [];
         }
     };
-    const [vocal, backing] = await Promise.all([fetchList(urls.vocal), fetchList(urls.backing)]);
-    state.notes = { vocal, backing };
-    state.synthIndex = { vocal: 0, backing: 0 };
-    return [vocal.length, backing.length];
+    const [vocal, backing, chords] = await Promise.all(
+        [fetchList(urls.vocal), fetchList(urls.backing), fetchList(urls.chords)]);
+    state.notes = { vocal, backing, chords };
+    state.synthIndex = perSource(0);
+    return [vocal.length, backing.length, chords.length];
 }
 
 export async function play(root) {
@@ -703,10 +725,20 @@ export function setNoteSource(root, source, enabled) {
     if (!enabled) {
         stopSynthVoices(state, source);
     } else if (state.playing && !anyBefore) {
-        // The shared cursor stalled while both overlays were off; restart it at the playhead.
+        // The shared cursor stalled while all overlays were off; restart it at the playhead.
         state.synthCursor = currentSeconds(state);
-        state.synthIndex = { vocal: 0, backing: 0 };
+        state.synthIndex = perSource(0);
     }
+}
+
+/// Forwards a canvas note-overlay toggle. Blazor holds the mixer module (and its root element),
+/// not the canvas module, so the glow toggle routes through here to the canvas the mixer drives.
+export function setOverlay(root, source, enabled) {
+    const state = states.get(root);
+    if (!state) {
+        return;
+    }
+    canvasSetOverlay(state.canvas, source, enabled);
 }
 
 /// Turns the metronome click on or off without touching anything else.

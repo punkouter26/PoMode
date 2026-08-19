@@ -120,7 +120,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
         // Plan with the browser declared capable, which is what an upload from a WebGPU/WASM-capable
         // client does.
         state.Plan = await new ExecutionPlanner([new FakeStemSeparator()], trackers, [new ChromaChordRecognizer()])
-            .PlanAsync(browserCanInfer: true, CancellationToken.None);
+            .PlanAsync(browserCanInfer: true, null, CancellationToken.None);
         await _store.SaveAsync(state, CancellationToken.None);
         return state;
     }

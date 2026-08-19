@@ -61,12 +61,13 @@ public sealed class VisualEndpointTests : IDisposable
 
         Assert.NotNull(payload);
         Assert.Equal(1, payload.SchemaVersion);
-        // FakePitchTracker produces 8 notes (the model is not downloaded in this test host); the fixture is
-        // silence so ChromaChordRecognizer correctly finds zero chords. Both are the honest truth here.
-        Assert.Equal(8, payload.Notes.Count);
+        // The fixture is silence and both real free executors run (YinPitchTracker for pitch,
+        // ChromaChordRecognizer for chords), so zero notes, zero chords and zero duration are the
+        // honest truth here — and the payload must still be well-formed around them.
+        Assert.Empty(payload.Notes);
         Assert.Empty(payload.Chords);
         Assert.True(payload.MaxPitch - payload.MinPitch >= 12, $"range was {payload.MaxPitch - payload.MinPitch}");
-        Assert.True(payload.DurationSec > 0, $"duration was {payload.DurationSec}");
+        Assert.Equal(0.0, payload.DurationSec);
         Assert.All(payload.Notes, note =>
         {
             Assert.False(string.IsNullOrWhiteSpace(note.PitchLabel));

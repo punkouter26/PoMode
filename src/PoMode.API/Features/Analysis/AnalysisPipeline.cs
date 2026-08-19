@@ -141,14 +141,27 @@ public sealed class AnalysisPipeline(
         try
         {
             var instrumentalPath = Path.Combine(context.JobDir, "instrumental.wav");
+            if (!File.Exists(instrumentalPath))
+            {
+                return;
+            }
             // Same tier ordering the planner uses — never DI registration order — and placeholders
             // are excluded outright: fake backing notes would bypass the plan (and its mock banner),
-            // and no backing notes is strictly better than fabricated ones.
-            var transcriber = pitchTrackers.OfType<IFileTranscriber>()
+            // and no backing notes is strictly better than fabricated ones. The walk skips
+            // unavailable candidates rather than giving up, so a missing model still leaves the
+            // classic-DSP fallback (YinPitchTracker) to write real backing notes.
+            IFileTranscriber? transcriber = null;
+            foreach (var candidate in pitchTrackers.OfType<IFileTranscriber>()
                 .Where(t => !t.IsPlaceholder)
-                .OrderBy(ExecutionPlanner.EffectiveRank)
-                .FirstOrDefault();
-            if (transcriber is null || !File.Exists(instrumentalPath) || !await transcriber.IsAvailableAsync(ct))
+                .OrderBy(ExecutionPlanner.EffectiveRank))
+            {
+                if (await candidate.IsAvailableAsync(ct))
+                {
+                    transcriber = candidate;
+                    break;
+                }
+            }
+            if (transcriber is null)
             {
                 return;
             }

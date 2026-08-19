@@ -12,16 +12,16 @@
             <span class="stat-title">Vocal Range</span>
             <div class="stat-highlight">
                 <span class="range-span">@RangeLabel</span>
-                <span class="stat-badge">@($"{SpanSemitones} semitones ({SpanOctaves:0.1} oct)")</span>
+                <span class="stat-badge">@($"{SpanSemitones} semitones ({SpanOctaves:0.0} oct)")</span>
             </div>
             <div class="stat-details">
                 <div class="stat-row">
                     <span>Lowest note:</span>
-                    <strong>@MinPitchLabel (MIDI @Visual.MinPitch)</strong>
+                    <strong>@MinPitchLabel (MIDI @(LowestNote?.MidiPitch.ToString() ?? "—"))</strong>
                 </div>
                 <div class="stat-row">
                     <span>Highest note:</span>
-                    <strong>@MaxPitchLabel (MIDI @Visual.MaxPitch)</strong>
+                    <strong>@MaxPitchLabel (MIDI @(HighestNote?.MidiPitch.ToString() ?? "—"))</strong>
                 </div>
                 <div class="stat-row">
                     <span>Melody note count:</span>
@@ -29,11 +29,11 @@
                 </div>
                 <div class="stat-row">
                     <span>Note density:</span>
-                    <strong>@($"{NoteDensity:0.1} notes/sec")</strong>
+                    <strong>@($"{NoteDensity:0.0} notes/sec")</strong>
                 </div>
                 <div class="stat-row">
                     <span>Avg note length:</span>
-                    <strong>@($"{AvgNoteDuration:0.2}s")</strong>
+                    <strong>@($"{AvgNoteDuration:0.00}s")</strong>
                 </div>
             </div>
         </div>
@@ -44,38 +44,21 @@
             <div class="stat-highlight">
                 <span class="range-span">@($"{InScalePercent:0}% In-Scale")</span>
                 <span class="stat-badge @(OutsidePercent > 10 ? "badge-warning" : "badge-success")">
-                    @($"{OutsidePercent:0.1}% Chromatic")
+                    @($"{OutsidePercent:0.0}% Chromatic")
                 </span>
             </div>
             <div class="role-bars">
-                <div class="role-bar-row">
-                    <span class="role-label"><span class="swatch chord-tone"></span>Chord tones</span>
-                    <div class="bar-track">
-                        <div class="bar-fill chord-tone-fill" style="width: @($"{ChordTonePercent:0.1}%");"></div>
+                @foreach (var (role, label, css) in RoleRows)
+                {
+                    var percent = PercentOf(role);
+                    <div class="role-bar-row">
+                        <span class="role-label"><span class="swatch @css"></span>@label</span>
+                        <div class="bar-track">
+                            <div class="bar-fill @(css)-fill" style="width: @($"{percent:0.0}%");"></div>
+                        </div>
+                        <span class="role-val">@($"{percent:0}%")</span>
                     </div>
-                    <span class="role-val">@($"{ChordTonePercent:0}%")</span>
-                </div>
-                <div class="role-bar-row">
-                    <span class="role-label"><span class="swatch characteristic"></span>Modal notes</span>
-                    <div class="bar-track">
-                        <div class="bar-fill characteristic-fill" style="width: @($"{CharacteristicPercent:0.1}%");"></div>
-                    </div>
-                    <span class="role-val">@($"{CharacteristicPercent:0}%")</span>
-                </div>
-                <div class="role-bar-row">
-                    <span class="role-label"><span class="swatch in-mode"></span>Scale notes</span>
-                    <div class="bar-track">
-                        <div class="bar-fill in-mode-fill" style="width: @($"{InModePercent:0.1}%");"></div>
-                    </div>
-                    <span class="role-val">@($"{InModePercent:0}%")</span>
-                </div>
-                <div class="role-bar-row">
-                    <span class="role-label"><span class="swatch outside"></span>Outside</span>
-                    <div class="bar-track">
-                        <div class="bar-fill outside-fill" style="width: @($"{OutsidePercent:0.1}%");"></div>
-                    </div>
-                    <span class="role-val">@($"{OutsidePercent:0}%")</span>
-                </div>
+                }
             </div>
         </div>
 
@@ -92,7 +75,7 @@
                     <div class="mode-dist-row">
                         <span class="mode-dist-name">@modeName</span>
                         <div class="bar-track">
-                            <div class="bar-fill mode-dist-fill" style="width: @($"{percent:0.1}%");"></div>
+                            <div class="bar-fill mode-dist-fill" style="width: @($"{percent:0.0}%");"></div>
                         </div>
                         <span class="mode-dist-percent">@($"{percent:0}% ({count}w)")</span>
                     </div>
@@ -108,9 +91,11 @@
             @foreach (var pitch in ChromaDistribution)
             {
                 var isTonic = pitch.PitchClass == Result.TonicPitchClass;
-                <div class="chroma-col @(isTonic ? "chroma-tonic" : "")" title="@($"{pitch.Name}: {pitch.TotalDurationSec:0.1}s ({pitch.Percent:0.1}%)")">
+                <div class="chroma-col @(isTonic ? "chroma-tonic" : "")" title="@($"{pitch.Name}: {pitch.TotalDurationSec:0.0}s ({pitch.Percent:0.0}%)")">
+                    @* Heights are % of the tallest bin, so the tallest bar exactly fills the fixed
+                       container and nothing can ever overflow the card. *@
                     <div class="chroma-bar-container">
-                        <div class="chroma-bar" style="height: @($"{Math.Max(pitch.Percent * 2.5, 4):0.1}px");"></div>
+                        <div class="chroma-bar" style="height: @($"{Math.Max(pitch.HeightPercent, 4):0.0}%");"></div>
                     </div>
                     <span class="chroma-label">@pitch.Name</span>
                     @if (isTonic)
@@ -124,94 +109,101 @@
 </RadzenCard>
 
 @code {
-    private static readonly string[] PitchNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
     [Parameter, EditorRequired] public required ModalResult Result { get; set; }
     [Parameter, EditorRequired] public required VisualizationPayload Visual { get; set; }
 
-    private int SpanSemitones => Math.Max(0, Visual.MaxPitch - Visual.MinPitch);
-    private double SpanOctaves => SpanSemitones / 12.0;
+    private static readonly (NoteRole Role, string Label, string Css)[] RoleRows =
+    [
+        (NoteRole.ChordTone, "Chord tones", "chord-tone"),
+        (NoteRole.Characteristic, "Modal notes", "characteristic"),
+        (NoteRole.InMode, "Scale notes", "in-mode"),
+        (NoteRole.Outside, "Outside", "outside"),
+    ];
 
-    private string MinPitchLabel => Visual.Notes.Count == 0 ? "—" : MidiToPitchLabel(Visual.MinPitch);
-    private string MaxPitchLabel => Visual.Notes.Count == 0 ? "—" : MidiToPitchLabel(Visual.MaxPitch);
+    // All note-list scans happen once per parameter change, never per render: the workspace
+    // re-renders on every transport/HUD tick, and recomputing these per render would re-walk a
+    // multi-thousand-note list a dozen times per click.
+    private VisualNote? LowestNote { get; set; }
+    private VisualNote? HighestNote { get; set; }
+    private double NoteDensity { get; set; }
+    private double AvgNoteDuration { get; set; }
+    private int ModulationCount { get; set; }
+    private List<(string Mode, double Percent, int Count)> ModeBreakdown { get; set; } = [];
+    private List<ChromaBin> ChromaDistribution { get; set; } = [];
+    private Dictionary<NoteRole, double> _percentByRole = [];
+
+    // Actual sung extremes, not Visual.MinPitch/MaxPitch — those are padded to a 12-semitone
+    // layout span by VisualizationBuilder, so they need not be real notes. Labels are the
+    // server-decided ones, per the repo rule that note names come from VisualizationBuilder.
+    private int SpanSemitones => LowestNote is null || HighestNote is null
+        ? 0
+        : HighestNote.MidiPitch - LowestNote.MidiPitch;
+    private double SpanOctaves => SpanSemitones / 12.0;
+    private string MinPitchLabel => LowestNote?.PitchLabel ?? "—";
+    private string MaxPitchLabel => HighestNote?.PitchLabel ?? "—";
     private string RangeLabel => Visual.Notes.Count == 0 ? "No notes" : $"{MinPitchLabel} – {MaxPitchLabel}";
 
-    private double NoteDensity => Visual.DurationSec > 0 ? Visual.Notes.Count / Visual.DurationSec : 0;
-    private double AvgNoteDuration => Visual.Notes.Count > 0 ? Visual.Notes.Average(n => n.DurationSec) : 0;
-
-    private double ChordTonePercent => Visual.Notes.Count == 0 ? 0 : (Visual.Notes.Count(n => n.Role == NoteRole.ChordTone) * 100.0) / Visual.Notes.Count;
-    private double CharacteristicPercent => Visual.Notes.Count == 0 ? 0 : (Visual.Notes.Count(n => n.Role == NoteRole.Characteristic) * 100.0) / Visual.Notes.Count;
-    private double InModePercent => Visual.Notes.Count == 0 ? 0 : (Visual.Notes.Count(n => n.Role == NoteRole.InMode) * 100.0) / Visual.Notes.Count;
-    private double OutsidePercent => Visual.Notes.Count == 0 ? 0 : (Visual.Notes.Count(n => n.Role == NoteRole.Outside) * 100.0) / Visual.Notes.Count;
+    private double PercentOf(NoteRole role) => _percentByRole.GetValueOrDefault(role);
+    private double OutsidePercent => PercentOf(NoteRole.Outside);
     private double InScalePercent => 100.0 - OutsidePercent;
 
     private string PrimaryModeLabel => Result.PrimaryMode is null ? "Mode Unclear" : $"{Result.PrimaryMode} ({Result.PrimaryConfidence:P0})";
 
-    private int ModulationCount
+    protected override void OnParametersSet()
     {
-        get
-        {
-            var count = 0;
-            string? lastMode = null;
-            foreach (var window in Visual.Windows)
-            {
-                if (!string.IsNullOrEmpty(window.ModeTag))
-                {
-                    if (lastMode != null && lastMode != window.ModeTag)
-                    {
-                        count++;
-                    }
-                    lastMode = window.ModeTag;
-                }
-            }
-            return count;
-        }
-    }
+        var notes = Visual.Notes;
+        LowestNote = notes.MinBy(n => n.MidiPitch);
+        HighestNote = notes.MaxBy(n => n.MidiPitch);
+        NoteDensity = Visual.DurationSec > 0 ? notes.Count / Visual.DurationSec : 0;
+        AvgNoteDuration = notes.Count > 0 ? notes.Average(n => n.DurationSec) : 0;
 
-    private List<(string Mode, double Percent, int Count)> ModeBreakdown
-    {
-        get
+        // One pass over the notes covers both the role percentages and the chroma histogram.
+        var roleCounts = new Dictionary<NoteRole, int>();
+        var durations = new double[12];
+        foreach (var note in notes)
         {
-            var valid = Visual.Windows.Where(w => !string.IsNullOrEmpty(w.ModeTag)).ToList();
-            if (valid.Count == 0)
+            roleCounts[note.Role] = roleCounts.GetValueOrDefault(note.Role) + 1;
+            durations[((note.MidiPitch % 12) + 12) % 12] += note.DurationSec;
+        }
+        _percentByRole = roleCounts.ToDictionary(
+            entry => entry.Key, entry => entry.Value * 100.0 / notes.Count);
+
+        var total = durations.Sum();
+        var peak = durations.Max();
+        var bins = new List<ChromaBin>(12);
+        for (var i = 0; i < 12; i++)
+        {
+            var percent = total > 0 ? (durations[i] * 100.0) / total : 0;
+            var height = peak > 0 ? (durations[i] * 100.0) / peak : 0;
+            bins.Add(new ChromaBin(i, ScaleModes.NoteName(i), durations[i], percent, height));
+        }
+        ChromaDistribution = bins;
+
+        var modulations = 0;
+        string? lastMode = null;
+        foreach (var window in Visual.Windows)
+        {
+            if (!string.IsNullOrEmpty(window.ModeTag))
             {
-                return [("Unclear", 100.0, Visual.Windows.Count)];
+                if (lastMode != null && lastMode != window.ModeTag)
+                {
+                    modulations++;
+                }
+                lastMode = window.ModeTag;
             }
-            return valid
+        }
+        ModulationCount = modulations;
+
+        var valid = Visual.Windows.Where(w => !string.IsNullOrEmpty(w.ModeTag)).ToList();
+        ModeBreakdown = valid.Count == 0
+            ? [("Unclear", 100.0, Visual.Windows.Count)]
+            : valid
                 .GroupBy(w => w.ModeTag!)
                 .OrderByDescending(g => g.Count())
                 .Select(g => (g.Key, (g.Count() * 100.0) / valid.Count, g.Count()))
                 .ToList();
-        }
     }
 
-    private sealed record ChromaBin(int PitchClass, string Name, double TotalDurationSec, double Percent);
-
-    private List<ChromaBin> ChromaDistribution
-    {
-        get
-        {
-            var durations = new double[12];
-            foreach (var note in Visual.Notes)
-            {
-                var pitchClass = ((note.MidiPitch % 12) + 12) % 12;
-                durations[pitchClass] += note.DurationSec;
-            }
-            var total = durations.Sum();
-            var list = new List<ChromaBin>(12);
-            for (var i = 0; i < 12; i++)
-            {
-                var percent = total > 0 ? (durations[i] * 100.0) / total : 0;
-                list.Add(new ChromaBin(i, PitchNames[i], durations[i], percent));
-            }
-            return list;
-        }
-    }
-
-    private static string MidiToPitchLabel(int midi)
-    {
-        var octave = (midi / 12) - 1;
-        var name = PitchNames[((midi % 12) + 12) % 12];
-        return $"{name}{octave}";
-    }
+    private sealed record ChromaBin(
+        int PitchClass, string Name, double TotalDurationSec, double Percent, double HeightPercent);
 }

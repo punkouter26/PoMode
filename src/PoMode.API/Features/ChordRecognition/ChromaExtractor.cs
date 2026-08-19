@@ -63,7 +63,7 @@ public static class ChromaExtractor
             // bin sitting between two semitones then contributes to both instead of being rounded
             // wholesale into whichever is nearer — the rounding was what turned bass-register
             // spectral smear into confident wrong pitch classes.
-            var midi = 69 + (12 * Math.Log2(frequency / 440.0));
+            var midi = PoMode.Shared.Analysis.ScaleModes.MidiFromFrequency(frequency);
             var lower = (int)Math.Floor(midi);
             var fraction = midi - lower;
             var magnitude = buffer[bin].Magnitude;

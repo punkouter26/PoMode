@@ -49,4 +49,9 @@ public static class ModalResultExtensions
     public static int? WindowIndexAt(this ModalResult result, double timeSec)
         => TimelineSearch.IndexCovering(
             result.Windows, timeSec, static w => w.StartSec, static w => w.EndSec);
+
+    /// <summary>The primary mode's scale spelled as note names, tonic first — or null when no
+    /// mode was named. Pure lookup over <see cref="ScaleModes"/>; both views render it.</summary>
+    public static string[]? PrimaryScaleNoteNames(this ModalResult result)
+        => result.PrimaryMode is { } mode ? ScaleModes.NoteNames(result.TonicPitchClass, mode) : null;
 }

@@ -6,12 +6,14 @@ namespace PoMode.Unit.Pipeline;
 
 public class ExecutionPlannerTests
 {
-    private sealed class StubExecutor(string name, ExecutionTier tier, bool available, bool placeholder = false)
+    private sealed class StubExecutor(
+        string name, ExecutionTier tier, bool available, bool placeholder = false, bool classicFallback = false)
         : IStemSeparator, IPitchTracker, IChordRecognizer
     {
         public string Name => name;
         public ExecutionTier Tier => tier;
         public bool IsPlaceholder => placeholder;
+        public bool IsClassicFallback => classicFallback;
         public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(available);
         public Task SeparateAsync(StageContext context, CancellationToken ct) => Task.CompletedTask;
         public Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct)
@@ -93,7 +95,7 @@ public class ExecutionPlannerTests
             new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true));
 
         var withoutBrowser = await planner.PlanAsync(CancellationToken.None);
-        var withBrowser = await planner.PlanAsync(browserCanInfer: true, CancellationToken.None);
+        var withBrowser = await planner.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
 
         Assert.Equal("CloudX", withoutBrowser[1].Executor);
         Assert.Equal("BrowserX", withBrowser[1].Executor);
@@ -108,7 +110,7 @@ public class ExecutionPlannerTests
             new StubExecutor("FakeX", ExecutionTier.Local, available: true, placeholder: true),
             new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true));
 
-        var plan = await planner.PlanAsync(browserCanInfer: true, CancellationToken.None);
+        var plan = await planner.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
 
         Assert.Equal("BrowserX", plan[1].Executor);
         Assert.Equal(ExecutionTier.ClientDelegated, plan[1].Tier);
@@ -139,13 +141,102 @@ public class ExecutionPlannerTests
     }
 
     [Fact]
+    public async Task A_classic_fallback_loses_to_a_local_model_and_to_a_capable_browser()
+    {
+        // Registering a free DSP alternative must never change a stage's default executor.
+        var planner = Planner(
+            new StubExecutor("ClassicX", ExecutionTier.Local, available: true, classicFallback: true),
+            new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true),
+            new StubExecutor("LocalX", ExecutionTier.Local, available: true));
+
+        var withLocal = await planner.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
+        Assert.Equal("LocalX", withLocal[1].Executor);
+
+        var withoutLocal = new ExecutionPlanner(
+            [new StubExecutor("S", ExecutionTier.Local, available: true)],
+            [
+                new StubExecutor("ClassicX", ExecutionTier.Local, available: true, classicFallback: true),
+                new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true),
+            ],
+            [new StubExecutor("C", ExecutionTier.Local, available: true)]);
+        var plan = await withoutLocal.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
+        Assert.Equal("BrowserX", plan[1].Executor);
+    }
+
+    [Fact]
+    public async Task A_classic_fallback_beats_a_placeholder_and_cloud()
+    {
+        // Real math beats mock data, and free beats paid.
+        var planner = Planner(
+            new StubExecutor("CloudX", ExecutionTier.Cloud, available: true),
+            new StubExecutor("FakeX", ExecutionTier.Local, available: true, placeholder: true),
+            new StubExecutor("ClassicX", ExecutionTier.Local, available: true, classicFallback: true));
+
+        var plan = await planner.PlanAsync(CancellationToken.None);
+
+        Assert.Equal("ClassicX", plan[0].Executor);
+    }
+
+    [Fact]
+    public async Task An_explicit_pick_overrides_the_ranked_order_for_that_stage_only()
+    {
+        var planner = Planner(
+            new StubExecutor("LocalX", ExecutionTier.Local, available: true),
+            new StubExecutor("ClassicX", ExecutionTier.Local, available: true, classicFallback: true));
+
+        var plan = await planner.PlanAsync(
+            browserCanInfer: false,
+            new Dictionary<string, string> { [StageNames.PitchTracking] = "ClassicX" },
+            CancellationToken.None);
+
+        Assert.Equal("ClassicX", plan[1].Executor); // the picked stage honours the pick
+        Assert.Equal("LocalX", plan[0].Executor);   // unpicked stages keep the ranked default
+    }
+
+    [Fact]
+    public async Task A_cloud_executor_cannot_be_picked_by_name()
+    {
+        // A crafted upload query param must never be able to spend money directly.
+        var planner = Planner(
+            new StubExecutor("CloudX", ExecutionTier.Cloud, available: true),
+            new StubExecutor("LocalX", ExecutionTier.Local, available: true));
+
+        var plan = await planner.PlanAsync(
+            browserCanInfer: false,
+            new Dictionary<string, string> { [StageNames.Separating] = "CloudX" },
+            CancellationToken.None);
+
+        Assert.Equal("LocalX", plan[0].Executor);
+    }
+
+    [Fact]
+    public async Task An_unknown_or_unavailable_pick_falls_back_to_the_ranked_order()
+    {
+        var planner = Planner(
+            new StubExecutor("LocalX", ExecutionTier.Local, available: true),
+            new StubExecutor("BrokenX", ExecutionTier.Local, available: false));
+
+        var plan = await planner.PlanAsync(
+            browserCanInfer: false,
+            new Dictionary<string, string>
+            {
+                [StageNames.PitchTracking] = "BrokenX",
+                [StageNames.ChordDetecting] = "NoSuchExecutor",
+            },
+            CancellationToken.None);
+
+        Assert.Equal("LocalX", plan[1].Executor);
+        Assert.Equal("LocalX", plan[2].Executor);
+    }
+
+    [Fact]
     public async Task A_capable_browser_still_loses_to_a_working_local_executor()
     {
         var planner = Planner(
             new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true),
             new StubExecutor("LocalX", ExecutionTier.Local, available: true));
 
-        var plan = await planner.PlanAsync(browserCanInfer: true, CancellationToken.None);
+        var plan = await planner.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
 
         Assert.Equal("LocalX", plan[1].Executor);
         Assert.Equal(ExecutionTier.Local, plan[1].Tier);

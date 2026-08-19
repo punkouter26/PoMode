@@ -2,11 +2,10 @@ namespace PoMode.API.Features.ModalAnalysis;
 
 public static class PitchNames
 {
-    private static readonly string[] Names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
     private static readonly string[] Degrees = ["1", "b2", "2", "b3", "3", "4", "#4", "5", "b6", "6", "b7", "7"];
 
-    public static string Name(int pitchClass) => Names[((pitchClass % 12) + 12) % 12];
+    /// <summary>Delegates to the Shared table so API and Client always spell pitches identically.</summary>
+    public static string Name(int pitchClass) => PoMode.Shared.Analysis.ScaleModes.NoteName(pitchClass);
 
     public static string IntervalLabel(int semitones) => Degrees[((semitones % 12) + 12) % 12];
 

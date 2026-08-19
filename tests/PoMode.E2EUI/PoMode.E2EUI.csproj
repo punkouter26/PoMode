@@ -19,6 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\TestCommon\TestAudio.cs" Link="TestAudio.cs" />
+    <Compile Include="..\TestCommon\TestPaths.cs" Link="TestPaths.cs" />
     <Compile Include="..\TestCommon\BasicPitchFixture.cs" Link="BasicPitchFixture.cs" />
     <Content Include="..\TestCommon\basic-pitch-decoder.fixture.json" Link="basic-pitch-decoder.fixture.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

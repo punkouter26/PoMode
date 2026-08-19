@@ -64,6 +64,12 @@
     font-weight: 600;
 }
 
+.basic-badge-scale {
+    font-size: 0.75rem;
+    color: var(--pm-fg-muted);
+    white-space: nowrap;
+}
+
 .basic-actions-group {
     display: flex;
     align-items: center;

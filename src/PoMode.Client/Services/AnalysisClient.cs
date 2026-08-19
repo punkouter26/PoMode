@@ -40,6 +40,10 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 
+    /// <summary>The selectable executors per pipeline stage, in the planner's own order.</summary>
+    public Task<List<StageExecutorsDto>?> GetExecutorsAsync()
+        => http.GetFromJsonAsync<List<StageExecutorsDto>>("api/analysis/executors");
+
     public Task<BatchStatusDto?> GetBatchAsync(string batchId)
         => http.GetFromJsonAsync<BatchStatusDto>($"api/analysis/batch/{batchId}");
 

@@ -15,6 +15,8 @@ dotnet test tests/PoMode.E2EUI           # Playwright browser tests (boots the r
 dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~TempoEstimator"   # single test/class
 ```
 
+- `tests/PoMode.Integration` includes `ModelAccuracyReportTests`: it renders a known-truth sample MP3, races every free pitch/chord executor against it, and rewrites `test-reports/model-accuracy.html` on every run.
+
 - First E2EUI run: install browsers with `pwsh tests/PoMode.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium`.
 - Known-failing on master: `CanvasTests.Clicking_the_canvas_seeks_and_moves_the_playhead` (timing-sensitive; fails on unmodified code too). Do not chase it as a regression of your change without checking a clean checkout first.
 - API reference UI: `/scalar`. Health: `/health`, `/health/live`, `/health/ready`. Diagnostics: `/diag`.
@@ -25,7 +27,9 @@ One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the RE
 
 ### Analysis pipeline (the core)
 
-Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Separating → PitchTracking → ChordDetecting → ModalAnalysis**. Every stage has multiple executors registered in `Program.cs` behind seams (`IStemSeparator`, `IPitchTracker`, `IChordRecognizer`), each tagged with an `ExecutionTier` (Local ONNX model, Cloud API, ClientDelegated browser inference, Fake). `ExecutionPlanner` picks the plan; `AnalysisPipeline.RunWithFallbackAsync` falls through tiers when an executor fails and records who actually ran in `StageHistory`. If any Fake executor ran, the client shows the "USING MOCK DATA" banner.
+Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Separating → PitchTracking → ChordDetecting → ModalAnalysis**. Every stage has multiple executors registered in `Program.cs` behind seams (`IStemSeparator`, `IPitchTracker`, `IChordRecognizer`), each tagged with an `ExecutionTier` (Local ONNX model, Cloud API, ClientDelegated browser inference, Fake). `ExecutionPlanner.EffectiveRank` fixes the selection order: local model → browser → classic model-less DSP (`IsClassicFallback`: `YinPitchTracker`, `ViterbiChordRecognizer`) → Fake placeholder → paid Cloud; within a rank, DI registration order breaks ties, so register new executors *after* the one that should stay the default. `AnalysisPipeline.RunWithFallbackAsync` falls through the same order when an executor fails and records who actually ran in `StageHistory`. If any Fake executor ran, the client shows the "USING MOCK DATA" banner.
+
+Users can pin an executor per stage: `GET /api/analysis/executors` feeds the home page's radio groups (Cloud and Fake are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available and not Cloud.
 
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
@@ -35,7 +39,7 @@ Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.jso
 
 - Heavy UI lives in plain JS modules, not Blazor: `canvas.js` (dual-lane visualization, pan/zoom, virtualized drawing) and `mixer.js` (Web Audio stem playback, synth note overlays, metronome clicks, Space/comma transport keys). `mixer.js` owns the transport clock and drives the canvas playhead directly — no per-frame Blazor renders. Blazor components only issue commands and receive discrete events.
 - JS state is mirrored onto `data-*` attributes (`data-mixer-status`, `data-playhead`, …) precisely so Playwright tests can assert without reaching into module internals. Keep that contract when changing these modules.
-- Musical decisions (note colours, labels, measure numbers) are made server-side in `VisualizationBuilder`; `canvas.js` only maps numbers to pixels. Keep music theory out of JS.
+- Musical decisions (note colours, labels, measure numbers) are made server-side in `VisualizationBuilder`; `canvas.js` only maps numbers to pixels. Keep music theory out of JS. Same rule for audio: the mixer's chord-pad layer plays notes voiced server-side by `ChordPadBuilder` (served as `/api/analysis/{id}/notes-chords`, derived from chords.json, not stored) — mixer.js treats them as just another note list ('vocal'/'backing'/'chords').
 
 ### Infrastructure notes
 

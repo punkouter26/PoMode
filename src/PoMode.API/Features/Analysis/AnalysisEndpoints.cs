@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Audio;
+using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Visualization;
 using PoMode.API.Pipeline;
@@ -58,9 +59,17 @@ public static class AnalysisEndpoints
             // client probes for onnxruntime-web support and declares it here. Absent or false, the
             // browser tier is simply invisible and planning behaves exactly as before.
             var clientCanInfer = bool.TryParse(request.Query["clientCanInfer"], out var canInfer) && canInfer;
-            var state = await intake.StartAsync(file.FileName, fresh, clientCanInfer, ct);
+            // The home page's per-stage model pickers arrive as plain query params; an absent or
+            // bogus name simply leaves that stage on the planner's normal ranked order.
+            var state = await intake.StartAsync(
+                file.FileName, fresh, clientCanInfer, ct, PreferredExecutors(request));
             return TypedResults.Ok(state.ToDto());
         }).DisableAntiforgery();
+
+        // The selectable executors per stage — the planner owns the whole answer (structure,
+        // ordering, eligibility, defaults); this endpoint only serializes it.
+        group.MapGet("/executors", async (ExecutionPlanner planner, CancellationToken ct)
+            => TypedResults.Ok(await planner.ListOptionsAsync(ct)));
 
         group.MapGet("/{jobId}", async Task<Results<Ok<JobStatusDto>, NotFound>> (
             string jobId, JobStore store, CancellationToken ct) =>
@@ -106,6 +115,18 @@ public static class AnalysisEndpoints
             var notes = await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct);
             var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
             return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result));
+        });
+
+        // The chord pad is derived, not stored: chords.json → triad NoteEvents so the mixer's
+        // "Synth chords" layer plays server-decided pitches (musical decisions stay out of JS,
+        // same ruling as /visual).
+        group.MapGet("/{jobId}/notes-chords", async Task<Results<Ok<IReadOnlyList<NoteEvent>>, NotFound>> (
+            string jobId, JobStore store, CancellationToken ct) =>
+        {
+            var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
+            return chords.Count == 0
+                ? TypedResults.NotFound()
+                : TypedResults.Ok(ChordPadBuilder.Build(chords));
         });
 
         // Tier 2's return path (spec §4 step 3). The notes come from a browser, so they are untrusted:
@@ -184,6 +205,22 @@ public static class AnalysisEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>Reads the per-stage executor picks off the upload query string via the shared
+    /// key table; empty when the user left every stage on Auto.</summary>
+    private static Dictionary<string, string> PreferredExecutors(HttpRequest request)
+    {
+        var preferred = new Dictionary<string, string>();
+        foreach (var (stage, queryKey) in StageNames.ExecutorQueryKeys)
+        {
+            var value = request.Query[queryKey].ToString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                preferred[stage] = value;
+            }
+        }
+        return preferred;
     }
 
     private static void MapArtifact(RouteGroupBuilder group, string route, string fileName)

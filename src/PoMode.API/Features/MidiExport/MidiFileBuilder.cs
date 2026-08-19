@@ -1,5 +1,6 @@
 using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Core;
+using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.Shared.Analysis;
 // Melanchall.DryWetMidi.Core also defines a NoteEvent (base class of NoteOnEvent/NoteOffEvent),
@@ -14,7 +15,6 @@ public static class MidiFileBuilder
     private const short TicksPerQuarter = 480;
     private const int VocalProgram = 80; // GM Lead 1 (square)
     private const int ChordProgram = 0;  // GM Acoustic Grand Piano
-    private const int ChordOctaveOffset = 48;
 
     public static byte[] Build(
         IReadOnlyList<VocalNoteEvent> notes,
@@ -60,21 +60,16 @@ public static class MidiFileBuilder
 
     private static TrackChunk BuildChordTrack(IReadOnlyList<ChordSpan> chords, double ticksPerSecond)
     {
+        // The one chord-symbol → pitches decision lives in ChordPadBuilder; this track only
+        // re-times its notes into ticks, so the export and the mixer pad can never drift.
         var events = new List<(long Tick, MidiEvent Event)>();
-        foreach (var chord in chords)
+        foreach (var note in ChordPadBuilder.Build(chords))
         {
-            if (!PitchNames.TryParseRoot(chord.Root, out var rootClass))
-            {
-                continue;
-            }
-            var start = (long)Math.Round(chord.StartSec * ticksPerSecond);
-            var end = (long)Math.Round(Math.Max(chord.EndSec, chord.StartSec + 0.01) * ticksPerSecond);
-            foreach (var interval in VoicingFor(chord.Quality))
-            {
-                var pitch = (SevenBitNumber)Math.Clamp(rootClass + ChordOctaveOffset + interval, 0, 127);
-                events.Add((start, new NoteOnEvent(pitch, (SevenBitNumber)72)));
-                events.Add((end, new NoteOffEvent(pitch, (SevenBitNumber)0)));
-            }
+            var start = (long)Math.Round(note.StartSec * ticksPerSecond);
+            var end = (long)Math.Round((note.StartSec + note.DurationSec) * ticksPerSecond);
+            var pitch = (SevenBitNumber)Math.Clamp(note.MidiPitch, 0, 127);
+            events.Add((start, new NoteOnEvent(pitch, (SevenBitNumber)Math.Clamp(note.Velocity, 1, 127))));
+            events.Add((end, new NoteOffEvent(pitch, (SevenBitNumber)0)));
         }
         return Assemble(events, ChordProgram);
     }
@@ -91,17 +86,6 @@ public static class MidiFileBuilder
         }
         return Assemble(events, program: null);
     }
-
-    private static int[] VoicingFor(string quality) => quality.ToLowerInvariant() switch
-    {
-        "min7" or "m7" => [0, 3, 7, 10],
-        "maj7" => [0, 4, 7, 11],
-        "7" or "dom7" => [0, 4, 7, 10],
-        "min" or "m" => [0, 3, 7],
-        "dim" => [0, 3, 6],
-        "aug" => [0, 4, 8],
-        _ => [0, 4, 7],
-    };
 
     /// <summary>Sorts absolute-tick events and converts them to DryWetMidi's delta-time model.</summary>
     private static TrackChunk Assemble(List<(long Tick, MidiEvent Event)> events, int? program)

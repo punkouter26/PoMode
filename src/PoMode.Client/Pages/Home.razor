@@ -26,6 +26,26 @@
             <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
                           Progress="@OnUploadProgress"
                           Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+            @if (_executorStages is not null)
+            {
+                @* One radio group per pipeline stage. "Auto" keeps the server's ranked default; a
+                   pick rides along on the upload URL and the planner honours it when available. *@
+                <div class="executor-pickers" role="group" aria-label="Analysis models per stage">
+                    @foreach (var (stageName, choices) in _executorStages)
+                    {
+                        <div class="executor-picker">
+                            <span class="executor-picker-label">@StageLabel(stageName)</span>
+                            <RadzenRadioButtonList TValue="string" Data="@choices"
+                                                   TextProperty="Label" ValueProperty="Value"
+                                                   Value="@ExecutorChoiceOf(stageName)"
+                                                   Change="@(value => OnExecutorPicked(stageName, value))"
+                                                   Orientation="Orientation.Vertical"
+                                                   Disabled="@(choices.Count <= 2)"
+                                                   class="executor-radios" />
+                        </div>
+                    }
+                </div>
+            }
             @if (_uploading)
             {
                 <div class="upload-progress">
@@ -268,12 +288,107 @@
     }
     private readonly HashSet<string> _delegatedJobs = [];
 
+    /// <summary>One entry per stage radio group; "" = Auto (the server's ranked default).</summary>
+    private sealed record ExecutorChoice(string Value, string Label);
+
+    /// <summary>The raw server answer, kept so the choices can rebuild when the Tier-2 probe lands.</summary>
+    private List<StageExecutorsDto>? _rawExecutorStages;
+
+    /// <summary>What the pickers render: one stable choices list per stage, rebuilt only when the
+    /// data or the browser capability changes — never per render.</summary>
+    private List<(string Stage, List<ExecutorChoice> Choices)>? _executorStages;
+
+    private readonly Dictionary<string, string> _executorChoices = [];
+
+    private static string StageLabel(string stage) => stage switch
+    {
+        StageNames.Separating => "Separation",
+        StageNames.PitchTracking => "Melody",
+        StageNames.ChordDetecting => "Chords",
+        StageNames.ModalAnalysis => "Modes",
+        _ => stage,
+    };
+
+    private static string KindLabel(ExecutorKind kind) => kind switch
+    {
+        ExecutorKind.Model => "local model",
+        ExecutorKind.Method => "code",
+        ExecutorKind.Browser => "browser model",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Rebuilds every stage's choices. Browser-tier options are offered only after this
+    /// browser's Tier-2 probe succeeded — otherwise picking one would be silently ignored by the
+    /// planner (the browser tier is invisible without clientCanInfer).</summary>
+    private void RebuildExecutorChoices()
+    {
+        _executorStages = _rawExecutorStages?
+            .Select(stage => (stage.Stage, BuildChoices(stage, browserCapable: _clientCapability is not null)))
+            .ToList();
+    }
+
+    private static List<ExecutorChoice> BuildChoices(StageExecutorsDto stage, bool browserCapable)
+    {
+        // "Auto" stays unnamed on purpose: what the server actually picks can depend on this
+        // browser's capability, so naming one executor here could advertise the wrong one.
+        var choices = new List<ExecutorChoice>(stage.Executors.Count + 1)
+        {
+            new("", "Auto (server picks best)"),
+        };
+        foreach (var option in stage.Executors)
+        {
+            if (option.Kind == ExecutorKind.Browser && !browserCapable)
+            {
+                continue;
+            }
+            var suffix = option.Available ? "" : " — unavailable";
+            choices.Add(new ExecutorChoice(option.Name, $"{option.Name} ({KindLabel(option.Kind)}){suffix}"));
+        }
+        return choices;
+    }
+
+    private string ExecutorChoiceOf(string stage)
+        => _executorChoices.TryGetValue(stage, out var name) ? name : "";
+
+    private void OnExecutorPicked(string stage, string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            _executorChoices.Remove(stage);
+        }
+        else
+        {
+            _executorChoices[stage] = name;
+        }
+    }
+
     /// <summary>
     /// Tier 2 availability is a per-job property of this browser (spec §4), declared at upload time
     /// so the server can plan the ClientDelegated tier. Until the probe has answered, uploads
-    /// declare nothing and the plan is exactly what it always was.
+    /// declare nothing and the plan is exactly what it always was. The per-stage model picks ride
+    /// along as query params (keys from the shared <see cref="StageNames.ExecutorQueryKeys"/>
+    /// table); Auto sends nothing. Derived per render — four short strings, and no cached copy
+    /// that could ever go stale.
     /// </summary>
-    private string UploadUrl => _clientCapability is null ? "api/analysis" : "api/analysis?clientCanInfer=true";
+    private string UploadUrl
+    {
+        get
+        {
+            var query = new List<string>(4);
+            if (_clientCapability is not null)
+            {
+                query.Add("clientCanInfer=true");
+            }
+            foreach (var (stage, queryKey) in StageNames.ExecutorQueryKeys)
+            {
+                if (_executorChoices.TryGetValue(stage, out var name))
+                {
+                    query.Add($"{queryKey}={Uri.EscapeDataString(name)}");
+                }
+            }
+            return query.Count == 0 ? "api/analysis" : $"api/analysis?{string.Join("&", query)}";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -282,20 +397,37 @@
         {
             ViewState.SetViewMode(ViewQuery);
         }
-        if (string.IsNullOrWhiteSpace(Job))
+        // The pickers' data loads concurrently with the job-resume path; they pop in when ready.
+        var executorsTask = LoadExecutorsAsync();
+        if (!string.IsNullOrWhiteSpace(Job))
         {
-            return;
-        }
-        try
-        {
-            if (await Analysis.GetStatusAsync(Job) is { } status)
+            try
             {
-                await TrackJobAsync(status);
+                if (await Analysis.GetStatusAsync(Job) is { } status)
+                {
+                    await TrackJobAsync(status);
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // A stale or mistyped link: the page simply starts empty, same as no query at all.
             }
         }
-        catch (HttpRequestException)
+        await executorsTask;
+    }
+
+    private async Task LoadExecutorsAsync()
+    {
+        try
         {
-            // A stale or mistyped link: the page simply starts empty, same as no query at all.
+            _rawExecutorStages = await Analysis.GetExecutorsAsync();
+            RebuildExecutorChoices();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            // No pickers, no problem: uploads simply use the server's ranked defaults. The wide
+            // filter matters — a proxy serving HTML with a 200 throws JsonException, and that
+            // must degrade the pickers, not fault the whole home page.
         }
     }
 
@@ -306,6 +438,7 @@
             _pitchWorker = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pitch-worker.js");
             _clientCapability = await _pitchWorker.InvokeAsync<string?>("probeCapability");
             _probed = true;
+            RebuildExecutorChoices(); // a capable browser may now offer the browser-tier options
             StateHasChanged();
         }
 

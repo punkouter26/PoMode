@@ -1,3 +1,4 @@
+using PoMode.TestCommon;
 using System.Diagnostics;
 using Xunit;
 
@@ -38,7 +39,7 @@ public class AppFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var repoRoot = FindRepoRoot();
+        var repoRoot = TestPaths.RepoRoot();
         await BeforeServerStartAsync();
         var startInfo = new ProcessStartInfo
         {
@@ -124,15 +125,6 @@ public class AppFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PoMode.slnx")))
-        {
-            dir = dir.Parent;
-        }
-        return dir?.FullName ?? throw new InvalidOperationException("PoMode.slnx not found above test bin dir.");
-    }
 }
 
 [CollectionDefinition("App")]

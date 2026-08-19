@@ -8,6 +8,11 @@
                 <div class="basic-badge-key">
                     <span class="basic-badge-label">Key & Mode</span>
                     <span class="basic-badge-value">@PrimaryHeadline</span>
+                    @if (Result.PrimaryScaleNoteNames() is { } scale)
+                    {
+                        @* The scale spelled out — server-decided tonic + mode, Shared lookup for names. *@
+                        <span class="basic-badge-scale">@string.Join(" · ", scale)</span>
+                    }
                     @if (Result.PrimaryMode is not null)
                     {
                         <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0}")</span>

@@ -148,10 +148,41 @@ public static class TestAudio
             }
         }
 
+        return ToPcm16Wav(samples, sampleRate);
+    }
+
+    /// <summary>
+    /// Sums arbitrarily placed sine tones into a PCM16 WAV — a synthetic "song" whose melody and
+    /// pad ground truth the caller controls exactly. Unlike <see cref="MakeChord"/>, tones here
+    /// have their own start, duration and level, so a lead line can ride over a chord bed.
+    /// </summary>
+    public static byte[] MakeSong(
+        double seconds,
+        IReadOnlyList<(int Midi, double StartSec, double DurationSec, double Amplitude)> tones,
+        int sampleRate = 22050)
+    {
+        var count = (int)(seconds * sampleRate);
+        var samples = new double[count];
+        foreach (var (midi, startSec, durationSec, amplitude) in tones)
+        {
+            var frequency = 440.0 * Math.Pow(2, (midi - 69) / 12.0);
+            var start = (int)(startSec * sampleRate);
+            var end = Math.Min(count, start + (int)(durationSec * sampleRate));
+            for (var i = Math.Max(0, start); i < end; i++)
+            {
+                var t = (i - start) / (double)sampleRate;
+                samples[i] += amplitude * Math.Sin(2 * Math.PI * frequency * t);
+            }
+        }
+        return ToPcm16Wav(samples, sampleRate);
+    }
+
+    private static byte[] ToPcm16Wav(double[] samples, int sampleRate)
+    {
         var peak = samples.Length == 0 ? 1.0 : Math.Max(samples.Max(Math.Abs), 1e-9);
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        var dataSize = count * 2;
+        var dataSize = samples.Length * 2;
         writer.Write("RIFF"u8);
         writer.Write(36 + dataSize);
         writer.Write("WAVE"u8);

@@ -10,12 +10,17 @@ namespace PoMode.API.Features.Analysis;
 /// </summary>
 public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlanner planner)
 {
-    public async Task<JobState> StartAsync(string fileName, Stream content, bool clientCanInfer, CancellationToken ct)
+    public async Task<JobState> StartAsync(
+        string fileName,
+        Stream content,
+        bool clientCanInfer,
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? preferredExecutors = null)
     {
         var state = await store.CreateAsync(fileName, content, ct);
         try
         {
-            state.Plan = await planner.PlanAsync(clientCanInfer, ct);
+            state.Plan = await planner.PlanAsync(clientCanInfer, preferredExecutors, ct);
         }
         catch (InvalidOperationException ex)
         {

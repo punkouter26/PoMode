@@ -33,6 +33,7 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
 
     public string Name => nameof(OnnxStemSeparator);
     public ExecutionTier Tier => ExecutionTier.Local;
+    public bool UsesLocalModel => true;
 
     public Task<bool> IsAvailableAsync(CancellationToken ct) =>
         Task.FromResult(!EnvironmentDetector.IsAzureHosted() && registry.IsDownloaded(ModelCatalog.HtDemucs));

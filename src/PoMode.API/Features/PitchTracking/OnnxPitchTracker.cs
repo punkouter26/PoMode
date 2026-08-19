@@ -51,6 +51,7 @@ public sealed class OnnxPitchTracker(ModelRegistry registry, ILogger<OnnxPitchTr
 
     public string Name => nameof(OnnxPitchTracker);
     public ExecutionTier Tier => ExecutionTier.Local;
+    public bool UsesLocalModel => true;
 
     public Task<bool> IsAvailableAsync(CancellationToken ct) =>
         Task.FromResult(!EnvironmentDetector.IsAzureHosted() && registry.IsDownloaded(ModelCatalog.BasicPitch));

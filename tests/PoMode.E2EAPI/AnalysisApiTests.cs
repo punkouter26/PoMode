@@ -67,10 +67,13 @@ public sealed class AnalysisApiTests : IDisposable
 
         var notes = await client.GetFromJsonAsync<List<NoteEvent>>($"/api/analysis/{created.JobId}/notes");
         var chords = await client.GetFromJsonAsync<List<ChordSpan>>($"/api/analysis/{created.JobId}/chords");
-        Assert.Equal(8, notes!.Count); // FakePitchTracker (model not downloaded in this test host)
-        // ChromaChordRecognizer now runs for real (Phase 5) — it is unconditionally available, so it
-        // wins ChordDetecting outright. The uploaded WavForm() fixture is silence, and real chord
-        // recognition on silence correctly yields no chords rather than the fake's fixed 4.
+        // YinPitchTracker (the classic model-less fallback) wins PitchTracking when the model is
+        // not downloaded, outranking FakePitchTracker's canned 8 notes. The uploaded WavForm()
+        // fixture is silence, and real pitch tracking on silence correctly yields no notes.
+        Assert.Empty(notes!);
+        // ChromaChordRecognizer runs for real (Phase 5) — it is unconditionally available, so it
+        // wins ChordDetecting outright. Real chord recognition on silence correctly yields no
+        // chords rather than the fake's fixed 4.
         Assert.Empty(chords!);
     }
 

@@ -40,7 +40,7 @@ public sealed class ClientDelegatedAppFixture : AppFixture
     protected override async Task BeforeServerStartAsync()
     {
         Directory.CreateDirectory(ModelsRoot);
-        var repoCache = Path.Combine(FindRepoRootForSeed(), "models");
+        var repoCache = Path.Combine(TestPaths.RepoRoot(), "models");
         Directory.CreateDirectory(repoCache);
         using var http = new HttpClient();
 
@@ -69,15 +69,6 @@ public sealed class ClientDelegatedAppFixture : AppFixture
         return hash.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string FindRepoRootForSeed()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PoMode.slnx")))
-        {
-            dir = dir.Parent;
-        }
-        return dir?.FullName ?? throw new InvalidOperationException("PoMode.slnx not found above test bin dir.");
-    }
 }
 
 [CollectionDefinition("ClientDelegatedApp")]

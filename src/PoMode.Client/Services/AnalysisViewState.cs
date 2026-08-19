@@ -2,23 +2,23 @@ namespace PoMode.Client.Services;
 
 /// <summary>
 /// Controls whether the analysis workspace renders in Basic Mode (clean, single-screen player)
-/// or Advanced Mode (full theory suite, modal HUD, stats dashboard, 3D landscape).
+/// or Advanced Mode (full theory suite, modal HUD, stats dashboard, 3D landscape). One stored
+/// bit; the string form exists only at the boundary (nav clicks, the ?view= query).
 /// </summary>
 public sealed class AnalysisViewState
 {
-    public string ViewMode { get; private set; } = "advanced";
+    public bool IsBasic { get; private set; }
 
-    public bool IsBasic => ViewMode == "basic";
-    public bool IsAdvanced => ViewMode == "advanced";
+    public bool IsAdvanced => !IsBasic;
 
     public event Action? Changed;
 
     public void SetViewMode(string mode)
     {
-        var normalized = mode.Equals("basic", StringComparison.OrdinalIgnoreCase) ? "basic" : "advanced";
-        if (ViewMode != normalized)
+        var basic = mode.Equals("basic", StringComparison.OrdinalIgnoreCase);
+        if (IsBasic != basic)
         {
-            ViewMode = normalized;
+            IsBasic = basic;
             Changed?.Invoke();
         }
     }

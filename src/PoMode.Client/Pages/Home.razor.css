@@ -156,6 +156,43 @@
     font-size: 0.9rem;
 }
 
+.executor-pickers {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 0.6rem 1.25rem;
+    margin-top: 0.25rem;
+}
+
+.executor-picker {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    min-width: 12rem;
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+}
+
+.executor-picker-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pm-fg-muted);
+    user-select: none;
+}
+
+.executor-picker ::deep .executor-radios .rz-radio-btn-label {
+    font-size: 0.78rem;
+}
+
+.executor-picker ::deep .executor-radios .rz-radiobutton-list-vertical {
+    gap: 0.15rem;
+}
+
 .preview-line {
     color: var(--pm-fg-muted);
     font-style: italic;
