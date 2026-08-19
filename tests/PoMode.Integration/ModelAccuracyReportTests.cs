@@ -50,10 +50,13 @@ public sealed class ModelAccuracyReportTests : IDisposable
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private sealed record PitchRow(string Name, string Kind, bool Available,
+    /// <summary><paramref name="Rank"/> is <see cref="ExecutionPlanner.EffectiveRank"/> for this
+    /// executor: the lowest-ranked available one is what a real job actually runs.</summary>
+    private sealed record PitchRow(string Name, string Kind, bool Available, int Rank,
         int NotesFound, double Precision, double Recall, double F1, long Milliseconds);
 
-    private sealed record ChordRow(string Name, string Kind, int ChordsFound, double Accuracy, long Milliseconds);
+    private sealed record ChordRow(string Name, string Kind, int Rank,
+        int ChordsFound, double Accuracy, long Milliseconds);
 
     // ---- Real-song section ----
 
@@ -112,7 +115,8 @@ public sealed class ModelAccuracyReportTests : IDisposable
         }
         else
         {
-            pitchRows.Add(new PitchRow(onnx.Name, "model", Available: false, 0, 0, 0, 0, 0));
+            pitchRows.Add(new PitchRow(
+                onnx.Name, "model", Available: false, ExecutionPlanner.EffectiveRank(onnx), 0, 0, 0, 0, 0));
         }
         pitchRows.Add(await ScorePitchAsync(new YinPitchTracker(), "method", inputPath));
 
@@ -130,12 +134,44 @@ public sealed class ModelAccuracyReportTests : IDisposable
         var reportPath = WriteReport(inputFormat, pitchRows, chordRows, realSong);
         Console.WriteLine($"Model accuracy report written to: {reportPath}");
 
-        // ---- 6. Sanity floor, not a leaderboard: the report is the deliverable ----
+        // ---- 6. The report is the deliverable; these are the guarantees it must keep ----
         Assert.True(File.Exists(reportPath));
         var yin = pitchRows.Single(r => r.Name == nameof(YinPitchTracker));
         Assert.True(yin.F1 >= 0.5, $"YIN F1 was {yin.F1:0.00} on a clean sine melody");
         Assert.All(chordRows, row =>
             Assert.True(row.Accuracy >= 0.5, $"{row.Name} chord accuracy was {row.Accuracy:P0}"));
+
+        // The default must BE the best model, not merely be ranked first. Ranking is a hand-written
+        // ordering and the scores are measured, so without this they can drift apart silently — a
+        // new executor could win the bake-off and never actually run. If this fails, either the
+        // registration order in Program.cs is wrong or the winner changed: re-rank, don't relax it.
+        AssertDefaultIsTheWinner(
+            StageNames.PitchTracking,
+            [.. pitchRows.Where(r => r.Available).Select(r => (r.Name, r.Rank, Score: r.F1))]);
+        AssertDefaultIsTheWinner(
+            StageNames.ChordDetecting,
+            [.. chordRows.Select(r => (r.Name, r.Rank, Score: r.Accuracy))]);
+    }
+
+    /// <summary>
+    /// Fails when the executor a real job would run for <paramref name="stage"/> is not the one
+    /// that scored highest. A tie is fine — several executors can be equally good, and then any of
+    /// them is a defensible default — but a lower-ranked executor scoring strictly higher means
+    /// the app is knowingly running the worse model.
+    /// </summary>
+    private static void AssertDefaultIsTheWinner(
+        string stage, IReadOnlyList<(string Name, int Rank, double Score)> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+        var chosen = rows.MinBy(r => r.Rank);
+        var best = rows.MaxBy(r => r.Score);
+        Assert.True(
+            chosen.Score >= best.Score,
+            $"{stage} defaults to {chosen.Name} (score {chosen.Score:0.00}) but {best.Name} scored "
+            + $"{best.Score:0.00}. The planner is running the worse model — fix the ranking or the model.");
     }
 
     /// <summary>MP3 via Windows Media Foundation; on a machine without the encoder the WAV stands
@@ -213,7 +249,7 @@ public sealed class ModelAccuracyReportTests : IDisposable
         var precision = notes.Count == 0 ? 0 : hits / (double)notes.Count;
         var recall = hits / (double)TruthMelody.Length;
         var f1 = precision + recall == 0 ? 0 : 2 * precision * recall / (precision + recall);
-        return new PitchRow(tracker.Name, kind, Available: true,
+        return new PitchRow(tracker.Name, kind, Available: true, ExecutionPlanner.EffectiveRank(tracker),
             notes.Count, precision, recall, f1, stopwatch.ElapsedMilliseconds);
     }
 
@@ -240,8 +276,8 @@ public sealed class ModelAccuracyReportTests : IDisposable
                 correct++;
             }
         }
-        return new ChordRow(recognizer.Name, kind, spans.Count,
-            correct / (double)samples, stopwatch.ElapsedMilliseconds);
+        return new ChordRow(recognizer.Name, kind, ExecutionPlanner.EffectiveRank(recognizer),
+            spans.Count, correct / (double)samples, stopwatch.ElapsedMilliseconds);
     }
 
     /// <summary>
@@ -411,31 +447,34 @@ public sealed class ModelAccuracyReportTests : IDisposable
             $"<p>Sample input: {SongSeconds:0}s synthetic song, {inputFormat} — 8-note sine melody (C5 E5 D5 B4 A4 C5 A4 F5) over a C&nbsp;·&nbsp;G&nbsp;·&nbsp;Am&nbsp;·&nbsp;F triad pad, 2s per chord. Ground truth is exact because the song is rendered from it.</p>");
 
         html.Append("<h2>Melody (PitchTracking)</h2><table><tr>" +
-            "<th>Executor</th><th>Kind</th><th>Notes found</th><th>Precision</th><th>Recall</th><th>F1</th><th>Runtime</th></tr>");
+            "<th>Executor</th><th>Kind</th><th>Runs by default</th><th>Notes found</th><th>Precision</th><th>Recall</th><th>F1</th><th>Runtime</th></tr>");
         var bestF1 = pitchRows.Where(r => r.Available).Select(r => r.F1).DefaultIfEmpty(0).Max();
+        var defaultPitch = pitchRows.Where(r => r.Available).MinBy(r => r.Rank)?.Name;
         foreach (var row in pitchRows)
         {
             if (!row.Available)
             {
                 html.Append(CultureInfo.InvariantCulture,
-                    $"<tr class=\"muted\"><td>{row.Name}</td><td>{row.Kind}</td><td colspan=\"5\">not available on this machine (model not downloaded)</td></tr>");
+                    $"<tr class=\"muted\"><td>{row.Name}</td><td>{row.Kind}</td><td colspan=\"6\">not available on this machine (model not downloaded)</td></tr>");
                 continue;
             }
             var css = row.F1 >= bestF1 && bestF1 > 0 ? " class=\"best\"" : "";
             html.Append(CultureInfo.InvariantCulture,
-                $"<tr{css}><td>{row.Name}</td><td>{row.Kind}</td><td>{row.NotesFound}</td><td>{row.Precision:P0}</td><td>{row.Recall:P0}</td><td>{row.F1:0.00}</td><td>{row.Milliseconds} ms</td></tr>");
+                $"<tr{css}><td>{row.Name}</td><td>{row.Kind}</td><td>{(row.Name == defaultPitch ? "✓ default" : "")}</td><td>{row.NotesFound}</td><td>{row.Precision:P0}</td><td>{row.Recall:P0}</td><td>{row.F1:0.00}</td><td>{row.Milliseconds} ms</td></tr>");
         }
         html.Append("</table><p class=\"note\">Truth: 8 notes. A prediction scores when the pitch matches " +
-            "exactly and the onset is within 0.25s. Trackers read the melody-only vocal stem, as in the real pipeline.</p>");
+            "exactly and the onset is within 0.25s. Trackers read the melody-only vocal stem, as in the real pipeline. " +
+            "The test fails if the default row is not also the highest-scoring one.</p>");
 
         html.Append("<h2>Chords (ChordDetecting)</h2><table><tr>" +
-            "<th>Executor</th><th>Kind</th><th>Chords found</th><th>Frame accuracy</th><th>Runtime</th></tr>");
+            "<th>Executor</th><th>Kind</th><th>Runs by default</th><th>Chords found</th><th>Frame accuracy</th><th>Runtime</th></tr>");
         var bestAccuracy = chordRows.Select(r => r.Accuracy).DefaultIfEmpty(0).Max();
+        var defaultChord = chordRows.MinBy(r => r.Rank)?.Name;
         foreach (var row in chordRows)
         {
             var css = row.Accuracy >= bestAccuracy && bestAccuracy > 0 ? " class=\"best\"" : "";
             html.Append(CultureInfo.InvariantCulture,
-                $"<tr{css}><td>{row.Name}</td><td>{row.Kind}</td><td>{row.ChordsFound}</td><td>{row.Accuracy:P0}</td><td>{row.Milliseconds} ms</td></tr>");
+                $"<tr{css}><td>{row.Name}</td><td>{row.Kind}</td><td>{(row.Name == defaultChord ? "✓ default" : "")}</td><td>{row.ChordsFound}</td><td>{row.Accuracy:P0}</td><td>{row.Milliseconds} ms</td></tr>");
         }
         html.Append("</table><p class=\"note\">Truth: C · G · Am · F, 2s each. Accuracy is the share of " +
             "100ms timeline samples whose predicted symbol equals the truth. Recognizers read the full mix.</p>");
