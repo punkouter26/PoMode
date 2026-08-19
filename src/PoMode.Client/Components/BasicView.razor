@@ -21,7 +21,13 @@
 
                 <div class="basic-badge-item">
                     <span class="basic-badge-label">Tempo</span>
-                    <span class="basic-badge-value">@($"{Result.TempoBpm:0} BPM")</span>
+                    <span class="basic-badge-value">@($"{DisplayBpm:0} BPM")</span>
+                    @if (_liveBpm > 0)
+                    {
+                        @* Only while a tempo map is driving it, so a steady song does not gain a
+                           badge that says nothing. *@
+                        <span class="basic-badge-sub">live · this bar</span>
+                    }
                 </div>
 
                 <div class="basic-badge-item">
@@ -58,7 +64,8 @@
         {
             <div class="basic-player-section">
                 <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
-                           TonicName="@Result.TonicName" TonicPitchClass="@Result.TonicPitchClass" Basic="true" />
+                           TonicName="@Result.TonicName" TonicPitchClass="@Result.TonicPitchClass" Basic="true"
+                           OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
             </div>
         }
 
@@ -78,6 +85,16 @@
     [Parameter] public EventCallback OnAnalyzeNew { get; set; }
 
     private ElementReference? _canvasElement;
+
+    /// <summary>Tempo of the measure the playhead is in, pushed up by the mixer as it changes.</summary>
+    private double _liveBpm;
+
+    /// <summary>
+    /// The live tempo once playback has reported one, else the whole-song figure. A drifting
+    /// performance makes the single average wrong nearly everywhere, so the moment the app knows
+    /// better it should say so.
+    /// </summary>
+    private double DisplayBpm => _liveBpm > 0 ? _liveBpm : Result.TempoBpm;
 
     private string PrimaryHeadline => Result.PrimaryMode is null
         ? $"{Result.TonicName} (Mode unclear)"

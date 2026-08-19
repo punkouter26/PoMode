@@ -352,6 +352,14 @@ public static class TempoEstimator
     /// <summary>A song whose whole range fits inside this is "steady" and needs no tempo track.</summary>
     private const double SteadyRangeBpm = 4.0;
 
+    /// <summary>
+    /// How far one measure's tempo may differ from the previous accepted one before it is treated as
+    /// a mis-snap. A quarter is already extreme as musical rubato between adjacent bars, while the
+    /// snapping failures this rejects miss by a whole beat — a third or a half — so the two are not
+    /// close to each other and the threshold has plenty of room either side.
+    /// </summary>
+    private const double MaxStepFraction = 0.25;
+
     /// <summary>Assumed metre. The rest of the app already numbers measures in four beats.</summary>
     private const int BeatsPerMeasure = 4;
 
@@ -426,17 +434,28 @@ public static class TempoEstimator
             return EmptyMap;
         }
 
+        // Each reading is judged against the previous accepted one, not against the global estimate.
+        // That lets a long ritardando drift as far as it likes — every step is small — while still
+        // rejecting a single measure that jumps, which is always a mis-snap rather than music. A
+        // half-to-double bound against the global tempo was far too loose: a 127 BPM song reported a
+        // 230 BPM measure, which passed the check and then set the chart's whole vertical scale.
         var raw = new double[downbeats.Count - 1];
+        var accepted = estimate.Bpm;
         for (var i = 0; i < raw.Length; i++)
         {
             var spanFrames = downbeats[i + 1] - downbeats[i];
             var bpm = spanFrames > 0
                 ? BeatsPerMeasure * 60.0 * frameRate / spanFrames
-                : estimate.Bpm;
+                : accepted;
 
-            // A span outside half to double the expected one means the snap found the wrong onset,
-            // not that the band doubled its tempo for one bar. Fall back rather than report it.
-            raw[i] = bpm < estimate.Bpm / 2 || bpm > estimate.Bpm * 2 ? estimate.Bpm : bpm;
+            if (bpm >= accepted * (1 - MaxStepFraction) && bpm <= accepted * (1 + MaxStepFraction))
+            {
+                accepted = bpm;
+            }
+
+            // A rejected measure repeats the last good tempo: the music did not stop, we simply
+            // failed to measure this bar.
+            raw[i] = accepted;
         }
 
         var smoothed = MedianSmooth(raw);

@@ -9,31 +9,59 @@ namespace PoMode.API.Features.SongStatistics;
 /// gives the pipeline stages, for the same reason: a dead local model server must degrade the answer,
 /// not the request.
 ///
-/// <para>Order comes from <see cref="ExecutionPlanner.EffectiveRank"/>, so it needs no rules of its
-/// own: local LLM (0) → template (5) → cloud (8). Cloud is excluded from the automatic order
-/// entirely and is only ever reached when the caller names it, because falling through to a paid
-/// provider would spend money the user never asked to spend.</para>
+/// <para>Order is this seam's own — see <see cref="Rank"/> — and by default puts the cloud model
+/// first, then a local model, then the template. That is a different rule from the stage planner's
+/// on purpose: an interpretation is one small prompt costing a fraction of a cent, where a pipeline
+/// stage falling through to a paid provider is a whole separation or transcription on the bill.</para>
 /// </summary>
 public sealed class SongInterpreterSelector(
     IEnumerable<ISongInterpreter> interpreters,
+    IConfiguration configuration,
     ILogger<SongInterpreterSelector> logger)
 {
-    private readonly ISongInterpreter[] _ranked =
-        [.. interpreters.OrderBy(ExecutionPlanner.EffectiveRank)];
+    /// <summary>
+    /// Whether the cloud interpreter may be chosen automatically. On by default: a measured
+    /// interpretation is about 1,800 tokens, which on the configured nano-tier deployment is a
+    /// fraction of a cent, and it answers faster and better than the local model. Set
+    /// <c>Llm:PreferCloud</c> to false for the local-first order instead.
+    /// </summary>
+    private bool PreferCloud => configuration.GetValue("Llm:PreferCloud", defaultValue: true);
 
-    /// <summary>Every interpreter with its live availability, for the picker. Cloud is listed —
-    /// unlike the stage pickers — because naming it is the only way to reach it, so hiding it
-    /// would make it unreachable rather than merely non-default.</summary>
+    /// <summary>
+    /// Interpreter order, deliberately NOT <see cref="ExecutionPlanner.EffectiveRank"/>.
+    ///
+    /// <para>That ranking puts Cloud last because a pipeline stage falling through to a paid provider
+    /// means a whole stem separation or transcription on someone's bill. An interpretation is nothing
+    /// like that: one small prompt, a fraction of a cent, no per-second billing. So this seam ranks by
+    /// answer quality — cloud model, then local model, then the template — while the stage planner
+    /// keeps its own stricter rule untouched. The two questions only looked alike.</para>
+    /// </summary>
+    private int Rank(ISongInterpreter interpreter) => interpreter switch
+    {
+        { Tier: ExecutionTier.Cloud } => PreferCloud ? 0 : 3,
+        { IsClassicFallback: true } => 2,   // the deterministic template: honest, never clever
+        _ => 1,                             // a real local model
+    };
+
+    /// <summary>Recomputed per call so a configuration change needs no restart.</summary>
+    private ISongInterpreter[] Ranked => [.. interpreters.OrderBy(Rank)];
+
+    /// <summary>
+    /// Every interpreter with its live availability, for the picker. The cloud entry is listed and,
+    /// with <c>Llm:PreferCloud</c> on, is the default — it is still tagged as a paid model in the UI
+    /// so the choice is never hidden from whoever is paying.
+    /// </summary>
     public async Task<List<InterpreterOptionDto>> ListAsync(CancellationToken ct)
     {
-        var options = new List<InterpreterOptionDto>(_ranked.Length);
+        var ranked = Ranked;
+        var options = new List<InterpreterOptionDto>(ranked.Length);
         var defaultAssigned = false;
 
-        foreach (var interpreter in _ranked)
+        foreach (var interpreter in ranked)
         {
             var available = await SafeIsAvailableAsync(interpreter, ct);
-            // The default is the first available non-Cloud entry — the one an unnamed request gets.
-            var isDefault = !defaultAssigned && available && interpreter.Tier != ExecutionTier.Cloud;
+            // Simply the first available entry in rank order — the one an unnamed request gets.
+            var isDefault = !defaultAssigned && available;
             defaultAssigned |= isDefault;
 
             options.Add(new InterpreterOptionDto(
@@ -94,15 +122,17 @@ public sealed class SongInterpreterSelector(
     }
 
     /// <summary>
-    /// The try order: the named interpreter first if it exists, then every free one in rank order.
-    /// A Cloud interpreter that was not named never appears.
+    /// The try order: the named interpreter first if it exists, then everything else in rank order.
+    /// With <c>Llm:PreferCloud</c> off the cloud entry ranks last, so it is then reachable only by
+    /// name — the behaviour this seam had before cloud became the default.
     /// </summary>
     private IEnumerable<ISongInterpreter> Candidates(string? requested)
     {
+        var ranked = Ranked;
         ISongInterpreter? pick = null;
         if (!string.IsNullOrWhiteSpace(requested))
         {
-            pick = _ranked.FirstOrDefault(
+            pick = ranked.FirstOrDefault(
                 interpreter => string.Equals(interpreter.Name, requested, StringComparison.OrdinalIgnoreCase));
             if (pick is null)
             {
@@ -115,9 +145,12 @@ public sealed class SongInterpreterSelector(
             }
         }
 
-        foreach (var interpreter in _ranked)
+        // Everything else follows, cloud included. The fallthrough matters more now that cloud can be
+        // the default: a dropped network or an expired credential has to degrade to the local model
+        // and then the template, never to an error.
+        foreach (var interpreter in ranked)
         {
-            if (!ReferenceEquals(interpreter, pick) && interpreter.Tier != ExecutionTier.Cloud)
+            if (!ReferenceEquals(interpreter, pick))
             {
                 yield return interpreter;
             }

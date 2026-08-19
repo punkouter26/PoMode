@@ -237,12 +237,60 @@ function scheduleClick(state, when, accent) {
     state.synthVoices.push(osc);
 }
 
-/// Commits every beat between the click cursor and the lookahead horizon. The grid is regular
-/// (beats.json: firstBeatSec + k·60/bpm — one tempo for the whole song), so beat times are
-/// generated on the fly rather than looked up.
+/// Expands the per-measure tempo map into absolute beat times, once, when the map arrives.
+///
+/// A regular grid cannot click in time with a performance that drifts — by the end of a song that
+/// slows from 88 to 54 BPM a fixed click is a bar out. Each measure contributes its own four beats
+/// at its own measured tempo, starting from its own measured downbeat, so the clicks track the
+/// playing rather than an average of it.
+function buildTempoBeats(map, durationSec) {
+    const beats = [];
+    for (let i = 0; i < map.measures.length; i++) {
+        const measure = map.measures[i];
+        if (!(measure.bpm > 0)) {
+            continue;
+        }
+        const period = 60 / measure.bpm;
+        const end = i + 1 < map.measures.length ? map.measures[i + 1].startSec : durationSec;
+        for (let beat = 0; beat < 4; beat++) {
+            const at = measure.startSec + (beat * period);
+            // A measure measured slightly long would otherwise spill a click past the next
+            // downbeat, doubling it up against that measure's own first beat.
+            if (at >= end - 1e-6 && beat > 0) {
+                break;
+            }
+            beats.push({ at, accent: beat === 0 });
+        }
+    }
+    return beats;
+}
+
+/// Commits every beat between the click cursor and the lookahead horizon.
+///
+/// Two sources, in order of preference: the per-measure tempo map when the song has one (clicks
+/// follow the performance), else the regular grid from beats.json (one tempo, generated on the fly).
 function scheduleClicks(state) {
-    const grid = state.beatGrid;
     const windowEnd = currentSeconds(state) + SYNTH_LOOKAHEAD_SECONDS;
+
+    if (state.tempoBeats) {
+        // The cursor only moves forward, so the scan resumes where it stopped rather than
+        // re-walking the whole song each callback.
+        let index = state.tempoBeatIndex;
+        while (index < state.tempoBeats.length && state.tempoBeats[index].at < state.clickCursor) {
+            index++;
+        }
+        while (index < state.tempoBeats.length && state.tempoBeats[index].at < windowEnd) {
+            const beat = state.tempoBeats[index];
+            const when = state.startedAt + (beat.at - state.offset);
+            scheduleClick(state, Math.max(when, state.context.currentTime), beat.accent);
+            index++;
+        }
+        state.tempoBeatIndex = index;
+        state.clickCursor = windowEnd;
+        return;
+    }
+
+    const grid = state.beatGrid;
     const period = 60 / grid.bpm;
     const k = Math.max(0, Math.ceil(((state.clickCursor - grid.firstBeatSec) / period) - 1e-9));
     let beatIndex = k;
@@ -252,6 +300,35 @@ function scheduleClicks(state) {
         scheduleClick(state, Math.max(when, state.context.currentTime), beatIndex % 4 === 0);
     }
     state.clickCursor = windowEnd;
+}
+
+/// The tempo in force at a moment, from the measure covering it. Null when there is no map.
+function tempoAt(state, seconds) {
+    const map = state.tempoMap;
+    if (!map) {
+        return null;
+    }
+    let bpm = map.measures.length > 0 ? map.measures[0].bpm : null;
+    for (const measure of map.measures) {
+        if (measure.startSec > seconds) {
+            break;
+        }
+        bpm = measure.bpm;
+    }
+    return bpm;
+}
+
+/// Reports the tempo to Blazor when — and only when — the measure the playhead is in changes it.
+/// Called every frame, so it must stay a comparison: pushing a render per frame is exactly what
+/// this module exists to avoid.
+function reportTempo(state) {
+    const bpm = tempoAt(state, currentSeconds(state));
+    if (bpm === null || bpm === state.reportedBpm) {
+        return;
+    }
+    state.reportedBpm = bpm;
+    state.root.dataset.mixerBpm = bpm.toFixed(1);
+    state.dotNet?.invokeMethodAsync('OnTempoChanged', bpm);
 }
 
 /// The shared output bus: everything routes through one master gain with an analyser tap, so the
@@ -311,6 +388,10 @@ function startSources(state, offsetSeconds) {
     state.synthCursor = offsetSeconds;
     state.synthIndex = perSource(0);
     state.clickCursor = offsetSeconds;
+    // The beat scan only moves forward, so a seek has to send it back to the start; scheduleClicks
+    // then skips ahead to the cursor. Without this a backwards seek silences the metronome.
+    state.tempoBeatIndex = 0;
+    state.reportedBpm = null;
     const when = state.context.currentTime + 0.02; // a beat of headroom so all three share a start
     for (const stem of STEMS) {
         const buffer = state.buffers[stem];
@@ -358,9 +439,10 @@ function tick(state) {
         if (NOTE_SOURCE_NAMES.some(source => state.noteSources[source])) {
             scheduleSynth(state);
         }
-        if (state.metronome && state.beatGrid) {
+        if (state.metronome && (state.tempoBeats || state.beatGrid)) {
             scheduleClicks(state);
         }
+        reportTempo(state);
     }
     state.frame = requestAnimationFrame(() => tick(state));
 }
@@ -497,6 +579,10 @@ export function init(root, canvas, dotNetRef) {
         bpmNudge: 0,
         metronome: false,
         beatGrid: null,
+        tempoMap: null,
+        tempoBeats: null,
+        tempoBeatIndex: 0,
+        reportedBpm: null,
         clickGain: null,
         clickCursor: 0,
         karaoke: null,
@@ -597,6 +683,10 @@ export async function load(root, urls) {
     state.noteSources = perSource(false);
     state.metronome = false;
     state.beatGrid = null;
+    state.tempoMap = null;
+    state.tempoBeats = null;
+    state.tempoBeatIndex = 0;
+    state.reportedBpm = null;
     stopKaraoke(root);
     stopDroneInternal(state);
     if (state.duration === 0) {
@@ -701,6 +791,35 @@ export function setMode(root, mode) {
         applyGains(state, false);
     }
     refresh(state);
+}
+
+/// Fetches the per-measure tempo map. Returns the median BPM when the map is usable, 0 otherwise.
+///
+/// Optional by design: a job analysed before the tempo map existed simply has no artifact, and the
+/// metronome falls back to the regular beat grid. Only worth using with more than one measure —
+/// a single measure is the flat grid with extra steps.
+export async function loadTempoMap(root, url, durationSec) {
+    const state = states.get(root);
+    if (!state) {
+        return 0;
+    }
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return 0;
+        }
+        const map = await response.json();
+        if (!map || !Array.isArray(map.measures) || map.measures.length < 2 || !(map.confidence > 0)) {
+            return 0;
+        }
+        state.tempoMap = map;
+        state.tempoBeats = buildTempoBeats(map, durationSec > 0 ? durationSec : state.duration);
+        state.tempoBeatIndex = 0;
+        return map.medianBpm;
+    } catch {
+        // Same contract as loadBeats: an unreachable artifact costs the tempo track, never the mixer.
+        return 0;
+    }
 }
 
 /// Fetches the beat grid (beats.json). Returns the BPM when the grid is usable, 0 otherwise — a

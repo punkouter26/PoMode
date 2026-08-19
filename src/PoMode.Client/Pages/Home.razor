@@ -172,14 +172,16 @@ else if (ViewState.IsAdvanced)
     else
     {
         <RadzenCard>
-            <RadzenText TextStyle="TextStyle.H6" Text="@($"{_visual.Notes.Count} notes · {_visual.Chords.Count} chords")" />
+            <RadzenText TextStyle="TextStyle.H6"
+                        Text="@($"{_visual.Notes.Count} notes · {_visual.Chords.Count} chords · {(_liveBpm > 0 ? _liveBpm : _result?.TempoBpm ?? 0):0} BPM{(_liveBpm > 0 ? " (this bar)" : "")}")" />
             <AnalysisCanvas Model="_visual" SelectedWindowIndex="_selectedWindow"
                             PlayheadSec="_playheadSec" OnSeek="OnSeek"
                             OnReady="@(element => _canvasElement = element)" />
             @if (_canvasElement is { } canvasElement)
             {
                 <StemMixer JobId="@_status!.JobId" CanvasElement="canvasElement" SeekToSec="_playheadSec"
-                           TonicName="@_result?.TonicName" TonicPitchClass="_result?.TonicPitchClass" />
+                           TonicName="@_result?.TonicName" TonicPitchClass="_result?.TonicPitchClass"
+                           OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
             }
         </RadzenCard>
 
@@ -254,6 +256,9 @@ else if (ViewState.IsAdvanced)
 
     private JobStatusDto? _status;
     private VisualizationPayload? _visual;
+
+    /// <summary>Tempo of the measure the playhead is in; 0 until playback reports one.</summary>
+    private double _liveBpm;
     private ModalResult? _result;
     private string? _uploadError;
     private bool _uploading;

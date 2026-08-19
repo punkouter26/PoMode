@@ -50,6 +50,38 @@ public class InterpretationPromptTests
         Assert.Equal("Musician text.", theory);
     }
 
+    /// <summary>
+    /// The second real failure: gpt-5.4-nano wrote both halves correctly but drew a bare "===" where
+    /// the full marker was asked for. The whole theory section, delimiter included, reached the
+    /// reader as one blob.
+    /// </summary>
+    [Theory]
+    [InlineData("===")]
+    [InlineData("---")]
+    [InlineData("***")]
+    [InlineData("  ======  ")]
+    public void Splits_on_a_bare_rule_line(string rule)
+    {
+        var (plain, theory) = InterpretationPrompt.Split($"Everyone text.\n{rule}\nMusician text.");
+
+        Assert.Equal("Everyone text.", plain);
+        Assert.Equal("Musician text.", theory);
+    }
+
+    [Theory]
+    [InlineData("--")]      // too short to be a deliberate rule
+    [InlineData("- a list item that is not a rule")]
+    [InlineData("The tempo is 96-104 BPM.")]
+    public void Does_not_split_on_punctuation_that_is_not_a_rule(string line)
+    {
+        var raw = $"Everyone text.\n{line}\nMore of the same paragraph.";
+
+        var (plain, theory) = InterpretationPrompt.Split(raw);
+
+        Assert.Equal(raw, plain);
+        Assert.Null(theory);
+    }
+
     [Fact]
     public void Does_not_split_on_a_sentence_that_merely_begins_with_the_same_words()
     {

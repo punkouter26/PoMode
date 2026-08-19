@@ -106,12 +106,24 @@ public static class InterpretationPrompt
     /// <summary>Longest a delimiter line can be before it is more plausibly a sentence.</summary>
     private const int MaxDelimiterLength = 40;
 
+    /// <summary>Rule characters a model might use to draw a separator on its own line.</summary>
+    private static readonly char[] RuleCharacters = ['=', '-', '_', '*', '#'];
+
     private static bool IsDelimiterLine(string line)
     {
         var trimmed = line.Trim();
         if (trimmed.Length == 0)
         {
             return false;
+        }
+
+        // A line of nothing but rule characters is a separator and cannot be anything else — the
+        // prompt forbids markdown, so no horizontal rule belongs in the prose. gpt-5.4-nano wrote a
+        // bare "===" where the full marker was asked for, having produced both halves correctly;
+        // without this the entire theory section, delimiter included, reached the reader as one blob.
+        if (trimmed.Length >= 3 && trimmed.All(character => RuleCharacters.Contains(character)))
+        {
+            return true;
         }
 
         var letters = string.Concat(trimmed.Where(char.IsLetter)).ToUpperInvariant();

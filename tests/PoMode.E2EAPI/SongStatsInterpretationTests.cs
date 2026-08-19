@@ -41,7 +41,12 @@ public sealed class SongStatsInterpretationTests(ITestOutputHelper output) : IDi
             .UseSetting("Jobs:RootPath", _root)
             .UseSetting("Models:RootPath", _modelsRoot)
             // Never pull a 165 MB model into a test run; the classic DSP executors cover this.
-            .UseSetting("Models:AutoDownload", "false"));
+            .UseSetting("Models:AutoDownload", "false")
+            // The cloud interpreter is the default in the app, but a test run must not bill a real
+            // deployment, and its availability would otherwise depend on whether whoever ran the
+            // suite happened to be logged into Azure. Clearing the endpoint makes it unavailable.
+            .UseSetting("Llm:AzureOpenAi:Endpoint", "")
+            .UseSetting("Llm:PreferCloud", "false"));
 
     /// <summary>
     /// Eight bars at 120 BPM: a stepwise quaver melody over a I-V-vi-IV pad. Written to be musically
@@ -200,7 +205,7 @@ public sealed class SongStatsInterpretationTests(ITestOutputHelper output) : IDi
     }
 
     [Fact]
-    public async Task The_cloud_interpreter_is_listed_but_not_the_default()
+    public async Task The_cloud_interpreter_is_listed_and_never_defaults_when_it_is_unconfigured()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
@@ -209,8 +214,11 @@ public sealed class SongStatsInterpretationTests(ITestOutputHelper output) : IDi
 
         Assert.NotNull(options);
         var azure = Assert.Single(options, option => option.Tier == ExecutionTier.Cloud);
-        // Listed so it can be named, never defaulted: choosing it must be a deliberate act because
-        // it spends money.
+
+        // This fixture clears the endpoint, so the cloud entry must report itself unavailable and
+        // must not be the default — an unreachable default would strand every unnamed request on a
+        // fallthrough. It stays listed so it can still be named.
+        Assert.False(azure.Available);
         Assert.False(azure.IsDefault);
         Assert.Contains(options, option => option is { IsDefault: true, Tier: ExecutionTier.Local });
     }

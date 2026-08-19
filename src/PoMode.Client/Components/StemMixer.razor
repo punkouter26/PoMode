@@ -44,6 +44,12 @@
                                   Disabled="@(_status is "idle" or "loading" || _chordNoteCount == 0)"
                                   ButtonStyle="@(_stemsMuted && SynthOn("chords") ? ButtonStyle.Primary : ButtonStyle.Light)"
                                   Text="Solo Chords" title="Toggle the detected chords as a sustained synth pad (mutes audio stems; combines with Solo Synth)" />
+                    @* Basic gets the metronome too — hearing the click against the track is the
+                       fastest way to judge whether the detected tempo is right. *@
+                    <RadzenButton Click="@(() => SetMetronomeAsync(!_metronomeOn))"
+                                  Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                  ButtonStyle="@(_metronomeOn ? ButtonStyle.Primary : ButtonStyle.Light)"
+                                  Text="@($"Click · {BpmReadout}")" title="@MetronomeTitle" />
                 }
                 else
                 {
@@ -240,6 +246,13 @@
     /// <summary>When true, renders the streamlined basic playback controls only.</summary>
     [Parameter] public bool Basic { get; set; }
 
+    /// <summary>
+    /// Raised with the tempo of the measure the playhead has just entered, so a parent showing a
+    /// headline BPM can follow the performance instead of a whole-song average. Fires at most once
+    /// per measure.
+    /// </summary>
+    [Parameter] public EventCallback<double> OnTempoChangedCallback { get; set; }
+
     private ElementReference _root;
     private ElementReference _spectrumCanvas;
     private IJSObjectReference? _module;
@@ -283,6 +296,12 @@
     private bool _backingNotesOn; // canvas overlay: backing has no canvas yet, kept for parity
     private bool _metronomeOn;
     private double _beatBpm;
+
+    /// <summary>Median of the per-measure tempo map, 0 when the song has none.</summary>
+    private double _tempoMapBpm;
+
+    /// <summary>The tempo of the measure the playhead is in, pushed from mixer.js as it changes.</summary>
+    private double _liveBpm;
     private double _bpmNudge;     // user-adjusted offset from server tempo
     private bool _karaokeOn;
     private int _karaokeScore;
@@ -335,11 +354,37 @@
         }
     }
 
+    /// <summary>
+    /// mixer.js reports the tempo of the measure the playhead is in. It fires only when the value
+    /// actually changes — at most once a measure — so this stays a discrete event and playback still
+    /// costs no per-frame renders.
+    /// </summary>
+    [JSInvokable]
+    public void OnTempoChanged(double bpm)
+    {
+        if (Math.Abs(_liveBpm - bpm) < 0.05)
+        {
+            return;
+        }
+        _liveBpm = bpm;
+        _ = OnTempoChangedCallback.InvokeAsync(bpm);
+        StateHasChanged();
+    }
+
     private string MetronomeTitle => _beatBpm > 0
         ? $"Click at {(_beatBpm + _bpmNudge):0} BPM{(Math.Abs(_bpmNudge) > 0.01 ? $" (server {_beatBpm:0} + nudge {_bpmNudge:+0;-0;0})" : "")}"
         : "No beat grid available for this job";
 
-    private string BpmReadout => _beatBpm > 0 ? $"{(_beatBpm + _bpmNudge):0} BPM" : "— BPM";
+    /// <summary>
+    /// Prefers the measure the playhead is actually in. A drifting performance makes one whole-song
+    /// average wrong nearly everywhere, and the click the user hears follows the map, so the number
+    /// beside the button has to follow it too.
+    /// </summary>
+    private string BpmReadout => (_liveBpm > 0 ? _liveBpm : _beatBpm) switch
+    {
+        > 0 and var bpm => $"{(bpm + _bpmNudge):0} BPM",
+        _ => "— BPM",
+    };
 
     private string KaraokeTitle => _karaokeOn
         ? $"Karaoke scoring: {_karaokeScore}%"
@@ -437,6 +482,8 @@
             _backingNotesOn = false;
             _metronomeOn = false;
             _beatBpm = 0;
+            _tempoMapBpm = 0;
+            _liveBpm = 0;
             _bpmNudge = 0;
             _stemsMuted = false;
             _tapTimes.Clear();
@@ -459,6 +506,10 @@
                     // loadNotes always answers [vocal, backing, chords].
                     (_vocalNoteCount, _backingNoteCount, _chordNoteCount) = (counts[0], counts[1], counts[2]);
                     _beatBpm = await _module.InvokeAsync<double>("loadBeats", _root, $"api/analysis/{JobId}/beats");
+                    // Optional: absent for a job analysed before the tempo map existed, in which case
+                    // the metronome keeps clicking to the regular grid above.
+                    _tempoMapBpm = await _module.InvokeAsync<double>(
+                        "loadTempoMap", _root, $"api/analysis/{JobId}/tempo-map", _duration);
                 }
                 catch
                 {
