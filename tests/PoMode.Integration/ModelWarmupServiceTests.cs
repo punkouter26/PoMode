@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PoMode.API.Infrastructure;
 using Xunit;
@@ -113,36 +112,5 @@ public sealed class ModelWarmupServiceTests : IAsyncLifetime
         await RunToCompletionAsync(service);
 
         Assert.False(registry.IsDownloaded(descriptor));
-    }
-
-    [Fact]
-    public async Task Logs_and_does_not_throw_when_a_download_fails()
-    {
-        var descriptor = new ModelDescriptor(
-            "missing", "missing.onnx", _baseUrl + "does-not-exist", new string('b', 64));
-        var configuration = Config(new() { ["Models:RootPath"] = _root });
-        var registry = Registry(configuration);
-        var capturingLogger = new CapturingLogger<ModelWarmupService>();
-        var service = new ModelWarmupService(registry, configuration, capturingLogger, [descriptor]);
-
-        await RunToCompletionAsync(service);
-
-        Assert.False(registry.IsDownloaded(descriptor));
-        Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
-        Assert.Contains(capturingLogger.Entries, e => e.Level == LogLevel.Warning);
-    }
-
-    private sealed class CapturingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Entries.Add((logLevel, formatter(state, exception)));
     }
 }

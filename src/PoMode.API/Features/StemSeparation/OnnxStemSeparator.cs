@@ -31,9 +31,63 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
     /// </summary>
     private const int VocalsStemIndex = 3;
 
+    /// <summary>How long the inference session survives after a job before its memory is released.
+    /// Long enough that batch uploads and back-to-back songs skip the model load; short enough
+    /// that an idle machine gets its RAM back.</summary>
+    private static readonly TimeSpan SessionKeepAlive = TimeSpan.FromMinutes(10);
+
+    private readonly object _sessionGate = new();
+    private (string Path, DateTime WrittenUtc)? _sessionKey;
+    private InferenceSession? _session;
+    private Timer? _evictionTimer;
+
     public string Name => nameof(OnnxStemSeparator);
     public ExecutionTier Tier => ExecutionTier.Local;
     public bool UsesLocalModel => true;
+
+    /// <summary>The cached session, rebuilt when the model file changes on disk. Mirrors
+    /// OnnxPitchTracker's caching, plus idle eviction because this graph is ~350 MB of weights.</summary>
+    private InferenceSession GetSession(string modelPath)
+    {
+        lock (_sessionGate)
+        {
+            _evictionTimer?.Dispose();
+            _evictionTimer = null;
+            var key = (modelPath, File.GetLastWriteTimeUtc(modelPath));
+            if (_session is null || _sessionKey != key)
+            {
+                _session?.Dispose();
+                // Deliberately lower than OnnxPitchTracker's ProcessorCount/2: at 6 threads
+                // (12-core machine) this graph's per-thread scratch buffers pushed the process
+                // over available memory and ONNX Runtime threw "bad allocation" mid-run — see the
+                // Task 8 report. 2 threads ran the real model reliably (~5.7 GB peak).
+                using var options = new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = 2 };
+                _session = new InferenceSession(modelPath, options);
+                _sessionKey = key;
+            }
+            return _session;
+        }
+    }
+
+    /// <summary>Arms the idle release. Called after every run; any new run disarms it first.</summary>
+    private void ScheduleSessionEviction()
+    {
+        lock (_sessionGate)
+        {
+            _evictionTimer?.Dispose();
+            _evictionTimer = new Timer(_ =>
+            {
+                lock (_sessionGate)
+                {
+                    _session?.Dispose();
+                    _session = null;
+                    _sessionKey = null;
+                    _evictionTimer?.Dispose();
+                    _evictionTimer = null;
+                }
+            }, null, SessionKeepAlive, Timeout.InfiniteTimeSpan);
+        }
+    }
 
     public Task<bool> IsAvailableAsync(CancellationToken ct) =>
         Task.FromResult(!EnvironmentDetector.IsAzureHosted() && registry.IsDownloaded(ModelCatalog.HtDemucs));
@@ -45,14 +99,7 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
         var buffer = AudioDecoder.Decode(context.InputPath);
         buffer = AudioConverter.ToStereo44100(buffer);
 
-        // Deliberately lower than OnnxPitchTracker's ProcessorCount/2: at 6 threads (12-core machine)
-        // this graph's per-thread scratch buffers pushed the process over available memory and
-        // ONNX Runtime threw "bad allocation" mid-run on this machine (measured during Task 8, with
-        // ~4.3 GB free at the time). 2 threads ran the real model reliably across repeated runs with
-        // ~5.7 GB peak private memory — see the Task 8 report. Leaves the web host's own thread pool
-        // and the rest of the API process comfortable headroom during a ~3-10 minute job.
-        using var options = new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = 2 };
-        using var session = new InferenceSession(modelPath, options);
+        var session = GetSession(modelPath);
 
         var inputName = session.InputMetadata.Keys.Single();
         var inputDims = session.InputMetadata[inputName].Dimensions.ToArray();
@@ -81,14 +128,10 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
         var strideSamples = windowSamples - overlapSamples;
         var crossfade = BuildCrossfadeWindow(windowSamples, overlapSamples);
 
-        var totalFrames = buffer.Samples.Length / buffer.Channels;
-        var left = new float[totalFrames];
-        var right = new float[totalFrames];
-        for (var i = 0; i < totalFrames; i++)
-        {
-            left[i] = buffer.Samples[i * 2];
-            right[i] = buffer.Samples[(i * 2) + 1];
-        }
+        // The interleaved buffer is read directly (stride 2) instead of splitting into separate
+        // channel arrays — that split alone cost ~106 MB of scratch on a five-minute song.
+        var samples = buffer.Samples;
+        var totalFrames = samples.Length / buffer.Channels;
 
         var starts = new List<int>();
         var start = 0;
@@ -126,8 +169,11 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
             var chunkStart = starts[chunkIndex];
             var available = Math.Min(windowSamples, totalFrames - chunkStart);
 
-            left.AsSpan(chunkStart, available).CopyTo(inputBuffer.AsSpan(0, available));
-            right.AsSpan(chunkStart, available).CopyTo(inputBuffer.AsSpan(windowSamples, available));
+            for (var i = 0; i < available; i++)
+            {
+                inputBuffer[i] = samples[(chunkStart + i) * 2];
+                inputBuffer[windowSamples + i] = samples[((chunkStart + i) * 2) + 1];
+            }
             if (available < windowSamples)
             {
                 // The final, short chunk: zero-pad the tail of each channel.
@@ -161,8 +207,9 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
             context.OnProgress?.Invoke((chunkIndex + 1) / (double)starts.Count);
         }
 
+        // The instrumental is written back into the decoded mix buffer in place — each element is
+        // read (original) before it is overwritten (instrumental), so no third full-song array.
         var vocalsInterleaved = new float[totalFrames * 2];
-        var instrumentalInterleaved = new float[totalFrames * 2];
         for (var i = 0; i < totalFrames; i++)
         {
             var w = weight[i];
@@ -171,12 +218,15 @@ public sealed class OnnxStemSeparator(ModelRegistry registry, ILogger<OnnxStemSe
 
             vocalsInterleaved[i * 2] = vocalLeft;
             vocalsInterleaved[(i * 2) + 1] = vocalRight;
-            instrumentalInterleaved[i * 2] = Math.Clamp(left[i] - vocalLeft, -1f, 1f);
-            instrumentalInterleaved[(i * 2) + 1] = Math.Clamp(right[i] - vocalRight, -1f, 1f);
+            samples[i * 2] = Math.Clamp(samples[i * 2] - vocalLeft, -1f, 1f);
+            samples[(i * 2) + 1] = Math.Clamp(samples[(i * 2) + 1] - vocalRight, -1f, 1f);
         }
 
         WavWriter.Write(Path.Combine(context.JobDir, "vocals.wav"), new AudioBuffer(vocalsInterleaved, buffer.SampleRate, 2));
-        WavWriter.Write(Path.Combine(context.JobDir, "instrumental.wav"), new AudioBuffer(instrumentalInterleaved, buffer.SampleRate, 2));
+        WavWriter.Write(Path.Combine(context.JobDir, "instrumental.wav"), new AudioBuffer(samples, buffer.SampleRate, 2));
+
+        // Keep the session warm for the next song; the timer releases the memory when idle.
+        ScheduleSessionEviction();
     }
 
     /// <summary>

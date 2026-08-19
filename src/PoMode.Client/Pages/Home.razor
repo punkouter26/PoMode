@@ -13,7 +13,7 @@
 
 <PageTitle>PoMode</PageTitle>
 
-@if (ViewState.IsAdvanced || (_visual is null && _status is null))
+@if (_visual is null && _status is null)
 {
     <RadzenCard class="intake-card">
         @* One dropzone, four intake paths. The primary action is "drop a file here" — everything else
@@ -35,13 +35,23 @@
                     {
                         <div class="executor-picker">
                             <span class="executor-picker-label">@StageLabel(stageName)</span>
-                            <RadzenRadioButtonList TValue="string" Data="@choices"
-                                                   TextProperty="Label" ValueProperty="Value"
-                                                   Value="@ExecutorChoiceOf(stageName)"
-                                                   Change="@(value => OnExecutorPicked(stageName, value))"
-                                                   Orientation="Orientation.Vertical"
-                                                   Disabled="@(choices.Count <= 2)"
-                                                   class="executor-radios" />
+                            @if (choices.Count <= 2)
+                            {
+                                @* One real option: nothing to pick, so say it plainly — disabled
+                                   radios read as "broken", not as "no choice needed". *@
+                                <span class="executor-picker-single">
+                                    @(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")
+                                </span>
+                            }
+                            else
+                            {
+                                <RadzenRadioButtonList TValue="string" Data="@choices"
+                                                       TextProperty="Label" ValueProperty="Value"
+                                                       Value="@ExecutorChoiceOf(stageName)"
+                                                       Change="@(value => OnExecutorPicked(stageName, value))"
+                                                       Orientation="Orientation.Vertical"
+                                                       class="executor-radios" />
+                            }
                         </div>
                     }
                 </div>
@@ -114,6 +124,16 @@
         <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
     </RadzenCard>
 }
+else if (ViewState.IsAdvanced)
+{
+    @* The full intake card collapses once a job is on screen; one slim action brings it back.
+       The capability probe's marker must survive the collapse — browser tests wait on it. *@
+    <div class="intake-slim">
+        <RadzenButton Text="+ New track" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                      Click="@ResetForNewUpload" title="Analyze another song" />
+        <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
+    </div>
+}
 
 @if (_status is not null && (ViewState.IsAdvanced || _status.Stage != JobStage.Complete || _visual is null))
 {
@@ -184,6 +204,9 @@
                         </a>
                         <a class="overflow-item" href="@($"api/analysis/{_status!.JobId}/musicxml")" target="_blank" rel="noopener" role="menuitem">
                             Download MusicXML
+                        </a>
+                        <a class="overflow-item" href="@($"api/analysis/{_status!.JobId}/chord-chart")" target="_blank" rel="noopener" role="menuitem">
+                            Download chord chart (text)
                         </a>
                     </div>
                 }

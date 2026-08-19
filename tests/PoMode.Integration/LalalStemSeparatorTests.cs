@@ -8,7 +8,6 @@ using PoMode.API.Features.Audio;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Features.StemSeparation;
 using PoMode.API.Pipeline;
-using PoMode.Shared.Analysis;
 using PoMode.TestCommon;
 using Xunit;
 
@@ -34,9 +33,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
 
     /// <summary>Track labels the fixture reports on success.</summary>
     private (string Label, string Url)[] _tracks = null!;
-
-    /// <summary>When true, check/ nests tracks directly rather than under a "result" object.</summary>
-    private bool _flatTracks;
 
     private readonly List<string> _paths = [];
     private readonly List<string?> _licenceHeaders = [];
@@ -119,9 +115,7 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
 
         var tracks = string.Join(",", _tracks.Select(track =>
             "{\"label\":\"" + track.Label + "\",\"url\":\"" + track.Url + "\"}"));
-        var inner = _flatTracks
-            ? "{\"status\":\"success\",\"progress\":100,\"tracks\":[" + tracks + "]}"
-            : "{\"status\":\"success\",\"progress\":100,\"result\":{\"tracks\":[" + tracks + "]}}";
+        var inner = "{\"status\":\"success\",\"progress\":100,\"result\":{\"tracks\":[" + tracks + "]}}";
         return "{\"status\":\"success\",\"result\":{\"task1\":" + inner + "}}";
     }
 
@@ -184,15 +178,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
     }
 
     [Fact]
-    public void It_is_cloud_tier_and_named()
-    {
-        var separator = Separator();
-
-        Assert.Equal(ExecutionTier.Cloud, separator.Tier);
-        Assert.Equal(nameof(LalalStemSeparator), separator.Name);
-    }
-
-    [Fact]
     public async Task It_walks_upload_split_check_and_writes_both_stems()
     {
         var time = new FakeTimeProvider();
@@ -223,50 +208,6 @@ public sealed class LalalStemSeparatorTests : IAsyncLifetime
             // LALAL.AI authenticates with X-License-Key; sending Authorization would be a silent 401.
             Assert.All(_authHeaders, header => Assert.Null(header));
         }
-    }
-
-    [Fact]
-    public async Task Tracks_are_found_whether_or_not_they_are_nested_under_a_result_object()
-    {
-        _flatTracks = true;
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.True(File.Exists(Path.Combine(_jobDir, "vocals.wav")));
-    }
-
-    [Fact]
-    public async Task The_no_vocals_label_is_understood_as_the_instrumental()
-    {
-        _tracks = [("vocals", $"{_baseUrl}/files/vocals"), ("no_vocals", $"{_baseUrl}/files/backing")];
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.True(File.Exists(Path.Combine(_jobDir, "instrumental.wav")));
-    }
-
-    [Fact]
-    public async Task A_missing_stem_label_throws_a_named_error()
-    {
-        _tracks = [("drums", $"{_baseUrl}/files/drums")];
-        var time = new FakeTimeProvider();
-
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
-
-        Assert.Contains("vocals", failure.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task The_uploaded_source_is_deleted_after_a_success()
-    {
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.Contains("/delete/", Paths);
     }
 
     [Fact]

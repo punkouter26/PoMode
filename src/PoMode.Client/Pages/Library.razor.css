@@ -129,3 +129,57 @@
 .mode-minorpentatonic { background: #0891b2; }
 .mode-majorpentatonic { background: #65a30d; }
 .mode-unclear { background: var(--pm-chord-block); }
+
+.library-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.library-filters ::deep .library-search {
+    flex: 1 1 14rem;
+    min-width: 10rem;
+}
+
+.library-filters ::deep .library-filter {
+    width: 10rem;
+}
+
+.library-count {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .library-filters ::deep .library-filter {
+        width: 100%;
+    }
+
+    .library-count {
+        margin-left: 0;
+    }
+}
+
+.library-latest-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+    user-select: none;
+    white-space: nowrap;
+}
+
+.library-runs-badge {
+    margin-left: 0.35rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: hsl(var(--pm-key-hue) 60% 55% / 0.15);
+    color: var(--pm-accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+}

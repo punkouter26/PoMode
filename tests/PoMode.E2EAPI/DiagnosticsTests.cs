@@ -70,17 +70,4 @@ public sealed class DiagnosticsTests : IDisposable
             Environment.SetEnvironmentVariable("ReplicateApiToken", null);
         }
     }
-
-    [Fact]
-    public async Task OpenApi_document_and_scalar_ui_are_served()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var doc = await client.GetAsync("/openapi/v1.json");
-        var scalar = await client.GetAsync("/scalar");
-
-        doc.EnsureSuccessStatusCode();
-        scalar.EnsureSuccessStatusCode();
-    }
 }

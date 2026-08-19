@@ -34,10 +34,40 @@ in vec2 vUv;
 uniform sampler2D uBins;
 uniform vec3 uColor;
 uniform float uBarCount;
+uniform vec2 uRes;
+uniform float uTime;
 out vec4 outColor;
+
+float binAt(float u) {
+    return texture(uBins, vec2(u, 0.5)).r;
+}
+
 void main() {
-    float column = vUv.x * uBarCount;
-    float value = texture(uBins, vec2((floor(column) + 0.5) / uBarCount, 0.5)).r;
+    vec2 px = vUv * uRes;
+
+    // "Now playing" hero: a slowly spinning grooved disc with a live spectrum ring around its
+    // rim, claiming a square at the left edge; the classic bars fill the rest of the strip.
+    float discSpan = min(uRes.y, uRes.x * 0.25);
+    if (px.x < discSpan) {
+        vec2 centre = vec2(discSpan * 0.5, uRes.y * 0.5);
+        vec2 d = px - centre;
+        float r = length(d) / (discSpan * 0.5);
+        float angle = atan(d.y, d.x);
+        float grooves = 0.5 + 0.5 * sin((r * 40.0) - (uTime * 2.2) + angle);
+        float disc = step(r, 0.62) * (0.10 + 0.06 * grooves);
+        float u = fract((angle / 6.2831853) + (uTime * 0.03));
+        float v = binAt(u);
+        float ring = smoothstep(0.66, 0.70, r)
+            * (1.0 - smoothstep(0.72 + v * 0.26, 0.76 + v * 0.26, r))
+            * (0.25 + v);
+        float intensity = disc + ring;
+        outColor = vec4(uColor * intensity, intensity);
+        return;
+    }
+
+    float u = (px.x - discSpan) / max(uRes.x - discSpan, 1.0);
+    float column = u * uBarCount;
+    float value = binAt((floor(column) + 0.5) / uBarCount);
 
     // Thin dark gap between bars.
     float within = fract(column);
@@ -133,6 +163,8 @@ function initGl(state) {
     state.program = program;
     state.texture = texture;
     state.colorLocation = gl.getUniformLocation(program, 'uColor');
+    state.resLocation = gl.getUniformLocation(program, 'uRes');
+    state.timeLocation = gl.getUniformLocation(program, 'uTime');
     return true;
 }
 
@@ -167,7 +199,7 @@ function refreshColour(state, now) {
     }
 }
 
-function drawGl(state) {
+function drawGl(state, now) {
     const gl = state.gl;
     for (let i = 0; i < BAR_COUNT; i++) {
         state.bytes[i] = Math.round(state.bins[i] * 255);
@@ -175,6 +207,8 @@ function drawGl(state) {
     gl.bindTexture(gl.TEXTURE_2D, state.texture);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, BAR_COUNT, 1, gl.RED, gl.UNSIGNED_BYTE, state.bytes);
     gl.uniform3f(state.colorLocation, state.rgb[0], state.rgb[1], state.rgb[2]);
+    gl.uniform2f(state.resLocation, state.canvas.width, state.canvas.height);
+    gl.uniform1f(state.timeLocation, now / 1000);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
@@ -228,9 +262,9 @@ function frame(state, now) {
     const alive = updateBins(state, data);
 
     if (state.gl) {
-        drawGl(state);
+        drawGl(state, now);
     } else {
-        draw2d(state);
+        draw2d(state); // 2D fallback keeps the plain bars; the disc is a WebGL2-only treat
     }
 
     if (data !== null || alive) {

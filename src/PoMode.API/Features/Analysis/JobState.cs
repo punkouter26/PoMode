@@ -9,7 +9,14 @@ public sealed class JobState
     public required string InputFileName { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public JobStage Stage { get; set; } = JobStage.Uploaded;
-    public double Progress { get; set; }
+
+    /// <summary>
+    /// Derived, never stored: the completed-stage count is the one source of truth, so the
+    /// percent can never disagree with the checklist. In-stage fractions are a transient SignalR
+    /// hint layered on top by the pipeline (see <see cref="ToDto"/>'s liveProgress overload).
+    /// </summary>
+    public double Progress => Stage == JobStage.Complete ? 1.0 : Math.Min(CompletedStages.Count, 4) / 4.0;
+
     public List<StagePlan> Plan { get; set; } = [];
     public List<string> CompletedStages { get; set; } = [];
     public List<StageRecord> StageHistory { get; set; } = [];
@@ -21,5 +28,6 @@ public sealed class JobState
     public string? PrimaryMode { get; set; }
     public double? TempoBpm { get; set; }
 
-    public JobStatusDto ToDto() => new(JobId, Stage, Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName);
+    public JobStatusDto ToDto(double? liveProgress = null)
+        => new(JobId, Stage, liveProgress ?? Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName);
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Batch;
+using PoMode.API.Features.ChordChart;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Cloud;
 using PoMode.API.Features.Diagnostics;
@@ -113,6 +114,7 @@ app.MapUrlIngest();
 app.MapWebRuntime();
 app.MapMidiExport();
 app.MapMusicXmlExport();
+app.MapChordChart();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 app.MapFallbackToFile("index.html");

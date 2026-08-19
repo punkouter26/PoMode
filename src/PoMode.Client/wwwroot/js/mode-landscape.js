@@ -110,10 +110,21 @@ function buildScene(scene, windows) {
 function attachControls(state) {
     const canvas = state.canvas;
 
+    const stopInertia = () => {
+        if (state.inertiaFrame !== 0) {
+            cancelAnimationFrame(state.inertiaFrame);
+            state.inertiaFrame = 0;
+        }
+        state.vyaw = 0;
+        state.vpitch = 0;
+    };
+    state.stopInertia = stopInertia;
+
     const onPointerDown = (event) => {
         if (!event.isPrimary) {
             return;
         }
+        stopInertia(); // grabbing the scene mid-glide takes over instantly
         state.dragging = true;
         state.lastX = event.clientX;
         state.lastY = event.clientY;
@@ -125,9 +136,13 @@ function attachControls(state) {
             return;
         }
         const orbit = state.orbit;
-        orbit.yaw -= (event.clientX - state.lastX) * ROTATE_SPEED;
-        orbit.pitch = Math.min(Math.max(
-            orbit.pitch + (event.clientY - state.lastY) * ROTATE_SPEED, PITCH_MIN), PITCH_MAX);
+        const yawDelta = -(event.clientX - state.lastX) * ROTATE_SPEED;
+        const pitchDelta = (event.clientY - state.lastY) * ROTATE_SPEED;
+        orbit.yaw += yawDelta;
+        orbit.pitch = Math.min(Math.max(orbit.pitch + pitchDelta, PITCH_MIN), PITCH_MAX);
+        // Remember the last motion so releasing the pointer glides instead of stopping dead.
+        state.vyaw = yawDelta;
+        state.vpitch = pitchDelta;
         state.lastX = event.clientX;
         state.lastY = event.clientY;
         requestRender(state);
@@ -137,6 +152,28 @@ function attachControls(state) {
         state.dragging = false;
         if (canvas.hasPointerCapture(event.pointerId)) {
             canvas.releasePointerCapture(event.pointerId);
+        }
+        // Damped inertia: the orbit keeps gliding along the last drag, losing 8% per frame.
+        // Skipped under prefers-reduced-motion; renders on demand like every other interaction.
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            stopInertia();
+            return;
+        }
+        const glide = () => {
+            state.inertiaFrame = 0;
+            state.vyaw *= 0.92;
+            state.vpitch *= 0.92;
+            if (Math.abs(state.vyaw) + Math.abs(state.vpitch) < 0.00035) {
+                return;
+            }
+            const orbit = state.orbit;
+            orbit.yaw += state.vyaw;
+            orbit.pitch = Math.min(Math.max(orbit.pitch + state.vpitch, PITCH_MIN), PITCH_MAX);
+            renderNow(state);
+            state.inertiaFrame = requestAnimationFrame(glide);
+        };
+        if (Math.abs(state.vyaw) + Math.abs(state.vpitch) >= 0.00035) {
+            state.inertiaFrame = requestAnimationFrame(glide);
         }
     };
 
@@ -190,6 +227,12 @@ export function init(canvas, windows) {
     const scene = new THREE.Scene();
     buildScene(scene, Array.isArray(windows) ? windows : []);
 
+    // Depth cue: distant segments fade toward the page background, so the ribbon reads as a
+    // landscape rather than a flat chart. The colour follows the active theme at build time.
+    const pageBackground = getComputedStyle(document.documentElement)
+        .getPropertyValue('--pm-bg').trim() || '#121214';
+    scene.fog = new THREE.Fog(new THREE.Color(pageBackground), RIBBON_LENGTH * 1.4, RIBBON_LENGTH * 4.5);
+
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 
     const state = {
@@ -207,6 +250,10 @@ export function init(canvas, windows) {
         dragging: false,
         lastX: 0,
         lastY: 0,
+        vyaw: 0,
+        vpitch: 0,
+        inertiaFrame: 0,
+        stopInertia: null,
         removeListeners: null,
         observer: null,
     };
@@ -231,6 +278,7 @@ export function dispose(canvas) {
     if (state.frame !== 0) {
         cancelAnimationFrame(state.frame);
     }
+    state.stopInertia?.();
     state.removeListeners?.();
     state.observer?.disconnect();
     state.scene.traverse((object) => {

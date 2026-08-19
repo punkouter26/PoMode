@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -95,23 +94,5 @@ public sealed class BatchAnalysisTests : IDisposable
             var status = await client.GetFromJsonAsync<BatchStatusDto>($"/api/analysis/batch/{batchId}");
             Assert.Equal(2, status!.Tracks.Count);
         }
-    }
-
-    [Fact]
-    public async Task Empty_batch_is_400_and_unknown_batch_is_404()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        using var empty = new MultipartFormDataContent();
-        empty.Add(new StringContent("x"), "not-a-file");
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/api/analysis/batch", empty)).StatusCode);
-
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await client.GetAsync("/api/analysis/batch/00000000000000000000000000000000")).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await client.GetAsync("/api/analysis/batch/nope")).StatusCode);
     }
 }

@@ -80,27 +80,6 @@
     font-size: 0.85rem;
 }
 
-.mixer-keys {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--pm-fg-muted);
-}
-
-.mixer-keys kbd {
-    display: inline-block;
-    padding: 0.05rem 0.4rem;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 0.3rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.85em;
-}
-
-.mixer-keys .key-sep {
-    margin: 0 0.4rem;
-    color: var(--pm-border);
-}
-
 .mixer-status-line {
     display: flex;
     align-items: center;
@@ -139,7 +118,9 @@
 }
 
 .mixer-spectrum {
-    flex-basis: 100%;
+    /* flex-basis: 100% was written for a row context; .mixer is a COLUMN, where a 100% basis
+       becomes height and ballooned the canvas into a giant panel. Fixed size, no flex growth. */
+    flex: 0 0 auto;
     width: 100%;
     height: 3.2rem;
     border-radius: 0.4rem;
@@ -234,4 +215,109 @@
     flex-basis: 100%;
     height: 0.25rem;
     margin-top: 0.25rem;
+}
+
+.karaoke-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.karaoke-stats {
+    font-size: 0.78rem;
+    color: var(--pm-fg-muted);
+    white-space: nowrap;
+}
+
+.karaoke-take {
+    color: var(--pm-accent);
+    font-weight: 600;
+}
+
+/* The floating quick transport: a small glass pill pinned bottom-right once audio is rolling,
+   so Play/Pause never scrolls out of reach under the HUD and stats. */
+.mini-transport {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem 0.35rem 0.35rem;
+    border-radius: 999px;
+    background: var(--pm-surface-glass);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--pm-border);
+    box-shadow: var(--pm-shadow);
+}
+
+.mini-transport ::deep .mini-play {
+    min-width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    padding: 0;
+}
+
+.mini-transport-label {
+    font-size: 0.78rem;
+    color: var(--pm-fg-muted);
+    user-select: none;
+}
+
+@media (max-width: 640px) {
+    .mini-transport {
+        right: 0.5rem;
+        bottom: 0.5rem;
+    }
+}
+
+/* The "More" disclosure holding rare controls (note overlays, tempo nudge). */
+.mixer-more {
+    position: relative;
+    display: inline-flex;
+}
+
+.mixer-more-toggle {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--pm-border);
+    border-radius: 0.4rem;
+    background: transparent;
+    color: var(--pm-fg-muted);
+    cursor: pointer;
+}
+
+.mixer-more-toggle:hover {
+    color: var(--pm-fg);
+    border-color: var(--pm-accent);
+}
+
+.mixer-more-menu {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    min-width: 13rem;
+    padding: 0.6rem;
+    border-radius: 0.6rem;
+    background: var(--pm-surface-glass);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--pm-border);
+    box-shadow: var(--pm-shadow);
+}
+
+/* Readouts belong to their buttons: the metronome/drone cells render as one pill, so "199 BPM"
+   and the drone note never float unattached in the strip. */
+.metronome-cell,
+.drone-cell {
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem 0.15rem 0.15rem;
 }

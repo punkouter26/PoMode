@@ -248,33 +248,104 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
                 createdAt = File.GetLastWriteTimeUtc(dir);
             }
 
-            if (createdAt < cutoff)
+            if (createdAt < cutoff && TryDeleteJobDir(dir))
             {
-                try
-                {
-                    Directory.Delete(dir, recursive: true);
-                }
-                catch (IOException)
-                {
-                    // A file can be open mid-stream (a stem being range-served) — skip this job
-                    // and let the next sweep retry rather than aborting the whole pass.
-                    continue;
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    continue;
-                }
-                var purgedJobId = Path.GetFileName(dir);
-                blobs?.DeleteJobBlobs(purgedJobId);
-                // The per-job lock has no job left to guard — drop it, or the dictionary grows
-                // by one semaphore per job for the process lifetime.
-                if (_locks.TryRemove(purgedJobId, out var gate))
-                {
-                    gate.Dispose();
-                }
                 purged++;
             }
         }
         return purged;
+    }
+
+    /// <summary>
+    /// Deletes the oldest completed job folders until the store's total size fits the budget.
+    /// The age sweep keeps the store fresh; this cap keeps it from eating the disk when many
+    /// songs land inside one retention window (each job carries ~40 MB of stem WAVs). Jobs not
+    /// yet in a terminal stage are never candidates.
+    /// </summary>
+    public int PurgeToSizeBudget(long maxTotalBytes)
+    {
+        if (!Directory.Exists(RootPath))
+        {
+            return 0;
+        }
+
+        var jobs = new List<(string Dir, DateTimeOffset CreatedAt, long Bytes, bool Terminal)>();
+        foreach (var dir in Directory.GetDirectories(RootPath))
+        {
+            var statePath = Path.Combine(dir, "job.json");
+            DateTimeOffset createdAt = File.GetLastWriteTimeUtc(dir);
+            // A folder with unreadable state is old junk: eligible, dated by the folder itself.
+            var terminal = true;
+            try
+            {
+                if (File.Exists(statePath)
+                    && JsonSerializer.Deserialize<JobState>(File.ReadAllText(statePath), JsonOptions) is { } state)
+                {
+                    createdAt = state.CreatedAt;
+                    terminal = PoMode.Shared.Analysis.JobStageExtensions.IsTerminal(state.Stage);
+                }
+            }
+            catch (JsonException)
+            {
+                // keep defaults
+            }
+            long bytes = 0;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    bytes += new FileInfo(file).Length;
+                }
+            }
+            catch (IOException)
+            {
+                // A file vanished mid-walk; the partial sum still orders correctly enough.
+            }
+            jobs.Add((dir, createdAt, bytes, terminal));
+        }
+
+        var total = jobs.Sum(job => job.Bytes);
+        var purged = 0;
+        foreach (var job in jobs.Where(j => j.Terminal).OrderBy(j => j.CreatedAt))
+        {
+            if (total <= maxTotalBytes)
+            {
+                break;
+            }
+            if (TryDeleteJobDir(job.Dir))
+            {
+                total -= job.Bytes;
+                purged++;
+            }
+        }
+        return purged;
+    }
+
+    /// <summary>One deletion path for every purge: folder, blob mirror, and the per-job lock.</summary>
+    private bool TryDeleteJobDir(string dir)
+    {
+        try
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A file can be open mid-stream (a stem being range-served) — skip this job
+            // and let the next sweep retry rather than aborting the whole pass.
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        var purgedJobId = Path.GetFileName(dir);
+        blobs?.DeleteJobBlobs(purgedJobId);
+        // The per-job lock has no job left to guard — drop it, or the dictionary grows
+        // by one semaphore per job for the process lifetime.
+        if (_locks.TryRemove(purgedJobId, out var gate))
+        {
+            gate.Dispose();
+        }
+        return true;
     }
 }

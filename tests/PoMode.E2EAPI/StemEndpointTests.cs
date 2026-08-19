@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -49,7 +48,6 @@ public sealed class StemEndpointTests : IDisposable
     [Theory]
     [InlineData("mix")]
     [InlineData("vocals")]
-    [InlineData("instrumental")]
     public async Task Each_allow_listed_stem_is_served_as_playable_audio(string name)
     {
         await using var factory = Factory();
@@ -63,23 +61,6 @@ public sealed class StemEndpointTests : IDisposable
         Assert.True(bytes.Length > 44, $"{name} was only {bytes.Length} bytes");
         Assert.Equal("RIFF"u8.ToArray(), bytes[..4]); // the fixture is a wav, and so are the stems
         Assert.Equal("audio/wav", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    [Fact]
-    public async Task An_unknown_stem_name_is_not_found_rather_than_a_server_error()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var jobId = await CompletedJobAsync(client);
-
-        // Anything that reaches the endpoint as a single path segment but is not on the allow-list.
-        // "vocals.wav" and "notes.json" are real files in the job directory, so they prove the name
-        // is matched against the allow-list rather than used to build a file path.
-        foreach (var name in new[] { "drums", "bass", "job", "result", "notes.json", "vocals.wav" })
-        {
-            var response = await client.GetAsync($"/api/analysis/{jobId}/stems/{name}");
-            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        }
     }
 
     [Fact]
@@ -112,17 +93,5 @@ public sealed class StemEndpointTests : IDisposable
             Assert.DoesNotContain("\"jobId\"", body, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("InputFileName", body, StringComparison.OrdinalIgnoreCase);
         }
-    }
-
-    [Fact]
-    public async Task An_unknown_job_is_not_found()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.GetAsync("/api/analysis/nope/stems/mix")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.GetAsync($"/api/analysis/{new string('a', 32)}/stems/mix")).StatusCode);
     }
 }

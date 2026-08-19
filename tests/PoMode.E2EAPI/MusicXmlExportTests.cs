@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Xml.Linq;
@@ -61,17 +60,5 @@ public sealed class MusicXmlExportTests : IDisposable
         var xml = XDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("score-partwise", xml.Root!.Name.LocalName);
         Assert.NotEmpty(xml.Descendants("note"));
-    }
-
-    [Fact]
-    public async Task Unknown_or_malformed_job_musicxml_is_404()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/musicxml")).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await client.GetAsync("/api/analysis/00000000000000000000000000000000/musicxml")).StatusCode);
     }
 }

@@ -1,11 +1,24 @@
 @using PoMode.Shared.Analysis
+@inject IJSRuntime Js
 
 <RadzenCard class="stats-card">
     <div class="stats-header">
-        <RadzenText TextStyle="TextStyle.H6" Text="Song Analysis & Theory Statistics" />
-        <span class="stats-subtitle">Deep harmonic metrics derived from transcribed notes and chords</span>
+        <div class="stats-header-text">
+            <RadzenText TextStyle="TextStyle.H6" Text="Song Analysis & Theory Statistics" />
+            <span class="stats-subtitle">Deep harmonic metrics derived from transcribed notes and chords</span>
+        </div>
+        <button class="icon-button collapse-toggle" type="button" @onclick="ToggleCollapsedAsync"
+                aria-expanded="@(!_collapsed)" title="@(_collapsed ? "Expand statistics" : "Collapse statistics")">
+            @(_collapsed ? "▸" : "▾")
+        </button>
     </div>
 
+    @if (_collapsed)
+    {
+        @* Collapsed: nothing below renders, and the choice is remembered per browser. *@
+    }
+    else
+    {
     <div class="stats-grid">
         <!-- Metric 1: Vocal Range & Density -->
         <div class="stat-box">
@@ -106,11 +119,49 @@
             }
         </div>
     </div>
+    }
 </RadzenCard>
 
 @code {
+    private const string CollapseStorageKey = "pomode-collapse-stats";
+
     [Parameter, EditorRequired] public required ModalResult Result { get; set; }
     [Parameter, EditorRequired] public required VisualizationPayload Visual { get; set; }
+
+    private bool _collapsed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+        try
+        {
+            if (await Js.InvokeAsync<string?>("localStorage.getItem", CollapseStorageKey) == "1")
+            {
+                _collapsed = true;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // Storage blocked (private mode): the panel simply starts expanded.
+        }
+    }
+
+    private async Task ToggleCollapsedAsync()
+    {
+        _collapsed = !_collapsed;
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", CollapseStorageKey, _collapsed ? "1" : "0");
+        }
+        catch (JSException)
+        {
+            // Storage blocked: the toggle still works for this visit.
+        }
+    }
 
     private static readonly (NoteRole Role, string Label, string Css)[] RoleRows =
     [

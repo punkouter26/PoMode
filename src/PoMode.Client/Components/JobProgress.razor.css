@@ -100,3 +100,12 @@
 .error-text {
     color: var(--pm-warn-bg);
 }
+
+.progress-collapsed {
+    justify-content: space-between;
+}
+
+.collapse-toggle {
+    font-size: 1rem;
+    line-height: 1;
+}

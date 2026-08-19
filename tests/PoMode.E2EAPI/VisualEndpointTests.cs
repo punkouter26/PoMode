@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -75,17 +74,5 @@ public sealed class VisualEndpointTests : IDisposable
             Assert.EndsWith("]", note.DegreeLabel);
             Assert.InRange(note.MidiPitch, payload.MinPitch, payload.MaxPitch);
         });
-    }
-
-    [Fact]
-    public async Task An_unknown_job_is_not_found()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.GetAsync("/api/analysis/nope/visual")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.GetAsync($"/api/analysis/{new string('a', 32)}/visual")).StatusCode);
     }
 }

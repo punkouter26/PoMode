@@ -157,9 +157,17 @@ function draw(state) {
     ctx.strokeRect(0.5, 0.5, width - 1, noteLaneHeight - 1);
     ctx.strokeRect(0.5, chordLaneTop + 0.5, width - 1, chordLaneHeight - 1);
 
+    drawWaveform(state, ctx, width, noteLaneHeight);
+
     let drawn = 0;
     if (state.model) {
-        drawn += drawNotes(state, ctx, width, noteLaneHeight);
+        if (state.drop) {
+            updateDrop(state, dt, width, noteLaneHeight);
+            drawDrop(state, ctx);
+            drawn += state.drop.bodies.length;
+        } else {
+            drawn += drawNotes(state, ctx, width, noteLaneHeight);
+        }
         drawn += drawChords(state, ctx, width, chordLaneTop, chordLaneHeight);
         drawLivePitch(state, ctx, width, noteLaneHeight);
         updateParticles(state, dt, noteLaneHeight);
@@ -168,8 +176,8 @@ function draw(state) {
 
     drawPlayhead(state, ctx, width, height);
 
-    // Animations in flight (view glide, live particles) need the next frame too.
-    if (state.followTarget !== null || state.particles.length > 0) {
+    // Animations in flight (view glide, live particles, the end-of-song drop) need the next frame.
+    if (state.followTarget !== null || state.particles.length > 0 || state.drop) {
         invalidate(state);
     }
 
@@ -280,6 +288,27 @@ function updateParticles(state, dt, laneHeight) {
                 });
             }
         }
+
+        // Chord-change bursts: a taller column pop when the playhead crosses a chord boundary,
+        // spread across the lane's pitch range so the change reads at any zoom.
+        const firstChord = firstIndexFrom(model.chords, state.lastPlayhead);
+        for (let index = firstChord; index < model.chords.length; index++) {
+            const chord = model.chords[index];
+            if (chord.startSec > state.playhead) {
+                break;
+            }
+            for (let i = 0; i < 10 && state.particles.length < 240; i++) {
+                state.particles.push({
+                    t: chord.startSec,
+                    midi: model.minPitch + ((model.maxPitch - model.minPitch) * (i / 9)),
+                    vt: 0.04 * ((i % 3) - 1),
+                    vMidi: 3 * (((i * 53) % 100) / 100 - 0.5),
+                    age: 0,
+                    life: 0.7,
+                    role: 'ChordTone',
+                });
+            }
+        }
     }
     state.lastPlayhead = state.playhead;
 
@@ -377,7 +406,7 @@ function drawChords(state, ctx, width, laneTop, laneHeight) {
         }
         ctx.fillStyle = selected ? state.colours.lane : state.colours.text;
         ctx.fillText(chord.symbol, x + 5, laneTop + 6);
-        if (blockWidth >= 60) {
+        if (blockWidth >= 90) {
             ctx.fillStyle = selected ? state.colours.lane : state.colours.muted;
             const tag = chord.modeTag ? `m${chord.measureNumber} · ${chord.modeTag}` : `m${chord.measureNumber}`;
             ctx.fillText(tag, x + 5, laneTop + 20);
@@ -386,11 +415,91 @@ function drawChords(state, ctx, width, laneTop, laneHeight) {
     return drawn;
 }
 
+/// The real vocal waveform behind the note capsules, mirrored around the lane's middle at low
+/// alpha — pure context, never louder than the notes. Peaks come from mixer.js after stem decode.
+function drawWaveform(state, ctx, width, laneHeight) {
+    const wave = state.waveform;
+    if (!wave || wave.peaks.length === 0) {
+        return;
+    }
+    const middle = laneHeight / 2;
+    const amp = laneHeight * 0.46;
+    const columns = wave.peaks.length / 2;
+    const secondsPerColumn = wave.durationSec / columns;
+    const first = Math.max(0, Math.floor(state.viewStart / secondsPerColumn));
+    const last = Math.min(columns - 1, Math.ceil(state.viewEnd / secondsPerColumn));
+
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = state.colours.chordSelected;
+    ctx.beginPath();
+    for (let column = first; column <= last; column++) {
+        const x = timeToX(state, column * secondsPerColumn, width);
+        const columnWidth = Math.max(timeToX(state, (column + 1) * secondsPerColumn, width) - x, 1);
+        const low = wave.peaks[column * 2];
+        const high = wave.peaks[(column * 2) + 1];
+        ctx.rect(x, middle - (high * amp), columnWidth, Math.max((high - low) * amp, 1));
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+}
+
+/// End-of-song easter egg: the visible note capsules become falling, bouncing bodies for a few
+/// seconds, then fade. Purely decorative; any seek, play, or new model clears it instantly.
+function updateDrop(state, dt, width, laneHeight) {
+    const drop = state.drop;
+    drop.age += dt;
+    for (const body of drop.bodies) {
+        body.vy += 900 * dt; // gravity, px/s²
+        body.y += body.vy * dt;
+        body.x += body.vx * dt;
+        body.spin += body.vSpin * dt;
+        const floor = laneHeight - body.h;
+        if (body.y > floor) {
+            body.y = floor;
+            body.vy = -body.vy * 0.45; // lossy bounce settles quickly
+            body.vx *= 0.8;
+        }
+    }
+    if (drop.age > 4.5) {
+        state.drop = null; // fully faded; normal drawing resumes
+    }
+}
+
+function drawDrop(state, ctx) {
+    const drop = state.drop;
+    const fade = clamp(1 - ((drop.age - 3) / 1.5), 0, 1);
+    ctx.globalAlpha = fade;
+    for (const body of drop.bodies) {
+        ctx.save();
+        ctx.translate(body.x + (body.w / 2), body.y + (body.h / 2));
+        ctx.rotate(body.spin);
+        ctx.fillStyle = colourForRole(state, body.role);
+        roundedRect(ctx, -body.w / 2, -body.h / 2, body.w, body.h, Math.min(3, body.h / 2));
+        ctx.fill();
+        ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+}
+
 function drawPlayhead(state, ctx, width, height) {
     if (state.playhead < state.viewStart || state.playhead > state.viewEnd) {
         return;
     }
     const x = Math.round(timeToX(state, state.playhead, width)) + 0.5;
+
+    // Motion trail: a short gradient wake behind the line, brighter when the music is louder.
+    // Skipped under reduced motion along with the rest of the decoration.
+    if (!state.reducedMotion && state.level > 0.01) {
+        const trailWidth = 14 + (state.level * 60);
+        const gradient = ctx.createLinearGradient(x - trailWidth, 0, x, 0);
+        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+        gradient.addColorStop(1, state.colours.playhead);
+        ctx.globalAlpha = 0.10 + (state.level * 0.25);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x - trailWidth, 0, trailWidth, height);
+        ctx.globalAlpha = 1;
+    }
+
     ctx.strokeStyle = state.colours.playhead;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -490,6 +599,9 @@ export function init(canvas, dotNetRef) {
         selection: null,
         livePitch: [],
         particles: [],
+        waveform: null,
+        level: 0,
+        drop: null,
         lastPlayhead: 0,
         lastFrameAt: 0,
         followTarget: null,
@@ -544,6 +656,8 @@ export function setModel(canvas, payload) {
     state.model = payload;
     state.maxNoteDuration = 0;
     state.maxChordDuration = 0;
+    state.drop = null;
+    state.waveform = null; // a new job's waveform arrives from mixer.js after its stems decode
     if (payload) {
         for (const note of payload.notes) {
             note.label = `${note.pitchLabel} ${note.degreeLabel}`;
@@ -559,12 +673,13 @@ export function setModel(canvas, payload) {
     invalidate(state);
 }
 
-export function setPlayhead(canvas, seconds) {
+export function setPlayhead(canvas, seconds, level = 0) {
     const state = states.get(canvas);
     if (!state) {
         return;
     }
     state.playhead = seconds;
+    state.level = level; // drives the playhead's motion trail; 0 when the caller has no analyser
 
     // Auto-follow: when the playhead drifts out of the comfortable middle of the view, ease the
     // view so the playhead sits at 30% — unless the user panned recently (their view wins).
@@ -623,6 +738,69 @@ export function setOverlay(canvas, source, enabled) {
         return;
     }
     state.overlay[source] = enabled;
+    invalidate(state);
+}
+
+/// Hands the canvas the decoded vocal waveform as [min,max] peak pairs. Called by mixer.js once
+/// the stems are decoded; null/empty clears the lane.
+export function setWaveform(canvas, peaks, durationSec) {
+    const state = states.get(canvas);
+    if (!state) {
+        return;
+    }
+    state.waveform = peaks && peaks.length > 0 && durationSec > 0 ? { peaks, durationSec } : null;
+    invalidate(state);
+}
+
+/// End-of-song physics drop: the currently visible note capsules fall and bounce, then fade.
+/// No-op under reduced motion or without a model.
+export function dropNotes(canvas) {
+    const state = states.get(canvas);
+    if (!state || !state.model || state.reducedMotion || state.drop) {
+        return;
+    }
+    const width = Math.max(state.canvas.clientWidth, 1);
+    const laneHeight = Math.max((Math.max(state.canvas.clientHeight, 1) - LANE_GAP_PX) * NOTE_LANE_FRACTION, 1);
+    const model = state.model;
+    const pitchSpan = Math.max(model.maxPitch - model.minPitch + 1, 1);
+    const rowHeight = laneHeight / pitchSpan;
+
+    const bodies = [];
+    const first = firstIndexFrom(model.notes, state.viewStart - state.maxNoteDuration);
+    for (let index = first; index < model.notes.length && bodies.length < 250; index++) {
+        const note = model.notes[index];
+        if (note.startSec > state.viewEnd) {
+            break;
+        }
+        const x = timeToX(state, note.startSec, width);
+        const w = Math.max(timeToX(state, note.startSec + note.durationSec, width) - x, 2);
+        bodies.push({
+            x,
+            y: (model.maxPitch - note.midiPitch) * rowHeight,
+            w,
+            h: Math.max(rowHeight - 1, 3),
+            vx: ((index % 7) - 3) * 12,
+            vy: -40 - ((index % 5) * 25),
+            spin: 0,
+            vSpin: ((index % 9) - 4) * 0.4,
+            role: note.role,
+        });
+    }
+    if (bodies.length > 0) {
+        state.drop = { bodies, age: 0 };
+        invalidate(state);
+    }
+}
+
+/// Clears transient effects (drop bodies, particles) — playback and seeks call this so the lane
+/// snaps back to the truthful picture instantly.
+export function resetFx(canvas) {
+    const state = states.get(canvas);
+    if (!state) {
+        return;
+    }
+    state.drop = null;
+    state.particles = [];
     invalidate(state);
 }
 

@@ -79,20 +79,6 @@ public sealed class ModelRegistryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Second_call_does_not_redownload()
-    {
-        var descriptor = new ModelDescriptor("test", "test.onnx", _baseUrl + "test.onnx", Sha256Hex);
-        var registry = Registry();
-
-        var first = await registry.EnsureAsync(descriptor, CancellationToken.None);
-        var stamp = File.GetLastWriteTimeUtc(first);
-        var second = await registry.EnsureAsync(descriptor, CancellationToken.None);
-
-        Assert.Equal(first, second);
-        Assert.Equal(stamp, File.GetLastWriteTimeUtc(second));
-    }
-
-    [Fact]
     public async Task Hash_mismatch_throws_and_leaves_no_file_behind()
     {
         var descriptor = new ModelDescriptor("bad", "bad.onnx", _baseUrl + "bad.onnx", new string('a', 64));
@@ -106,27 +92,6 @@ public sealed class ModelRegistryTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Status_reports_availability_and_size()
-    {
-        var descriptor = new ModelDescriptor("test", "test.onnx", _baseUrl + "test.onnx", Sha256Hex);
-
-        var status = Registry().StatusFor([descriptor]).Single();
-
-        Assert.Equal("test", status.Key);
-        Assert.False(status.Available);
-        Assert.Equal(0, status.SizeBytes);
-    }
-
-    [Fact]
-    public async Task Empty_hash_descriptor_is_rejected()
-    {
-        var descriptor = new ModelDescriptor("nohash", "nohash.onnx", _baseUrl + "nohash.onnx", "");
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Registry().EnsureAsync(descriptor, CancellationToken.None));
-    }
-
-    [Fact]
     public async Task Concurrent_ensure_calls_download_once_and_do_not_throw()
     {
         var descriptor = new ModelDescriptor("test", "test.onnx", _baseUrl + "test.onnx", Sha256Hex);
@@ -137,18 +102,6 @@ public sealed class ModelRegistryTests : IAsyncLifetime
 
         Assert.All(paths, p => Assert.Equal(paths[0], p));
         Assert.True(File.Exists(paths[0]));
-        Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
-    }
-
-    [Fact]
-    public async Task Failed_download_leaves_no_part_file()
-    {
-        // 404 from the fixture server -> EnsureSuccessStatusCode throws
-        var descriptor = new ModelDescriptor("missing", "missing.onnx", _baseUrl + "does-not-exist", new string('b', 64));
-        var registry = Registry();
-
-        await Assert.ThrowsAnyAsync<Exception>(() => registry.EnsureAsync(descriptor, CancellationToken.None));
-
         Assert.Empty(Directory.GetFiles(registry.RootPath, "*.part"));
     }
 

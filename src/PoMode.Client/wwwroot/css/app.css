@@ -18,6 +18,12 @@
        neutral accent so nothing changes until a song is analyzed. */
     --pm-key-hue: 262;
 
+    /* Spacing rhythm: gaps and paddings snap to this 8px-based scale. */
+    --pm-space-1: 0.25rem;
+    --pm-space-2: 0.5rem;
+    --pm-space-3: 1rem;
+    --pm-space-4: 1.5rem;
+
     /* Canvas palette. The JS module reads these with getComputedStyle, so the canvas follows
        light/dark exactly like the rest of the UI and no colour is hard-coded in JS. */
     --pm-lane-bg: #fbfbfd;

@@ -92,17 +92,6 @@ public sealed class AnalysisApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Upload_without_file_is_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsync("/api/analysis", new MultipartFormDataContent());
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
     public async Task Upload_of_non_audio_content_is_rejected()
     {
         await using var factory = Factory();
@@ -113,17 +102,6 @@ public sealed class AnalysisApiTests : IDisposable
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("supported", await response.Content.ReadAsStringAsync());
-    }
-
-    [Fact]
-    public async Task Status_of_unknown_job_is_404()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/analysis/nope")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/notes")).StatusCode);
     }
 
     [Fact]

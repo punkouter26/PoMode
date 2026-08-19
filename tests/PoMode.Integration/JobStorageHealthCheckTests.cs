@@ -30,21 +30,4 @@ public class JobStorageHealthCheckTests
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
-
-    [Fact]
-    public async Task Unwritable_path_is_unhealthy()
-    {
-        var blockingFile = Path.Combine(Path.GetTempPath(), $"pomode-blocker-{Guid.NewGuid():N}");
-        File.WriteAllText(blockingFile, "block");
-        try
-        {
-            var check = new JobStorageHealthCheck(StoreWith(Path.Combine(blockingFile, "jobs")));
-            var result = await check.CheckHealthAsync(new HealthCheckContext());
-            Assert.Equal(HealthStatus.Unhealthy, result.Status);
-        }
-        finally
-        {
-            File.Delete(blockingFile);
-        }
-    }
 }

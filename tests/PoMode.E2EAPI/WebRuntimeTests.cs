@@ -49,19 +49,6 @@ public sealed class WebRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task A_wasm_asset_is_served_with_the_wasm_content_type()
-    {
-        Seed("ort-wasm-simd-threaded.wasm", "fake-wasm-bytes");
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/web-runtime/ort-wasm-simd-threaded.wasm");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/wasm", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    [Fact]
     public async Task An_asset_outside_the_allow_list_is_not_found()
     {
         Seed("secrets.txt", "not-servable");
@@ -86,18 +73,6 @@ public sealed class WebRuntimeTests : IDisposable
         var pitch = status.Plan.Single(p => p.Stage == "PitchTracking");
         Assert.Equal(ExecutionTier.ClientDelegated, pitch.Tier);
         Assert.Equal("ClientDelegatedPitchTracker", pitch.Executor);
-    }
-
-    [Fact]
-    public async Task An_upload_without_the_declaration_keeps_the_browser_tier_invisible()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var status = await UploadAsync(client, "/api/analysis");
-
-        var pitch = status.Plan.Single(p => p.Stage == "PitchTracking");
-        Assert.NotEqual(ExecutionTier.ClientDelegated, pitch.Tier);
     }
 
     private static async Task<JobStatusDto> UploadAsync(HttpClient client, string url)

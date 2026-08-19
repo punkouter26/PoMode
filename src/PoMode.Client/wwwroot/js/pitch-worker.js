@@ -55,7 +55,11 @@ export async function runDelegated(jobId) {
             loadRuntime(),
         ]);
 
-        const session = await ort.InferenceSession.create(model, { executionProviders: [backend] });
+        // WebGPU first when the probe saw an adapter, but with WASM in the list as the in-place
+        // fallback: an adapter that exists yet fails session init must not kill the delegation.
+        const session = await ort.InferenceSession.create(model, {
+            executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : [backend],
+        });
         const notes = await transcribe(ort, session, samples);
 
         const response = await fetch(`api/analysis/${jobId}/client-result`, {

@@ -30,10 +30,32 @@
     {
         @* Compare only makes sense with 2+ completed jobs — hide the column when there's only one. *@
         var canCompare = _entries.Count >= 2;
+        <div class="library-filters" role="search" aria-label="Filter songs">
+            <RadzenTextBox @bind-Value="_search" Placeholder="Search songs…" aria-label="Search by file name"
+                           class="library-search" @oninput="@(e => _search = e.Value?.ToString() ?? "")" />
+            <RadzenDropDown TValue="string" Data="@KeyChoices" Value="@_keyFilter" AllowClear="true"
+                            Placeholder="Any key" Change="@(v => _keyFilter = v as string)" class="library-filter" />
+            <RadzenDropDown TValue="string" Data="@ModeChoices" Value="@_modeFilter" AllowClear="true"
+                            Placeholder="Any mode" Change="@(v => _modeFilter = v as string)" class="library-filter" />
+            <label class="library-latest-only">
+                <RadzenCheckBox TValue="bool" Value="@_latestOnly" Change="@(on => _latestOnly = on)" />
+                Latest run per song
+            </label>
+            <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
+        </div>
         <div class="library-grid" data-library-count="@_entries.Count">
-            <RadzenDataGrid Data="@_entries" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact">
+            <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
+                            AllowPaging="true" PageSize="15" PagerHorizontalAlign="HorizontalAlign.Center">
                 <Columns>
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song" />
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song">
+                        <Template Context="entry">
+                            @entry.FileName
+                            @if (RunCountOf(entry) is > 1 and var runs)
+                            {
+                                <span class="library-runs-badge" title="This song was analyzed more than once">×@runs</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Analyzed" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px" />
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Key" Width="130px">
                         <Template Context="entry">
@@ -56,7 +78,11 @@
                             @(entry.TempoBpm is { } bpm ? $"{bpm:0} BPM" : "—")
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="Stage" Title="Status" Width="110px" />
+                    @* An all-Complete column says nothing; it only appears when something isn't. *@
+                    @if (_entries.Any(e => e.Stage != JobStage.Complete))
+                    {
+                        <RadzenDataGridColumn TItem="LibraryEntryDto" Property="Stage" Title="Status" Width="110px" />
+                    }
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="@(canCompare ? "200px" : "90px")">
                         <Template Context="entry">
                             <RadzenButton Text="Open" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
@@ -115,6 +141,42 @@
     private List<LibraryEntryDto>? _entries;
     private readonly HashSet<string> _compare = [];
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
+
+    private string _search = "";
+    private string? _keyFilter;
+    private string? _modeFilter;
+    private bool _latestOnly = true;
+
+    private int RunCountOf(LibraryEntryDto entry)
+        => _entries?.Count(e => e.FileName == entry.FileName) ?? 1;
+
+    private List<string> KeyChoices => _entries?
+        .Select(e => e.TonicName).OfType<string>().Distinct().OrderBy(k => k).ToList() ?? [];
+
+    private List<string> ModeChoices => _entries?
+        .Select(e => e.PrimaryMode).Where(m => !string.IsNullOrEmpty(m)).Cast<string>()
+        .Distinct().OrderBy(m => m).ToList() ?? [];
+
+    /// <summary>The grid's view: search on file name, exact key/mode match. Empty filters pass all,
+    /// so "songs in the same key" is just picking that key in the dropdown.</summary>
+    private List<LibraryEntryDto> Filtered
+    {
+        get
+        {
+            IEnumerable<LibraryEntryDto> view = _entries ?? [];
+            if (_latestOnly)
+            {
+                // Entries arrive newest-first, so the first of each file name is the latest run.
+                view = view.GroupBy(e => e.FileName).Select(g => g.First());
+            }
+            return view
+                .Where(e => string.IsNullOrWhiteSpace(_search)
+                    || e.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                .Where(e => _keyFilter is null || e.TonicName == _keyFilter)
+                .Where(e => _modeFilter is null || e.PrimaryMode == _modeFilter)
+                .ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

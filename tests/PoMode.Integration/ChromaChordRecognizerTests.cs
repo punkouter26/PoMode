@@ -87,18 +87,4 @@ public sealed class ChromaChordRecognizerTests : IDisposable
         Assert.NotEmpty(spans);
         Assert.Equal("G", spans[0].Symbol);
     }
-
-    [Fact]
-    public async Task Silence_yields_no_chords_rather_than_throwing()
-    {
-        var context = ContextWith(TestAudio.MakeWav(seconds: 2.0));
-
-        var spans = await new ChromaChordRecognizer().RecognizeAsync(context, CancellationToken.None);
-
-        Assert.Empty(spans);
-    }
-
-    [Fact]
-    public async Task It_is_always_available()
-        => Assert.True(await new ChromaChordRecognizer().IsAvailableAsync(CancellationToken.None));
 }

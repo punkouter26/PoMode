@@ -47,10 +47,6 @@
                 }
                 else
                 {
-                    <RadzenToggleButton Value="@_stemsMuted" Change="@SetStemsMutedAsync"
-                                        Disabled="@(_status is "idle" or "loading")"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Mute stems" title="Silence the separated audio — keep only synth/click/drone" />
                     @foreach (var (mode, label) in Modes)
                     {
                         <RadzenButton Click="@(() => SetModeAsync(mode))"
@@ -58,6 +54,10 @@
                                       ButtonStyle="@(_mode == mode && !_stemsMuted ? ButtonStyle.Primary : ButtonStyle.Light)"
                                       Text="@label" />
                     }
+                    <RadzenToggleButton Value="@_stemsMuted" Change="@SetStemsMutedAsync"
+                                        Disabled="@(_status is "idle" or "loading")"
+                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                        Text="Mute" title="Silence the separated audio — keep only synth/click/drone (M)" />
                 }
             </div>
 
@@ -79,31 +79,12 @@
                                         Disabled="@(_status is "idle" or "loading" || _chordNoteCount == 0)"
                                         ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
                                         Text="Synth chords" title="Play the detected chords as a sustained synth pad (MIDI)" />
-                    <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetOverlayAsync("vocal", on))"
-                                        Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Show vocal notes" title="Highlight the vocal notes on the canvas (no audio)" />
-                    <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetOverlayAsync("backing", on))"
-                                        Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Show backing notes" title="Highlight the backing notes on the canvas (no audio)" />
                     <div class="metronome-cell" title="@MetronomeTitle">
                         <RadzenToggleButton Value="@_metronomeOn" Change="@SetMetronomeAsync"
                                             Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
                                             ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
                                             Text="Metronome" />
-                        <div class="bpm-nudge" role="group" aria-label="Tempo nudge">
-                            <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(-2))"
-                                    disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
-                                    title="Slower (2 BPM)" aria-label="Slower 2 BPM">−</button>
-                            <span class="bpm-readout">@BpmReadout</span>
-                            <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(2))"
-                                    disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
-                                    title="Faster (2 BPM)" aria-label="Faster 2 BPM">+</button>
-                            <button class="icon-button bpm-tap" type="button" @onclick="OnTapTempoAsync"
-                                    disabled="@(_status is "idle" or "loading")"
-                                    title="Tap tempo (3+ taps)" aria-label="Tap tempo">TAP</button>
-                        </div>
+                        <span class="bpm-readout">@BpmReadout</span>
                     </div>
                     <div class="drone-cell" title="@($"Drone on {TonicName ?? "the detected tonic"}")">
                         <RadzenToggleButton Value="@_droneOn" Change="@SetDroneAsync"
@@ -115,28 +96,57 @@
                             <span class="drone-readout">@TonicName</span>
                         }
                     </div>
-                    <RadzenToggleButton Value="@_karaokeOn" Change="@SetKaraokeAsync"
-                                        Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                                        ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                        Text="Karaoke"
-                                        title="@KaraokeTitle" />
+                    <div class="karaoke-cell">
+                        <RadzenToggleButton Value="@_karaokeOn" Change="@SetKaraokeAsync"
+                                            Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                            ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                            Text="Karaoke"
+                                            title="@KaraokeTitle" />
+                        @if (_karaokeBest > 0)
+                        {
+                            <span class="karaoke-stats" title="Your personal best on this song">
+                                Best @(_karaokeBest)% (@GradeOf(_karaokeBest)) · @_karaokeTakes @(_karaokeTakes == 1 ? "take" : "takes")
+                            </span>
+                        }
+                    </div>
+                    @* Rare controls live behind one disclosure so the strip stays two calm rows. *@
+                    <div class="mixer-more">
+                        <button class="icon-button mixer-more-toggle" type="button" @onclick="() => _moreOpen = !_moreOpen"
+                                aria-haspopup="true" aria-expanded="@_moreOpen" title="More controls">
+                            More ▾
+                        </button>
+                        @if (_moreOpen)
+                        {
+                            <div class="mixer-more-menu" role="menu" aria-label="More mixer controls">
+                                <RadzenToggleButton Value="@_vocalNotesOn" Change="@(on => SetOverlayAsync("vocal", on))"
+                                                    Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
+                                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                                    Text="Show vocal notes" title="Highlight the vocal notes on the canvas (no audio)" />
+                                <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetOverlayAsync("backing", on))"
+                                                    Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
+                                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
+                                                    Text="Show backing notes" title="Highlight the backing notes on the canvas (no audio)" />
+                                <div class="bpm-nudge" role="group" aria-label="Tempo nudge">
+                                    <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(-2))"
+                                            disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                            title="Slower (2 BPM)" aria-label="Slower 2 BPM">−</button>
+                                    <span class="bpm-readout">@BpmReadout</span>
+                                    <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(2))"
+                                            disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
+                                            title="Faster (2 BPM)" aria-label="Faster 2 BPM">+</button>
+                                    <button class="icon-button bpm-tap" type="button" @onclick="OnTapTempoAsync"
+                                            disabled="@(_status is "idle" or "loading")"
+                                            title="Tap tempo (3+ taps)" aria-label="Tap tempo">TAP</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
                 </div>
             }
         </div>
 
-        @if (!Basic)
-        {
-            @* Always-visible affordance for the keyboard verbs a mixer user actually needs. *@
-            <p class="mixer-keys" aria-label="Keyboard shortcuts">
-                <kbd>Space</kbd> play/pause <span class="key-sep">·</span>
-                <kbd>,</kbd> restart <span class="key-sep">·</span>
-                <kbd>M</kbd> mute stems <span class="key-sep">·</span>
-                <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> mix/vocals/backing <span class="key-sep">·</span>
-                <kbd>V</kbd>/<kbd>B</kbd>/<kbd>C</kbd> synth vocal/backing/chords <span class="key-sep">·</span>
-                <kbd>K</kbd> karaoke
-            </p>
-        }
-
+        @* The always-visible key legend is gone: the header's "Keyboard shortcuts" modal carries
+           the full list, and every button's tooltip names its key. One less row of noise. *@
         @if (!Basic)
         {
             <canvas class="mixer-spectrum" @ref="_spectrumCanvas" aria-hidden="true"></canvas>
@@ -181,6 +191,22 @@
         @if (_karaokeError is not null)
         {
             <RadzenText class="mixer-note karaoke-error" Text="@_karaokeError" />
+        }
+        @if (_lastTakeScore is { } take)
+        {
+            <RadzenText class="mixer-note karaoke-take"
+                        Text="@($"Karaoke take: {take}% ({GradeOf(take)}){(take == _karaokeBest ? " — new best! 🎉" : $" · best {_karaokeBest}%")}")" />
+        }
+        @* Always-reachable transport: a small floating pill once audio is rolling, so Play/Pause
+           never scrolls away under the HUD and stats. Advanced view only — Basic fits one screen. *@
+        @if (!Basic && _status is "playing" or "paused")
+        {
+            <div class="mini-transport" role="toolbar" aria-label="Quick transport">
+                <RadzenButton Click="TogglePlayAsync" class="mini-play"
+                              Text="@(_status == "playing" ? "❚❚" : "▶")"
+                              title="Space = play/pause" />
+                <span class="mini-transport-label">@(_status == "playing" ? "Playing" : "Paused")</span>
+            </div>
         }
     }
 </div>
@@ -256,9 +282,15 @@
     private bool _karaokeOn;
     private int _karaokeScore;
     private string? _karaokeError;
+    private int _karaokeBest;
+    private int _karaokeTakes;
+    private int? _lastTakeScore;
+    private IJSObjectReference? _sfx;
+    private IJSObjectReference? _confetti;
     private Timer? _karaokeTimer;
     private readonly List<double> _tapTimes = new();
     private bool _stemsMuted;
+    private bool _moreOpen;
     private string? _loadedJobId;
     private double? _sentSeek;
     private DateTimeOffset? _loadStartTime;
@@ -427,6 +459,7 @@
                 {
                     // Secondary artifact loading errors don't prevent playback
                 }
+                await LoadKaraokeStatsAsync();
             }
             StateHasChanged();
             return;
@@ -498,6 +531,54 @@
         _ = SetKaraokeAsync(!_karaokeOn);
     }
 
+    /// <summary>Grades follow the arcade convention: rare S on top, honest D at the bottom.</summary>
+    private static string GradeOf(int score) => score switch
+    {
+        >= 95 => "S",
+        >= 85 => "A",
+        >= 70 => "B",
+        >= 50 => "C",
+        _ => "D",
+    };
+
+    private string KaraokeStorageKey => $"pomode-karaoke-{JobId}";
+
+    private async Task LoadKaraokeStatsAsync()
+    {
+        _karaokeBest = 0;
+        _karaokeTakes = 0;
+        _lastTakeScore = null;
+        try
+        {
+            // "best|takes", stored per song in this browser.
+            var stored = await Js.InvokeAsync<string?>("localStorage.getItem", KaraokeStorageKey);
+            var parts = stored?.Split('|');
+            if (parts is { Length: 2 } && int.TryParse(parts[0], out var best) && int.TryParse(parts[1], out var takes))
+            {
+                _karaokeBest = best;
+                _karaokeTakes = takes;
+            }
+        }
+        catch (JSException)
+        {
+            // Storage blocked: scores simply reset per visit.
+        }
+    }
+
+    /// <summary>Fire-and-forget UI sound; failures (autoplay policy, teardown) stay silent.</summary>
+    private async Task PlayFxAsync(string name)
+    {
+        try
+        {
+            _sfx ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
+            await _sfx.InvokeVoidAsync(name);
+        }
+        catch (JSException)
+        {
+            // Sounds are garnish, never an error.
+        }
+    }
+
     private async Task TogglePlayAsync()
     {
         if (_module is null)
@@ -508,11 +589,13 @@
         {
             await _module.InvokeVoidAsync("pause", _root);
             _status = "paused";
+            await PlayFxAsync("click");
         }
         else
         {
             await _module.InvokeVoidAsync("play", _root);
             _status = "playing";
+            await PlayFxAsync("whoosh");
         }
     }
 
@@ -524,6 +607,7 @@
         }
         _mode = mode;
         await _module.InvokeVoidAsync("setMode", _root, mode);
+        await PlayFxAsync("click");
     }
 
     /// <summary>Basic view: picks which audio source plays, switching every solo layer off.</summary>
@@ -544,6 +628,7 @@
             }
         }
         await _module.InvokeVoidAsync("setMode", _root, source);
+        await PlayFxAsync("click");
         StateHasChanged();
     }
 
@@ -564,6 +649,7 @@
             _stemsMuted = anySolo;
             await _module.InvokeVoidAsync("setStemsMuted", _root, anySolo);
         }
+        await PlayFxAsync("click");
         StateHasChanged();
     }
 
@@ -723,9 +809,45 @@
         {
             StopKaraokeTimer();
             _karaokeOn = false;
+            // The take's final score, read before the JS side tears the session down.
+            var finalScore = await _module.InvokeAsync<int>("karaokeScoreOf", _root);
             await _module.InvokeVoidAsync("stopKaraoke", _root);
             await SetModeAsync("full");
+            if (finalScore > 0)
+            {
+                await RecordKaraokeTakeAsync(finalScore);
+            }
         }
+    }
+
+    private async Task RecordKaraokeTakeAsync(int score)
+    {
+        _karaokeTakes++;
+        _lastTakeScore = score;
+        if (score > _karaokeBest)
+        {
+            _karaokeBest = score;
+            // A new personal best earns the party: confetti plus the cheer riser.
+            try
+            {
+                _confetti ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/fx-confetti.js");
+                await _confetti.InvokeVoidAsync("burst");
+            }
+            catch (JSException)
+            {
+                // Celebration is garnish.
+            }
+            await PlayFxAsync("cheer");
+        }
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", KaraokeStorageKey, $"{_karaokeBest}|{_karaokeTakes}");
+        }
+        catch (JSException)
+        {
+            // Storage blocked: the numbers still show for this visit.
+        }
+        StateHasChanged();
     }
 
     private void StopKaraokeTimer()
@@ -761,6 +883,14 @@
             {
                 await _module.InvokeVoidAsync("dispose", _root);
                 await _module.DisposeAsync();
+            }
+            if (_sfx is not null)
+            {
+                await _sfx.DisposeAsync();
+            }
+            if (_confetti is not null)
+            {
+                await _confetti.DisposeAsync();
             }
         }
         catch (JSDisconnectedException)

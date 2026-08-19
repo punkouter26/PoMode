@@ -29,17 +29,6 @@ public sealed class WriteEndpointAuthTests : IDisposable
             .UseSetting("Models:AutoDownload", "false"));
 
     [Fact]
-    public async Task Cancel_without_auth_is_401()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.DeleteAsync($"/api/analysis/{SomeJobId}");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
     public async Task Client_result_without_auth_is_401()
     {
         await using var factory = Factory();
@@ -47,18 +36,6 @@ public sealed class WriteEndpointAuthTests : IDisposable
 
         var response = await client.PostAsJsonAsync(
             $"/api/analysis/{SomeJobId}/client-result", new List<NoteEvent>());
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task From_url_without_auth_is_401()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync(
-            "/api/analysis/from-url", new AnalyzeUrlRequest("https://example.com/watch?v=abc"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

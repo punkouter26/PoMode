@@ -85,6 +85,68 @@ export function chime() {
     }
 }
 
+/// A soft filtered-noise sweep for transport starts: 0.18 s of "air" rising through a bandpass.
+export function whoosh() {
+    const ctx = ensureContext();
+    if (!ctx) {
+        return;
+    }
+    try {
+        const seconds = 0.18;
+        const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        let seed = 22222;
+        for (let i = 0; i < data.length; i++) {
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+            data[i] = ((seed / 0x3fffffff) - 1) * (1 - (i / data.length));
+        }
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.Q.value = 1.2;
+        const now = ctx.currentTime;
+        filter.frequency.setValueAtTime(300, now);
+        filter.frequency.exponentialRampToValueAtTime(2400, now + seconds);
+        const gain = ctx.createGain();
+        gain.gain.value = 0.07;
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        source.start(now);
+        source.onended = () => gain.disconnect();
+    } catch {
+        // Fail silent.
+    }
+}
+
+/// New-personal-best celebration: a fast rising arpeggio blooming into a high shimmer. Louder
+/// than the other UI sounds on purpose — it fires rarely and it is the reward.
+export function cheer() {
+    const ctx = ensureContext();
+    if (!ctx) {
+        return;
+    }
+    try {
+        const now = ctx.currentTime;
+        const riser = [523, 659, 784, 1046, 1318];
+        for (let i = 0; i < riser.length; i++) {
+            voice(ctx, { type: 'triangle', freq: riser[i], when: now + (i * 0.07), duration: 0.3, peak: 0.11 });
+        }
+        for (let i = 0; i < 6; i++) {
+            voice(ctx, {
+                type: 'sine',
+                freq: 2093 + (i * 392),
+                when: now + 0.35 + (i * 0.05),
+                duration: 0.5,
+                peak: 0.05,
+            });
+        }
+    } catch {
+        // Fail silent.
+    }
+}
+
 /// A short ascending arpeggio for job completion: tonic, fifth, octave. Deliberately no third —
 /// the client must not decide major versus minor; that call belongs to the server's analysis.
 export function fanfare(tonicMidi) {

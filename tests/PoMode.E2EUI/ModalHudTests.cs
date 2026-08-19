@@ -163,6 +163,9 @@ public class ModalHudTests(AppFixture app)
         await using var browser = await playwright.Chromium.LaunchAsync();
         var page = await AnalysedPageAsync(browser, app.BaseUrl, Progression((0, "maj", 2.0)));
 
+        // Completed jobs fold the checklist to one line; the badges live behind the toggle now.
+        await page.Locator(".job-progress .collapse-toggle").ClickAsync();
+
         var badges = page.Locator(".tier-badge");
         await Assertions.Expect(badges).ToHaveCountAsync(4); // one per pipeline stage
         // Every stage runs locally in this fixture (no models downloaded, no cloud keys).

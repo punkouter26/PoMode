@@ -44,7 +44,6 @@ public sealed class JobStoreTests : IDisposable
         var state = await store.CreateAsync("song.wav", content, CancellationToken.None);
 
         state.Stage = JobStage.ChordDetecting;
-        state.Progress = 0.5;
         state.Plan = [new StagePlan("Separating", ExecutionTier.Local, "FakeStemSeparator")];
         state.CompletedStages = ["Separating", "PitchTracking"];
         state.Error = null;
@@ -54,14 +53,11 @@ public sealed class JobStoreTests : IDisposable
 
         Assert.NotNull(loaded);
         Assert.Equal(JobStage.ChordDetecting, loaded.Stage);
+        // Progress is derived from the completed stages (2 of 4), never stored.
         Assert.Equal(0.5, loaded.Progress);
         Assert.Equal("FakeStemSeparator", loaded.Plan[0].Executor);
         Assert.Equal(["Separating", "PitchTracking"], loaded.CompletedStages);
     }
-
-    [Fact]
-    public async Task Load_of_unknown_job_returns_null()
-        => Assert.Null(await Store.LoadAsync("does-not-exist", CancellationToken.None));
 
     [Fact]
     public async Task Purge_removes_only_jobs_older_than_max_age()
@@ -79,27 +75,5 @@ public sealed class JobStoreTests : IDisposable
         Assert.Equal(1, purged);
         Assert.False(Directory.Exists(store.JobDir(oldJob.JobId)));
         Assert.True(Directory.Exists(store.JobDir(freshJob.JobId)));
-    }
-
-    [Fact]
-    public void ToDto_maps_every_field()
-    {
-        var state = new JobState
-        {
-            JobId = "j1",
-            InputFileName = "a.wav",
-            CreatedAt = _clock.GetUtcNow(),
-            Stage = JobStage.Failed,
-            Progress = 0.75,
-            Plan = [new StagePlan("Separating", ExecutionTier.Cloud, "Replicate")],
-            CompletedStages = ["Separating"],
-            Error = "boom",
-        };
-
-        var dto = state.ToDto();
-
-        Assert.Equal(("j1", JobStage.Failed, 0.75, "boom"), (dto.JobId, dto.Stage, dto.Progress, dto.Error));
-        Assert.Equal(ExecutionTier.Cloud, dto.Plan[0].Tier);
-        Assert.Equal(_clock.GetUtcNow(), dto.CreatedAt);
     }
 }

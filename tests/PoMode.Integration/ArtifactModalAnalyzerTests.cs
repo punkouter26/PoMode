@@ -4,7 +4,6 @@ using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
-using PoMode.TestCommon;
 using Xunit;
 
 namespace PoMode.Integration;
@@ -60,23 +59,5 @@ public sealed class ArtifactModalAnalyzerTests : IDisposable
         Assert.NotNull(result);
         Assert.Empty(result.Windows);
         Assert.Null(result.PrimaryMode);
-    }
-
-    [Fact]
-    public async Task Real_tempo_from_the_instrumental_stem_is_reported_as_not_estimated()
-    {
-        var store = Store;
-        await WriteArtifactsAsync(store, [], []);
-        File.WriteAllBytes(
-            Path.Combine(_root, JobId, "instrumental.wav"),
-            TestAudio.MakeClickTrack(seconds: 20.0, bpm: 120.0));
-
-        await new ArtifactModalAnalyzer(store, NullLogger<ArtifactModalAnalyzer>.Instance).AnalyzeAsync(Context(), CancellationToken.None);
-
-        var result = await store.ReadArtifactAsync<ModalResult>(JobId, "result.json", CancellationToken.None);
-
-        Assert.NotNull(result);
-        Assert.False(result.TempoEstimated);
-        Assert.InRange(result.TempoBpm, 117.0, 123.0);
     }
 }

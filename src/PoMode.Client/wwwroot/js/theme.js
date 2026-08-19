@@ -57,11 +57,6 @@ export function cycle() {
     return next;
 }
 
-/// Returns the active mode string without touching the DOM.
-export function current() {
-    return stored();
-}
-
 /// Tints the chrome with the detected key: --pm-key-hue (0-360) feeds the card accents, the
 /// reactive background, and the spectrum wall. The hue value comes from server-decided data.
 export function setKeyHue(hue) {

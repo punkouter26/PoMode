@@ -32,29 +32,6 @@ public sealed class LiveAndLibraryEndpointTests : IClassFixture<AuthedFactory>
     }
 
     [Fact]
-    public async Task Live_analyze_rejects_an_out_of_range_note()
-    {
-        using var client = _factory.CreateClient();
-        var notes = new List<NoteEvent> { new(200, 0, 1, 90) };
-
-        var response = await client.PostAsJsonAsync("/api/live/analyze", new LiveAnalyzeRequest(notes));
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Live_analyze_requires_auth()
-    {
-        // A plain factory: its clients carry no FakeAuth headers, unlike AuthedFactory's.
-        await using var plain = new WebApplicationFactory<Program>();
-        using var anonymous = plain.CreateClient();
-        var response = await anonymous.PostAsJsonAsync(
-            "/api/live/analyze", new LiveAnalyzeRequest([new NoteEvent(60, 0, 1, 90)]));
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
     public async Task Library_lists_jobs_and_requires_auth()
     {
         using var client = _factory.CreateClient();

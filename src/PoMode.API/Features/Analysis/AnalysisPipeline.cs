@@ -18,6 +18,9 @@ public sealed class AnalysisPipeline(
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
+    /// <summary>Clips shorter than this skip stem separation entirely (snippets, mic checks).</summary>
+    private const double ShortClipSeconds = 30.0;
+
     public async Task RunAsync(string jobId, CancellationToken ct)
     {
         // CancellationToken.None: this is a small local file read, and honoring a cancellation
@@ -45,26 +48,48 @@ public sealed class AnalysisPipeline(
             var lastPublished = -1.0;
             var context = new StageContext(jobId, store.JobDir(jobId), store.InputPath(state), fraction =>
             {
-                var overall = Math.Floor(state.Progress * 4) / 4.0 + Math.Clamp(fraction, 0, 1) / 4.0;
+                // Base progress derives from the completed stages; the in-stage fraction rides on
+                // top of the DTO only — nothing transient is ever written back to the state.
+                var overall = state.Progress + Math.Clamp(fraction, 0, 1) / 4.0;
                 if (overall - lastPublished < 0.01)
                 {
                     return;
                 }
                 lastPublished = overall;
-                state.Progress = overall;
-                _ = notifier.PublishAsync(state.ToDto(), CancellationToken.None);
+                _ = notifier.PublishAsync(state.ToDto(overall), CancellationToken.None);
             });
 
             await WritePreviewAsync(state, context, ct);
 
             var backingTask = Task.CompletedTask;
 
+            // Short-clip fast path: real separation costs minutes and gigabytes (local model) or
+            // money (cloud) for material where the mix alone analyzes fine. The skip fires only
+            // when the planned separator is one of those heavy kinds — placeholders and light
+            // test executors still run, so the mock banner and the fallback tests keep their
+            // meaning. Every later stage already falls back to the upload when no stems exist.
+            var separationPlan = state.Plan.FirstOrDefault(p => p.Stage == StageNames.Separating);
+            var heavySeparation = separationPlan is not null
+                && (separationPlan.Tier == ExecutionTier.Cloud
+                    || stemSeparators.FirstOrDefault(s => s.Name == separationPlan.Executor)?.UsesLocalModel == true);
+            if (heavySeparation
+                && !state.CompletedStages.Contains(StageNames.Separating)
+                && AudioDecoder.TryReadDurationSeconds(store.InputPath(state)) is { } inputSeconds
+                && inputSeconds < ShortClipSeconds)
+            {
+                var now = _time.GetUtcNow();
+                state.StageHistory.Add(new StageRecord(
+                    StageNames.Separating, ExecutionTier.Local, "SkippedShortClip", now, now));
+                state.CompletedStages.Add(StageNames.Separating);
+                await PersistAsync(state, ct);
+            }
+
             if (!state.CompletedStages.Contains(StageNames.Separating))
             {
-                await EnterStageAsync(state, JobStage.Separating, StageNames.Separating, 0, ct);
+                await EnterStageAsync(state, JobStage.Separating, StageNames.Separating, ct);
                 await RunWithFallbackAsync(state, StageNames.Separating, stemSeparators,
                     async (executor, token) => { await executor.SeparateAsync(context, token); return true; }, ct);
-                await CompleteStageAsync(state, StageNames.Separating, 0, ct);
+                await CompleteStageAsync(state, StageNames.Separating, ct);
                 // Stem executors write vocals.wav / instrumental.wav straight into the job
                 // folder, bypassing WriteArtifactAsync's blob mirroring — sync them now.
                 await store.MirrorToBlobAsync(jobId, ct);
@@ -72,33 +97,33 @@ public sealed class AnalysisPipeline(
 
             if (!state.CompletedStages.Contains(StageNames.PitchTracking))
             {
-                await EnterStageAsync(state, JobStage.PitchTracking, StageNames.PitchTracking, 1, ct);
+                await EnterStageAsync(state, JobStage.PitchTracking, StageNames.PitchTracking, ct);
                 var notes = await RunWithFallbackAsync(state, StageNames.PitchTracking, pitchTrackers,
                     (executor, token) => executor.TrackAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "notes.json", notes, ct);
                 // Best-effort and independent of the remaining stages, so it runs alongside them
                 // instead of serializing the job; awaited before the job is marked complete.
                 backingTask = TranscribeBackingAsync(state, context, ct);
-                await CompleteStageAsync(state, StageNames.PitchTracking, 1, ct);
+                await CompleteStageAsync(state, StageNames.PitchTracking, ct);
             }
 
             if (!state.CompletedStages.Contains(StageNames.ChordDetecting))
             {
-                await EnterStageAsync(state, JobStage.ChordDetecting, StageNames.ChordDetecting, 2, ct);
+                await EnterStageAsync(state, JobStage.ChordDetecting, StageNames.ChordDetecting, ct);
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "chords.json", chords, ct);
                 await WriteBeatGridAsync(state, context, ct);
                 // The recognizer and the beat grid shared one cached decode — drop the PCM now.
                 context.ReleaseAnalysisAudio();
-                await CompleteStageAsync(state, StageNames.ChordDetecting, 2, ct);
+                await CompleteStageAsync(state, StageNames.ChordDetecting, ct);
             }
 
             if (!state.CompletedStages.Contains(StageNames.ModalAnalysis))
             {
-                await EnterStageAsync(state, JobStage.ModalAnalysis, StageNames.ModalAnalysis, 3, ct);
+                await EnterStageAsync(state, JobStage.ModalAnalysis, StageNames.ModalAnalysis, ct);
                 await modalAnalyzer.AnalyzeAsync(context, ct);
-                await CompleteStageAsync(state, StageNames.ModalAnalysis, 3, ct);
+                await CompleteStageAsync(state, StageNames.ModalAnalysis, ct);
             }
 
             await backingTask; // never throws — it swallows its own failures
@@ -112,7 +137,6 @@ public sealed class AnalysisPipeline(
             }
 
             state.Stage = JobStage.Complete;
-            state.Progress = 1.0;
             await PersistAsync(state, ct);
         }
         catch (OperationCanceledException)
@@ -307,10 +331,9 @@ public sealed class AnalysisPipeline(
         throw lastFailure ?? new InvalidOperationException($"No executor ran for stage {stage}.");
     }
 
-    private async Task EnterStageAsync(JobState state, JobStage stage, string stageName, int index, CancellationToken ct)
+    private async Task EnterStageAsync(JobState state, JobStage stage, string stageName, CancellationToken ct)
     {
         state.Stage = stage;
-        state.Progress = index / 4.0;
         var planned = state.Plan.FirstOrDefault(p => p.Stage == stageName);
         state.StageHistory.Add(new StageRecord(
             stageName,
@@ -321,10 +344,9 @@ public sealed class AnalysisPipeline(
         await PersistAsync(state, ct);
     }
 
-    private async Task CompleteStageAsync(JobState state, string stageName, int index, CancellationToken ct)
+    private async Task CompleteStageAsync(JobState state, string stageName, CancellationToken ct)
     {
         state.CompletedStages.Add(stageName);
-        state.Progress = (index + 1) / 4.0;
         // Re-read the plan entry: RunWithFallbackAsync rewrites it when a fallback executor ran,
         // so the history records who actually did the work, not who was scheduled to.
         var recordIndex = state.StageHistory.FindLastIndex(r => r.Stage == stageName);

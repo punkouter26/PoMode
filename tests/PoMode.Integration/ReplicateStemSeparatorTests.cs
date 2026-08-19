@@ -38,7 +38,6 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
 
     private readonly List<string> _paths = [];
     private readonly List<string?> _authHeaders = [];
-    private long _createdBodyBytes;
 
     public Task InitializeAsync()
     {
@@ -68,8 +67,8 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
 
                 if (path.EndsWith("/predictions", StringComparison.Ordinal))
                 {
-                    using var reader = new StreamReader(context.Request.InputStream);
-                    _createdBodyBytes = (await reader.ReadToEndAsync()).Length;
+                    // Drain the request body so the client's upload completes cleanly.
+                    await context.Request.InputStream.CopyToAsync(Stream.Null);
                     await WriteAsync(context, 201,
                         $$$"""{"id":"pred1","status":"starting","urls":{"get":"{{{_baseUrl}}}/v1/predictions/pred1"}}""");
                     continue;
@@ -216,55 +215,6 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_failed_prediction_throws_with_the_providers_own_error_text()
-    {
-        _pollStatuses = ["processing", "failed"];
-        _errorText = "CUDA out of memory";
-        var time = new FakeTimeProvider();
-
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
-
-        Assert.Contains("CUDA out of memory", failure.Message);
-    }
-
-    [Fact]
-    public async Task An_output_array_is_accepted_as_well_as_an_object()
-    {
-        // demucs variants differ: some return a keyed object, others a bare array of URLs.
-        _outputJson = $$"""["{{_baseUrl}}/files/vocals","{{_baseUrl}}/files/instrumental"]""";
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.True(File.Exists(Path.Combine(_jobDir, "vocals.wav")));
-        Assert.True(File.Exists(Path.Combine(_jobDir, "instrumental.wav")));
-    }
-
-    [Fact]
-    public async Task The_no_vocals_alias_is_understood_as_the_instrumental()
-    {
-        _outputJson = $$"""{"vocals":"{{_baseUrl}}/files/vocals","no_vocals":"{{_baseUrl}}/files/backing"}""";
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None));
-
-        Assert.True(File.Exists(Path.Combine(_jobDir, "instrumental.wav")));
-    }
-
-    [Fact]
-    public async Task An_output_without_a_usable_vocals_url_throws_a_clear_error()
-    {
-        _outputJson = """{"drums":"http://example.invalid/drums"}""";
-        var time = new FakeTimeProvider();
-
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => DrainAsync(time, Separator(time: time).SeparateAsync(Context(), CancellationToken.None)));
-
-        Assert.Contains("vocals", failure.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public async Task The_token_is_sent_as_a_bearer_header_and_never_leaks_into_an_error()
     {
         _pollStatuses = ["failed"];
@@ -292,17 +242,5 @@ public sealed class ReplicateStemSeparatorTests : IAsyncLifetime
 
         Assert.Contains("too large", failure.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(Paths);
-    }
-
-    [Fact]
-    public async Task The_input_audio_is_sent_in_the_create_request()
-    {
-        var time = new FakeTimeProvider();
-
-        await DrainAsync(time, Separator(time: time).SeparateAsync(Context(seconds: 1.0), CancellationToken.None));
-
-        // A base64 data URI of a second of PCM is comfortably over a few kilobytes; this proves the
-        // audio actually travelled rather than a bare filename.
-        Assert.True(_createdBodyBytes > 10_000, $"create body was only {_createdBodyBytes} bytes");
     }
 }

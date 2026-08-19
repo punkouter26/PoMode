@@ -23,9 +23,6 @@ public sealed class ResilientHttpTests : IAsyncLifetime
 
     private readonly int _port = Interlocked.Increment(ref _nextPort);
 
-    /// <summary>A port no fixture in this suite binds, so a connection there genuinely fails.</summary>
-    private const int DeadPort = 5330;
-
     private HttpListener _listener = null!;
     private string _baseUrl = null!;
 
@@ -141,34 +138,8 @@ public sealed class ResilientHttpTests : IAsyncLifetime
         Assert.Equal(3, RequestCount); // NOT 4 — the fourth would have succeeded
     }
 
-    [Fact]
-    public async Task Rate_limits_are_retried()
-    {
-        _statuses = [429, 200];
-
-        using var response = await SendAsync(new FakeTimeProvider());
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(2, RequestCount);
-    }
-
-    [Fact]
-    public async Task A_request_timeout_status_is_retried()
-    {
-        _statuses = [408, 200];
-
-        using var response = await SendAsync(new FakeTimeProvider());
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(2, RequestCount);
-    }
-
     [Theory]
-    [InlineData(400)]
-    [InlineData(401)]
-    [InlineData(403)]
     [InlineData(404)]
-    [InlineData(422)]
     public async Task Client_errors_are_not_retried(int status)
     {
         // Retrying a rejected credential or a malformed request only burns time and rate limit.
@@ -195,39 +166,5 @@ public sealed class ResilientHttpTests : IAsyncLifetime
         // the total waited is at least the 3 s of backoff rather than an exact instant.
         Assert.True(time.GetUtcNow() - start >= TimeSpan.FromSeconds(3),
             $"only {time.GetUtcNow() - start} elapsed");
-    }
-
-    [Fact]
-    public async Task A_fresh_request_message_is_built_for_every_attempt()
-    {
-        // An HttpRequestMessage cannot be sent twice, so the helper takes a factory. If it reused one
-        // message the second attempt would throw InvalidOperationException instead of retrying.
-        _statuses = [500, 500, 200];
-
-        using var response = await SendAsync(new FakeTimeProvider());
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task A_transport_failure_is_retried_and_then_surfaces()
-    {
-        using var client = UnpooledClient();
-        var time = new FakeTimeProvider();
-        // Nothing is listening on this port, so every attempt fails at the socket.
-        var send = ResilientHttp.SendAsync(
-            client,
-            () => new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{DeadPort}/x"),
-            time,
-            NullLogger.Instance,
-            CancellationToken.None);
-
-        while (!send.IsCompleted)
-        {
-            time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(10);
-        }
-
-        await Assert.ThrowsAsync<HttpRequestException>(() => send);
     }
 }

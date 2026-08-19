@@ -6,7 +6,10 @@
 // component renders. Blazor only hears about discrete events (loaded, mode changed, failed, and
 // keyboard-driven play/pause so the button label can follow).
 
-import { setPlayhead, addLivePitch, clearLivePitch, setOverlay as canvasSetOverlay } from './canvas.js';
+import {
+    setPlayhead, addLivePitch, clearLivePitch, setOverlay as canvasSetOverlay,
+    setWaveform, dropNotes, resetFx,
+} from './canvas.js';
 import { detectPitch, openMicrophone } from './live-pitch.js';
 
 const states = new Map();
@@ -324,17 +327,32 @@ function startSources(state, offsetSeconds) {
     state.offset = offsetSeconds;
 }
 
+/// 0..1 RMS of this mixer's own output, for the canvas playhead trail. Cheap: one analyser read.
+function levelOf(state) {
+    if (!state.analyser) {
+        return 0;
+    }
+    state.analyser.getByteTimeDomainData(state.levelData);
+    let sum = 0;
+    for (let i = 0; i < state.levelData.length; i++) {
+        const v = (state.levelData[i] - 128) / 128;
+        sum += v * v;
+    }
+    return Math.sqrt(sum / state.levelData.length);
+}
+
 function tick(state) {
     if (!states.has(state.root)) {
         return;
     }
     if (state.playing) {
         const seconds = currentSeconds(state);
-        setPlayhead(state.canvas, seconds);
+        setPlayhead(state.canvas, seconds, levelOf(state));
         state.root.dataset.mixerTime = seconds.toFixed(3);
         if (seconds >= state.duration) {
             pauseInternal(state, state.duration);
             report(state, 'ended');
+            dropNotes(state.canvas); // end-of-song easter egg; play/seek clears it
             return;
         }
         if (NOTE_SOURCE_NAMES.some(source => state.noteSources[source])) {
@@ -365,6 +383,7 @@ async function playInternal(state) {
     startSources(state, state.offset >= state.duration ? 0 : state.offset);
     state.playing = true;
     applyGains(state, false);
+    resetFx(state.canvas); // any leftover end-of-song drop must vanish the moment audio restarts
     report(state, 'playing');
 }
 
@@ -378,6 +397,7 @@ function seekInternal(state, seconds) {
     } else {
         state.offset = target;
     }
+    resetFx(state.canvas);
     setPlayhead(state.canvas, target);
     refresh(state);
 }
@@ -617,6 +637,31 @@ export async function load(root, urls) {
 
     applyGains(state, true);
     report(state, 'ready');
+
+    // Hand the canvas the vocal waveform (the mix stands in when separation wrote no vocals):
+    // ~1k min/max columns is plenty for a backdrop and cheap to extract once per load.
+    const waveSource = state.buffers.vocals ?? state.buffers.mix;
+    if (waveSource) {
+        const channel = waveSource.getChannelData(0);
+        const columns = 1024;
+        const peaks = new Float32Array(columns * 2);
+        const samplesPerColumn = Math.max(Math.floor(channel.length / columns), 1);
+        for (let column = 0; column < columns; column++) {
+            let low = 0;
+            let high = 0;
+            const start = column * samplesPerColumn;
+            const end = Math.min(start + samplesPerColumn, channel.length);
+            for (let i = start; i < end; i += 8) { // stride 8: a backdrop needs no exactness
+                const value = channel[i];
+                if (value < low) low = value;
+                if (value > high) high = value;
+            }
+            peaks[column * 2] = low;
+            peaks[(column * 2) + 1] = high;
+        }
+        setWaveform(state.canvas, peaks, waveSource.duration);
+    }
+
     if (state.frame === null) {
         state.frame = requestAnimationFrame(() => tick(state));
     }
