@@ -37,6 +37,30 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<VisualizationPayload?> GetVisualAsync(string jobId)
         => http.GetFromJsonAsync<VisualizationPayload>($"api/analysis/{jobId}/visual");
 
+    /// <summary>Every derived song/melody statistic, plus the fingerprint paragraph.</summary>
+    public Task<SongStats?> GetStatsAsync(string jobId)
+        => http.GetFromJsonAsync<SongStats>($"api/analysis/{jobId}/stats");
+
+    /// <summary>The interpreters this server can run, with live availability.</summary>
+    public Task<List<InterpreterOptionDto>?> GetInterpretersAsync()
+        => http.GetFromJsonAsync<List<InterpreterOptionDto>>("api/analysis/interpreters");
+
+    /// <summary>
+    /// A written interpretation of the statistics. <paramref name="interpreter"/> names one
+    /// explicitly — the only way to reach a paid cloud model; omitting it takes the free default.
+    /// Returns null when the job has no result yet rather than throwing, so a caller racing the
+    /// pipeline degrades to "not ready" instead of an error toast.
+    /// </summary>
+    public async Task<SongInterpretationDto?> GetInterpretationAsync(string jobId, string? interpreter = null)
+    {
+        var url = $"api/analysis/{jobId}/interpretation"
+            + (string.IsNullOrWhiteSpace(interpreter) ? "" : $"?interpreter={Uri.EscapeDataString(interpreter)}");
+        var response = await http.GetAsync(url);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<SongInterpretationDto>()
+            : null;
+    }
+
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 

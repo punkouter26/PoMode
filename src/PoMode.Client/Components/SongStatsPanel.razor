@@ -1,0 +1,419 @@
+@using System.Globalization
+@using PoMode.Shared.Analysis
+@using PoMode.Client.Services
+@inject AnalysisClient Client
+
+@* Song statistics and their written interpretation.
+
+   One component serves both views because both need the same fetch: Basic shows only the
+   fingerprint paragraph (it must stay a single screen), Advanced adds the detail boxes and the
+   interpreter. Every number and every word of prose is decided server-side — this file only places
+   values into markup, the same rule the canvas follows. *@
+
+@if (_stats is { } stats)
+{
+    <RadzenCard class="song-stats-card">
+        <div class="fingerprint">
+            <span class="fingerprint-label">Song fingerprint</span>
+            <p class="fingerprint-text">@stats.Fingerprint</p>
+        </div>
+
+        @if (!Basic)
+        {
+            <div class="song-stats-grid">
+                <div class="stat-box">
+                    <span class="stat-title">Melodic Motion</span>
+                    <div class="stat-highlight">
+                        <span class="stat-badge">@($"{stats.Motion.StepPercent:0}% steps")</span>
+                        <span class="stat-badge">@($"{stats.Motion.LeapPercent:0}% leaps")</span>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-row"><span>Repeated pitches:</span> <strong>@($"{stats.Motion.RepeatPercent:0.0}%")</strong></div>
+                        <div class="stat-row"><span>Average interval:</span> <strong>@($"{stats.Motion.AverageIntervalSemitones:0.00} st")</strong></div>
+                        @if (stats.BiggestLeap is { } leap)
+                        {
+                            <div class="stat-row">
+                                <span>Widest leap:</span>
+                                <strong>@($"{leap.Semitones} st {(leap.Ascending ? "up" : "down")} · {leap.FromLabel}→{leap.ToLabel} at {Clock(leap.AtSec)}")</strong>
+                            </div>
+                        }
+                        <div class="stat-row"><span>Contour:</span> <strong>@($"{stats.Contour.Shape} ({stats.Contour.RisingPercent:0}% rising)")</strong></div>
+                        <div class="stat-row"><span>Start to finish:</span> <strong>@($"{stats.Contour.NetSemitones:+#;-#;0} st")</strong></div>
+                    </div>
+                </div>
+
+                <div class="stat-box">
+                    <span class="stat-title">Tessitura</span>
+                    @if (stats.Tessitura is { } voice)
+                    {
+                        <div class="stat-highlight">
+                            <span class="range-span">@($"{voice.LowLabel} – {voice.HighLabel}")</span>
+                            <span class="stat-badge">@($"{voice.SpanSemitones} semitones")</span>
+                        </div>
+                        <div class="stat-details">
+                            <div class="stat-row"><span>Centre of the voice:</span> <strong>@voice.MedianLabel</strong></div>
+                            <div class="stat-row stat-note">
+                                <span>Where the voice actually sits — the middle 80% of notes, so one showpiece high note cannot widen it.</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stat-details"><div class="stat-row"><span>No melody notes were transcribed.</span></div></div>
+                    }
+                </div>
+
+                <div class="stat-box">
+                    <span class="stat-title">Rhythm</span>
+                    @if (stats.Rhythm.BeatGridUsable)
+                    {
+                        <div class="stat-highlight">
+                            <span class="stat-badge">@($"{stats.Rhythm.OnBeatPercent:0}% on the beat")</span>
+                            <span class="stat-badge @(stats.Rhythm.SyncopationPercent >= 25 ? "badge-warning" : "")">
+                                @($"{stats.Rhythm.SyncopationPercent:0}% syncopated")
+                            </span>
+                        </div>
+                        <div class="stat-details">
+                            @foreach (var bucket in stats.Rhythm.NoteValues)
+                            {
+                                <div class="stat-row"><span>@bucket.Label:</span> <strong>@($"{bucket.Count} ({bucket.Percent:0}%)")</strong></div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        @* Saying "0% syncopated" here would be a fabricated number, not a measured one. *@
+                        <div class="stat-details">
+                            <div class="stat-row"><span>No reliable beat grid was found, so onset placement is unknown.</span></div>
+                        </div>
+                    }
+                </div>
+
+                <div class="stat-box">
+                    <span class="stat-title">Phrases</span>
+                    <div class="stat-highlight">
+                        <span class="range-span">@stats.Phrases.Count</span>
+                        <span class="stat-badge">@($"avg {stats.Phrases.AverageSec:0.0}s")</span>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-row"><span>Notes per phrase:</span> <strong>@($"{stats.Phrases.AverageNotes:0.0}")</strong></div>
+                        <div class="stat-row"><span>Longest phrase:</span> <strong>@($"{stats.Phrases.LongestSec:0.0}s from {Clock(stats.Phrases.LongestStartSec)}")</strong></div>
+                        <div class="stat-row stat-note"><span>Split wherever the singer rests longer than half a second.</span></div>
+                    </div>
+                </div>
+
+                <div class="stat-box">
+                    <span class="stat-title">Harmony</span>
+                    <div class="stat-highlight">
+                        <span class="range-span">@($"{stats.ChordVocabulary.UniqueChords} chords")</span>
+                        @if (stats.HarmonicRhythm.BeatGridUsable && stats.HarmonicRhythm.AverageChordBeats > 0)
+                        {
+                            <span class="stat-badge">@($"every {stats.HarmonicRhythm.AverageChordBeats:0.0} beats")</span>
+                        }
+                        else if (stats.HarmonicRhythm.AverageChordSec > 0)
+                        {
+                            <span class="stat-badge">@($"every {stats.HarmonicRhythm.AverageChordSec:0.0}s")</span>
+                        }
+                    </div>
+                    <div class="stat-details">
+                        @foreach (var chord in stats.ChordVocabulary.TopChords)
+                        {
+                            <div class="stat-row"><span>@chord.Symbol:</span> <strong>@($"{chord.Count} ({chord.Percent:0}%)")</strong></div>
+                        }
+                        @foreach (var move in stats.ChordVocabulary.TopMoves)
+                        {
+                            <div class="stat-row"><span>@($"{move.From} → {move.To}:")</span> <strong>@($"{move.Count}×")</strong></div>
+                        }
+                    </div>
+                </div>
+
+                <div class="stat-box">
+                    <span class="stat-title">Melody vs Chord</span>
+                    @if (stats.ChordTones.ClassifiedNotes > 0)
+                    {
+                        <div class="stat-highlight">
+                            <span class="stat-badge @(stats.ChordTones.ConsonancePercent >= 60 ? "badge-success" : "")">
+                                @($"{stats.ChordTones.ConsonancePercent:0}% chord tones")
+                            </span>
+                        </div>
+                        <div class="stat-details">
+                            <div class="stat-row"><span>Root:</span> <strong>@($"{stats.ChordTones.RootPercent:0.0}%")</strong></div>
+                            <div class="stat-row"><span>Third:</span> <strong>@($"{stats.ChordTones.ThirdPercent:0.0}%")</strong></div>
+                            <div class="stat-row"><span>Fifth:</span> <strong>@($"{stats.ChordTones.FifthPercent:0.0}%")</strong></div>
+                            <div class="stat-row"><span>Seventh:</span> <strong>@($"{stats.ChordTones.SeventhPercent:0.0}%")</strong></div>
+                            <div class="stat-row"><span>Other tension:</span> <strong>@($"{stats.ChordTones.TensionPercent:0.0}%")</strong></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="stat-details">
+                            <div class="stat-row"><span>No chord was sounding under the transcribed notes.</span></div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ---- Charts ----
+           Both views get these: they are the two questions a listener actually asks — "why did it
+           say that key?" and "what notes is the singer using?" — and a bar answers each far faster
+           than a paragraph. Every value is decided server-side; this only maps numbers to widths. *@
+        <div class="charts">
+            <div class="chart-block">
+                <span class="stat-title">Why this key and mode?</span>
+                <p class="chart-caption">
+                    The song is split into short windows and each one is scored against every scale.
+                    These are the winners. @ModeVerdict(stats)
+                </p>
+                @if (stats.ModeVotes.Count == 0)
+                {
+                    <p class="chart-empty">Not enough of the vocal was clear enough to name a mode.</p>
+                }
+                else
+                {
+                    <div class="chart-rows">
+                        @foreach (var vote in stats.ModeVotes)
+                        {
+                            <div class="chart-row @(vote.IsPrimary ? "row-winner" : "")">
+                                <span class="chart-label" title="@Fingerprint(vote)">
+                                    @vote.Mode
+                                    @if (vote.IsPrimary)
+                                    {
+                                        <span class="chart-crown" aria-label="winner">★</span>
+                                    }
+                                </span>
+                                <div class="bar-track">
+                                    <div class="bar-fill @(vote.IsPrimary ? "winner-fill" : "runner-fill")"
+                                         style="width:@(Width(vote.WindowPercent))"></div>
+                                </div>
+                                <span class="chart-value">@($"{vote.WindowPercent:0}%")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="chart-block">
+                <span class="stat-title">Which notes of the scale does the vocal sing?</span>
+                <p class="chart-caption">
+                    Every note counted by its distance from the home note (@stats.TonicName).
+                    @if (stats.PrimaryMode is not null)
+                    {
+                        <text>
+                            Purple notes belong to @stats.PrimaryMode. Pink ones are the giveaway notes
+                            that make it @stats.PrimaryMode and not a neighbouring scale. Red ones sit
+                            outside the scale altogether.
+                        </text>
+                    }
+                </p>
+                <div class="chart-rows">
+                    @foreach (var degree in stats.ScaleDegrees)
+                    {
+                        <div class="chart-row @(degree.NoteCount == 0 ? "row-unsung" : "")">
+                            <span class="chart-label">
+                                <span class="swatch @DegreeClass(degree)"></span>
+                                @($"{degree.NoteName} · {degree.DegreeLabel}")
+                            </span>
+                            <div class="bar-track">
+                                <div class="bar-fill @DegreeClass(degree)-fill"
+                                     style="width:@(Width(ScaledPercent(stats, degree)))"></div>
+                            </div>
+                            <span class="chart-value">@($"{degree.Percent:0}%")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ---- Written interpretation ----
+           Rendered in both views: the detail boxes are for study, but the paragraph saying what
+           the numbers mean is the part a casual listener actually wants, so Basic gets it too. *@
+        <div class="interpretation">
+            <div class="interpretation-head">
+                <span class="stat-title">What this means</span>
+                <div class="interpretation-controls">
+                    @if (_interpreters is { Count: > 0 })
+                    {
+                        <select class="interpreter-select" @bind="_chosen" disabled="@_busy"
+                                aria-label="Which interpreter writes the explanation">
+                            @foreach (var option in _interpreters)
+                            {
+                                <option value="@option.Name" disabled="@(!option.Available)">@Label(option)</option>
+                            }
+                        </select>
+                    }
+                    <RadzenButton Text="@(_busy ? "Writing…" : "Interpret")" Size="ButtonSize.Small"
+                                  ButtonStyle="ButtonStyle.Primary" Disabled="@_busy"
+                                  Click="@InterpretAsync" />
+                </div>
+            </div>
+
+            @if (_error is { } error)
+            {
+                <p class="interpretation-error">@error</p>
+            }
+            else if (_interpretation is { } interpretation)
+            {
+                <p class="interpretation-source">
+                    @($"Written by {interpretation.Interpreter}")
+                    @if (!interpretation.UsedLlm)
+                    {
+                        @* Not a model. Saying so beats letting the prose imply one. *@
+                        <span class="interpretation-tag">rule-based, no model</span>
+                    }
+                    else if (interpretation.Tier == ExecutionTier.Cloud)
+                    {
+                        <span class="interpretation-tag tag-cloud">paid cloud model</span>
+                    }
+                    else
+                    {
+                        <span class="interpretation-tag tag-local">local model</span>
+                    }
+                </p>
+                @foreach (var paragraph in Paragraphs(interpretation.Text))
+                {
+                    <p class="interpretation-text">@paragraph</p>
+                }
+            }
+            else
+            {
+                @* "above" would be a lie in Basic, where no detail boxes render. *@
+                <p class="interpretation-hint">
+                    Every statistic is measured, never guessed. Press Interpret to have a model
+                    explain what they mean for this song.
+                </p>
+            }
+        </div>
+    </RadzenCard>
+}
+
+@code {
+    [Parameter, EditorRequired] public required string JobId { get; set; }
+
+    /// <summary>Basic view shows only the fingerprint paragraph — it has to fit one screen.</summary>
+    [Parameter] public bool Basic { get; set; }
+
+    private SongStats? _stats;
+    private List<InterpreterOptionDto>? _interpreters;
+    private SongInterpretationDto? _interpretation;
+    private string? _chosen;
+    private string? _error;
+    private bool _busy;
+
+    /// <summary>The job the loaded statistics belong to, so a re-render for a new job refetches.</summary>
+    private string? _loadedJobId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedJobId == JobId)
+        {
+            return;
+        }
+
+        _loadedJobId = JobId;
+        _stats = null;
+        _interpretation = null;
+        _error = null;
+
+        _stats = await Client.GetStatsAsync(JobId);
+
+        // The interpreter list describes the server, not the song, so it is fetched once per
+        // component instance and reused across jobs.
+        if (_interpreters is null)
+        {
+            _interpreters = await Client.GetInterpretersAsync();
+            _chosen = _interpreters?.FirstOrDefault(option => option.IsDefault)?.Name;
+        }
+    }
+
+    private async Task InterpretAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _interpretation = await Client.GetInterpretationAsync(JobId, _chosen);
+            if (_interpretation is null)
+            {
+                _error = "The analysis for this job is no longer available.";
+            }
+        }
+        catch (Exception ex)
+        {
+            // A local model server can be stopped between the availability probe and the request.
+            _error = $"Could not write an interpretation: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Label(InterpreterOptionDto option)
+    {
+        var kind = !option.UsesLlm ? "rule-based"
+            : option.Tier == ExecutionTier.Cloud ? "cloud model"
+            : "local model";
+        return option.Available ? $"{option.Name} ({kind})" : $"{option.Name} — unavailable";
+    }
+
+    private static string Clock(double seconds) => $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
+
+    /// <summary>One plain sentence on how decisive the vote was, so a bar chart is not read blind.</summary>
+    private static string ModeVerdict(SongStats stats)
+    {
+        if (stats.ModeVotes.Count == 0)
+        {
+            return "";
+        }
+
+        var winner = stats.ModeVotes[0];
+
+        // Counting every mode with a single window would call a nine-way tie out of what is really a
+        // two-horse race with noise. Only genuine contenders are named.
+        const double Contender = 10.0;
+        var contenders = stats.ModeVotes.Count(vote => vote.WindowPercent >= Contender);
+
+        return winner.WindowPercent switch
+        {
+            >= 80 => $"{winner.Mode} wins almost everywhere, so this is a confident answer.",
+            >= 50 => $"{winner.Mode} wins most of the song, with the others turning up in places.",
+            _ when contenders > 1 =>
+                $"{winner.Mode} leads, but no scale takes over — {contenders} of them share the song.",
+            _ => $"{winner.Mode} leads, though only across part of the song.",
+        };
+    }
+
+    /// <summary>The evidence for a mode, shown on hover: the degrees that identify it.</summary>
+    private static string Fingerprint(ModeVote vote)
+        => vote.CharacteristicDegrees.Count == 0
+            ? $"{vote.Mode} won {vote.WindowsWon} windows"
+            : $"{vote.Mode} is identified by its {string.Join(" and ", vote.CharacteristicDegrees)}";
+
+    /// <summary>
+    /// Bars are drawn against the most-sung degree, not against 100%. A melody spread over seven
+    /// degrees peaks near 20%, so absolute widths would render every bar as a sliver and hide the
+    /// shape. The printed number stays the true percentage.
+    /// </summary>
+    private static double ScaledPercent(SongStats stats, DegreeUsage degree)
+    {
+        var peak = stats.ScaleDegrees.Max(entry => entry.Percent);
+        return peak <= 0 ? 0 : degree.Percent / peak * 100.0;
+    }
+
+    private static string Width(double percent)
+        => $"{Math.Clamp(percent, 0, 100).ToString("0.##", CultureInfo.InvariantCulture)}%";
+
+    /// <summary>Reuses the canvas's colour language: characteristic, in-mode, outside.</summary>
+    private static string DegreeClass(DegreeUsage degree)
+        => degree.IsCharacteristic ? "characteristic"
+            : degree.InPrimaryMode ? "in-mode"
+            : "outside";
+
+    /// <summary>
+    /// Splits model prose on blank lines. The prompt asks for plain paragraphs, but a model may
+    /// still emit single newlines, so only a blank line starts a new one.
+    /// </summary>
+    private static IEnumerable<string> Paragraphs(string text)
+        => text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}

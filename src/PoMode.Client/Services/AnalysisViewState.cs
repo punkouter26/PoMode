@@ -7,7 +7,12 @@ namespace PoMode.Client.Services;
 /// </summary>
 public sealed class AnalysisViewState
 {
-    public bool IsBasic { get; private set; }
+    /// <summary>
+    /// Starts true: a first-time view should be the clean single-screen player, not the full theory
+    /// suite. Advanced is one click away in the header, and <c>?view=advanced</c> still wins — any
+    /// caller that needs the HUD must say so rather than lean on the default.
+    /// </summary>
+    public bool IsBasic { get; private set; } = true;
 
     public bool IsAdvanced => !IsBasic;
 

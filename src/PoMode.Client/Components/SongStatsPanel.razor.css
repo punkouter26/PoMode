@@ -1,0 +1,317 @@
+/* Deliberately mirrors AdvancedStatsPanel's tokens and box shapes: the two panels sit next to each
+   other in the Advanced view, so a second visual language would read as a second application. */
+
+.song-stats-card {
+    margin-top: 1rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    background: var(--pm-surface);
+    border: 1px solid var(--pm-border);
+    border-radius: 8px;
+}
+
+/* ---- Fingerprint: the one element Basic view also shows ---- */
+
+.fingerprint {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.fingerprint-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+}
+
+.fingerprint-text {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--pm-fg);
+}
+
+/* ---- Detail boxes ---- */
+
+.song-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.stat-box {
+    background: var(--pm-lane-bg);
+    border: 1px solid var(--pm-border);
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.stat-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+}
+
+.stat-highlight {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.range-span {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--pm-fg);
+}
+
+.stat-badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background: hsl(var(--pm-key-hue) 60% 55% / 0.15);
+    color: var(--pm-accent);
+    font-weight: 600;
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+}
+
+.stat-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--pm-fg-muted);
+}
+
+.stat-row strong {
+    color: var(--pm-fg);
+    text-align: right;
+}
+
+/* An explanatory line, not a measurement: no value column, so it spans the row. */
+.stat-note {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+/* ---- Written interpretation ---- */
+
+.interpretation {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    border-top: 1px solid var(--pm-border);
+    padding-top: 1rem;
+}
+
+.interpretation-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.interpretation-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.interpreter-select {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-lane-bg);
+    color: var(--pm-fg);
+}
+
+.interpretation-source {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.interpretation-tag {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 10px;
+    background: var(--pm-lane-bg);
+    border: 1px solid var(--pm-border);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.tag-local {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border-color: transparent;
+}
+
+/* Amber, matching badge-warning: this one costs money. */
+.tag-cloud {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border-color: transparent;
+}
+
+.interpretation-text {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--pm-fg);
+}
+
+.interpretation-hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--pm-fg-muted);
+}
+
+.interpretation-error {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #f87171;
+}
+
+/* ---- Charts ----
+   Deliberately CSS bars rather than a charting control: two ranked lists of percentages need a
+   width and a colour, and a chart library would add a dependency, a render pass and a second
+   colour vocabulary for no gain. The swatch/fill colours match AnalysisCanvas and
+   AdvancedStatsPanel exactly, so a colour means the same thing everywhere in the app. */
+
+.charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+    border-top: 1px solid var(--pm-border);
+    padding-top: 1rem;
+}
+
+.chart-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.chart-caption {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--pm-fg-muted);
+}
+
+.chart-empty {
+    margin: 0;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--pm-fg-muted);
+}
+
+.chart-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.chart-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 44px;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.82rem;
+}
+
+.chart-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--pm-fg);
+    white-space: nowrap;
+}
+
+.chart-value {
+    text-align: right;
+    color: var(--pm-fg-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.row-winner .chart-label {
+    font-weight: 700;
+}
+
+/* A degree the singer never touches is still worth a row — the gap is what shows the scale. */
+.row-unsung {
+    opacity: 0.45;
+}
+
+.chart-crown {
+    color: #fbbf24;
+}
+
+.swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+}
+
+.bar-track {
+    height: 8px;
+    background: var(--pm-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    /* Bars grow when a new job's numbers arrive; motion makes the change legible. */
+    transition: width 0.35s ease;
+}
+
+.winner-fill { background: #818cf8; }
+.runner-fill { background: var(--pm-fg-muted); }
+
+.swatch.characteristic, .characteristic-fill { background: #ec4899; }
+.swatch.in-mode, .in-mode-fill { background: #6366f1; }
+.swatch.outside, .outside-fill { background: #ef4444; }
+
+@media (prefers-reduced-motion: reduce) {
+    .bar-fill {
+        transition: none;
+    }
+}

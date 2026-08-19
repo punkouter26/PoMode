@@ -9,5 +9,5 @@ namespace PoMode.API.Features.Diagnostics;
 /// </summary>
 public static class ProviderKeys
 {
-    public static readonly string[] All = ["ReplicateApiToken", "LalalApiKey"];
+    public static readonly string[] All = ["ReplicateApiToken", "LalalApiKey", "AzureOpenAiApiKey"];
 }

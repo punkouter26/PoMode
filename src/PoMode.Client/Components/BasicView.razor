@@ -61,6 +61,10 @@
                            TonicName="@Result.TonicName" TonicPitchClass="@Result.TonicPitchClass" Basic="true" />
             </div>
         }
+
+        @* Last on the page, under the player: the fingerprint paragraph and the written
+           interpretation. Basic omits the detail boxes so the screen stays readable. *@
+        <SongStatsPanel JobId="@Status.JobId" Basic="true" />
     </RadzenCard>
 </div>
 

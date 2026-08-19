@@ -16,7 +16,9 @@ public class StemMixerTests(AppFixture app)
     private static async Task<IPage> ReadyMixerPageAsync(IBrowser browser, string baseUrl)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
-        await page.GotoAsync(baseUrl);
+        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
+        // once the job finishes, and the app now opens in Basic.
+        await page.GotoAsync($"{baseUrl}/?view=advanced");
 
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-mixer-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, EightSeconds());

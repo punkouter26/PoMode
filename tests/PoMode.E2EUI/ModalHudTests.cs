@@ -56,7 +56,9 @@ public class ModalHudTests(AppFixture app)
     private static async Task<IPage> AnalysedPageAsync(IBrowser browser, string baseUrl, byte[] audio)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
-        await page.GotoAsync(baseUrl);
+        // Explicit: the HUD, the degree grid and the export menu are Advanced-only, and the app now
+        // opens in Basic. Asking for the view under test beats depending on a default.
+        await page.GotoAsync($"{baseUrl}/?view=advanced");
 
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-hud-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, audio);

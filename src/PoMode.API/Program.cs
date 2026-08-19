@@ -13,6 +13,7 @@ using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Session;
+using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.StemSeparation;
 using PoMode.API.Features.UrlIngest;
 using PoMode.API.Infrastructure;
@@ -71,6 +72,12 @@ builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, ViterbiChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<ArtifactModalAnalyzer>();
+// Interpreter order is ExecutionPlanner.EffectiveRank, not registration order: local LLM, then the
+// deterministic template, then paid cloud (only ever reachable by name).
+builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
+builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
+builder.Services.AddSingleton<ISongInterpreter, AzureOpenAiSongInterpreter>();
+builder.Services.AddSingleton<SongInterpreterSelector>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
 builder.Services.AddSingleton<CloudCredentials>();
 builder.Services.AddSingleton<ExecutionPlanner>();
@@ -115,6 +122,7 @@ app.MapWebRuntime();
 app.MapMidiExport();
 app.MapMusicXmlExport();
 app.MapChordChart();
+app.MapSongStats();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 app.MapFallbackToFile("index.html");

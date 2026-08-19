@@ -157,10 +157,15 @@
                 <span class="mixer-pulse-dot" aria-hidden="true"></span>
             }
             <RadzenText class="mixer-note" Text="@StatusText" />
-            <button type="button" class="mixer-debug-toggle" @onclick="() => _showDebug = !_showDebug"
-                    title="Toggle audio engine diagnostics">
-                🐞 @(_showDebug ? "Hide Info" : "Debug Info")
-            </button>
+            @* Engine diagnostics are an Advanced-view affordance; Basic stays a clean one-screen
+               player, so neither the toggle nor the panel below renders there. *@
+            @if (!Basic)
+            {
+                <button type="button" class="mixer-debug-toggle" @onclick="() => _showDebug = !_showDebug"
+                        title="Toggle audio engine diagnostics">
+                    🐞 @(_showDebug ? "Hide Info" : "Debug Info")
+                </button>
+            }
         </div>
         @if (_loadError is not null)
         {
@@ -169,7 +174,7 @@
                 <button type="button" class="mixer-retry-btn" @onclick="RetryLoad">↻ Retry</button>
             </div>
         }
-        @if (_showDebug)
+        @if (!Basic && _showDebug)
         {
             <div class="mixer-debug-panel">
                 <div class="debug-row"><span>Audio Engine:</span> <strong>@(_status is "ready" ? "Active (Web Audio)" : _status)</strong></div>
@@ -485,52 +490,6 @@
         StateHasChanged();
     }
 
-    /// <summary>mixer.js reports its M-key stems-mute shortcut so the toggle stays truthful.</summary>
-    [JSInvokable]
-    public void OnStemsMutedChanged(bool muted)
-    {
-        _stemsMuted = muted;
-        StateHasChanged();
-    }
-
-    /// <summary>mixer.js reports its 1/2/3 source mode shortcut so the highlighted button tracks.</summary>
-    [JSInvokable]
-    public void OnModeShortcut(string mode)
-    {
-        _mode = mode;
-        // Muting off when the user explicitly picks a source again — the keyboard is intent.
-        if (_stemsMuted && mode != _mode)
-        {
-            _stemsMuted = false;
-            _ = _module?.InvokeVoidAsync("setStemsMuted", _root, false);
-        }
-        StateHasChanged();
-    }
-
-    /// <summary>mixer.js reports its V/B synth toggles so the Synth buttons stay in sync.</summary>
-    [JSInvokable]
-    public void OnSynthToggle(string source, bool on)
-    {
-        if (!ApplySynthFlags(source, on))
-        {
-            return;
-        }
-        if (source == "vocal")
-        {
-            // The keyboard path already toggled the audio JS-side; mirror the canvas glow too,
-            // so the V key behaves exactly like the Synth vocal button.
-            _ = _module?.InvokeVoidAsync("setOverlay", _root, source, on);
-        }
-        StateHasChanged();
-    }
-
-    /// <summary>mixer.js fires K so the karaoke button label and score can refresh.</summary>
-    [JSInvokable]
-    public void OnKaraokeShortcut()
-    {
-        _ = SetKaraokeAsync(!_karaokeOn);
-    }
-
     /// <summary>Grades follow the arcade convention: rare S on top, honest D at the bottom.</summary>
     private static string GradeOf(int score) => score switch
     {
@@ -641,8 +600,8 @@
     {
         if (_module is null) return;
         await SetNotesAsync(source, !SynthOn(source));
-        // Every synth layer counts, including 'backing' (only reachable via the B key in Basic
-        // view): unmuting while any layer still sounds would stack it on top of the stems.
+        // Every synth layer counts, including 'backing' — Basic view has no button for it, but a
+        // layer left on from Advanced view still sounds, and unmuting would stack it on the stems.
         var anySolo = AnySynthOn;
         if (_stemsMuted != anySolo)
         {

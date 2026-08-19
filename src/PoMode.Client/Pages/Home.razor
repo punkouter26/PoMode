@@ -213,6 +213,9 @@ else if (ViewState.IsAdvanced)
             </div>
         </div>
 
+        @* Bottom of the page in both views: the statistics and their written interpretation. *@
+        <SongStatsPanel JobId="@_status!.JobId" />
+
         @if (_landscapeOn)
         {
             <RadzenCard class="landscape-card">

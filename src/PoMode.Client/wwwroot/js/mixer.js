@@ -402,9 +402,11 @@ function seekInternal(state, seconds) {
     refresh(state);
 }
 
-/// Global transport keys: Space toggles play/pause, comma jumps back to the start. Skipped while
-/// the user is typing. preventDefault on Space stops the page scrolling and stops a focused
-/// button firing its own click on keyup, which would undo the toggle.
+/// The whole keyboard surface: Space toggles play/pause, comma jumps back to the start. Every other
+/// control is a visible button — deliberately, so there is nothing to memorise and nothing that can
+/// silently disagree with what the buttons show. Skipped while the user is typing. preventDefault on
+/// Space stops the page scrolling and stops a focused button firing its own click on keyup, which
+/// would undo the toggle.
 function onKeyDown(state, event) {
     const target = event.target;
     if (event.repeat
@@ -422,39 +424,6 @@ function onKeyDown(state, event) {
         togglePlayback(state);
     } else if (event.key === ',') {
         seekInternal(state, 0);
-    } else if (event.key === 'm' || event.key === 'M') {
-        // Stems mute toggle — independent of the source mode so synth-only listening is one key.
-        const next = !state.stemsMuted;
-        state.stemsMuted = next;
-        applyStemMuting(state, next);
-        state.root.dataset.mixerStemsMuted = next ? 'muted' : 'audible';
-        state.dotNet?.invokeMethodAsync('OnStemsMutedChanged', next);
-    } else if (event.key === '1') {
-        setModeInternal(state, 'full');
-        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'full');
-    } else if (event.key === '2') {
-        setModeInternal(state, 'vocals');
-        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'vocals');
-    } else if (event.key === '3') {
-        setModeInternal(state, 'backing');
-        state.dotNet?.invokeMethodAsync('OnModeShortcut', 'backing');
-    } else if (event.key === 'v' || event.key === 'V') {
-        const next = !state.noteSources.vocal;
-        state.noteSources.vocal = next;
-        if (!next) stopSynthVoices(state, 'vocal');
-        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'vocal', next);
-    } else if (event.key === 'b' || event.key === 'B') {
-        const next = !state.noteSources.backing;
-        state.noteSources.backing = next;
-        if (!next) stopSynthVoices(state, 'backing');
-        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'backing', next);
-    } else if (event.key === 'c' || event.key === 'C') {
-        const next = !state.noteSources.chords;
-        state.noteSources.chords = next;
-        if (!next) stopSynthVoices(state, 'chords');
-        state.dotNet?.invokeMethodAsync('OnSynthToggle', 'chords', next);
-    } else if (event.key === 'k' || event.key === 'K') {
-        state.dotNet?.invokeMethodAsync('OnKaraokeShortcut');
     }
 }
 

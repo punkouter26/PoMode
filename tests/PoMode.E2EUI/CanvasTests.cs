@@ -15,7 +15,9 @@ public class CanvasTests(AppFixture app)
     /// populated and the chord lane is legitimately empty.</summary>
     private static async Task<ILocator> UploadAndGetCanvasAsync(IPage page, string baseUrl)
     {
-        await page.GotoAsync(baseUrl);
+        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
+        // once the job finishes, and the app now opens in Basic.
+        await page.GotoAsync($"{baseUrl}/?view=advanced");
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-canvas-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
         try

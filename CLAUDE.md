@@ -35,6 +35,26 @@ Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.jso
 
 **Tier 2 (client-delegated)**: the browser probes onnxruntime-web support (`pitch-worker.js`), uploads declare `clientCanInfer=true`, and when a job reaches `AwaitingClient` the browser runs the model and POSTs validated notes back to `/api/analysis/{jobId}/client-result`.
 
+### Song statistics and interpretation
+
+`GET /api/analysis/{id}/stats` derives every melody/harmony statistic on demand from the stored
+artifacts — `SongStatsBuilder` takes the `VisualizationPayload` (so note roles and pitch labels are
+reused, never recomputed) plus `chords.json`, `result.json` and the optional `beats.json`. Nothing is
+persisted, same ruling as `/visual`. `SongFingerprint` then writes the same numbers as one
+plain-English paragraph; its rule is that a weak figure (unconfident mode, missing beat grid) is
+*omitted*, never hedged.
+
+`GET /api/analysis/{id}/interpretation?interpreter=` turns those statistics into prose behind the
+`ISongInterpreter` seam. It extends `IStageExecutor`, so `ExecutionPlanner.EffectiveRank` orders the
+implementations without new rules: `OllamaSongInterpreter` (Local, uses whatever model Ollama has
+installed) → `TemplateSongInterpreter` (deterministic, always available, `IsClassicFallback`) →
+`AzureOpenAiSongInterpreter` (Cloud, key `AzureOpenAiApiKey`). Cloud is never reached automatically —
+only when the query names it. `SongInterpreterSelector` falls through on failure exactly like
+`RunWithFallbackAsync`. Both LLMs send the identical `InterpretationPrompt`, which contains only
+measured numbers — no audio, title or artist — so a model cannot report what it was never given.
+Ollama requests set `think: false`: reasoning models otherwise spend the whole output budget on
+`thinking` and return empty `content`.
+
 ### Client conventions
 
 - Heavy UI lives in plain JS modules, not Blazor: `canvas.js` (dual-lane visualization, pan/zoom, virtualized drawing) and `mixer.js` (Web Audio stem playback, synth note overlays, metronome clicks, Space/comma transport keys). `mixer.js` owns the transport clock and drives the canvas playhead directly — no per-frame Blazor renders. Blazor components only issue commands and receive discrete events.
