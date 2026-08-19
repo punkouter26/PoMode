@@ -20,10 +20,9 @@ public sealed class ChromaExtractorTests : IDisposable
         return AudioDecoder.Decode(path);
     }
 
+    // The triad test below already exercises other pitch classes, so one root is enough here.
     [Theory]
     [InlineData(0)]  // C
-    [InlineData(5)]  // F
-    [InlineData(9)]  // A
     public void A_single_tone_puts_its_energy_in_its_own_pitch_class(int pitchClass)
     {
         var buffer = Chord([48 + pitchClass]);

@@ -17,16 +17,6 @@ public sealed class AudioConverterTests
     }
 
     [Fact]
-    public void Already_stereo_is_returned_unchanged()
-    {
-        var stereo = new AudioBuffer([0.1f, -0.1f, 0.2f, -0.2f], 44100, 2);
-
-        var result = AudioConverter.ToStereo(stereo);
-
-        Assert.Same(stereo, result);
-    }
-
-    [Fact]
     public void Multichannel_is_downmixed_then_duplicated_to_stereo()
     {
         // 4 channels, 1 frame: mono average is (1+0-1+0)/4 = 0
@@ -57,24 +47,7 @@ public sealed class AudioConverterTests
         Assert.InRange(resampled.DurationSeconds, 0.98, 1.02);
     }
 
-    [Fact]
-    public void ResampleStereo_is_a_noop_at_the_same_rate()
-    {
-        var buffer = new AudioBuffer([0.1f, -0.1f, 0.2f, -0.2f], 44100, 2);
-
-        var result = AudioConverter.ResampleStereo(buffer, 44100);
-
-        Assert.Same(buffer, result);
-    }
-
-    [Fact]
-    public void ResampleStereo_rejects_non_stereo_input()
-    {
-        var mono = new AudioBuffer([0.1f, 0.2f], 44100, 1);
-
-        Assert.Throws<ArgumentException>(() => AudioConverter.ResampleStereo(mono, 44100));
-    }
-
+    // The one converter the stem separator actually calls: mono, low-rate input in a single step.
     [Fact]
     public void ToStereo44100_converts_mono_low_rate_input_in_one_call()
     {

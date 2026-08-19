@@ -20,25 +20,8 @@ public class TonicDetectorTests
         Assert.InRange(tonic.Confidence, 0.0, 1.0);
     }
 
-    [Fact]
-    public void A_minor_material_detects_A()
-    {
-        List<NoteEvent> notes = [Note(69, 3), Note(71), Note(72, 1.5), Note(74), Note(76, 2), Note(77), Note(79)];
-        List<ChordSpan> chords = [new("Am", "A", "min", 0, 2), new("Dm", "D", "min", 2, 4), new("Em", "E", "min", 4, 6), new("Am", "A", "min", 6, 8)];
-
-        Assert.Equal(9, TonicDetector.Detect(notes, chords).PitchClass);
-    }
-
-    [Fact]
-    public void Flat_and_sharp_chord_roots_are_parsed()
-    {
-        List<ChordSpan> chords = [new("Bb", "Bb", "maj", 0, 4), new("F#m", "F#", "min", 4, 6)];
-        var tonic = TonicDetector.Detect([], chords);
-
-        // Bb dominates the histogram; the detector must not throw and must return a valid class.
-        Assert.InRange(tonic.PitchClass, 0, 11);
-    }
-
+    // Minor material and accidental roots are covered by the transposition invariant below plus
+    // PitchNames.TryParseRoot's own tests; what stays here is detection and its honesty guards.
     [Fact]
     public void Empty_input_is_zero_confidence()
     {

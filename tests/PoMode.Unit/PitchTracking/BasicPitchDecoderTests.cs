@@ -72,26 +72,8 @@ public class BasicPitchDecoderTests
         Assert.True(notes[1].StartSec > notes[0].StartSec);
     }
 
-    [Fact]
-    public void Velocity_scales_with_frame_energy_and_stays_in_midi_range()
-    {
-        var (onsets, frames) = Empty(100, 88);
-        var bin = 60 - MinMidi;
-        onsets[10, bin] = 1.0f;
-        for (var f = 10; f < 40; f++) frames[f, bin] = 1.0f;
-
-        var loud = BasicPitchDecoder.Decode(onsets, frames, Fps, MinMidi).Single();
-
-        var (onsets2, frames2) = Empty(100, 88);
-        onsets2[10, bin] = 0.6f;
-        for (var f = 10; f < 40; f++) frames2[f, bin] = 0.35f;
-        var soft = BasicPitchDecoder.Decode(onsets2, frames2, Fps, MinMidi).Single();
-
-        Assert.True(loud.Velocity > soft.Velocity);
-        Assert.InRange(loud.Velocity, 1, 127);
-        Assert.InRange(soft.Velocity, 1, 127);
-    }
-
+    /// <summary>The canvas and mixer both virtualize over start-sorted notes, so ordering is a
+    /// contract, not a nicety.</summary>
     [Fact]
     public void Notes_come_back_in_time_order()
     {

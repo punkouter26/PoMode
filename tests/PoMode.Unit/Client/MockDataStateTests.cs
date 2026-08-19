@@ -27,6 +27,8 @@ public sealed class MockDataStateTests
         };
 
         Assert.False(MockDataState.PlanContainsFakeExecutor(plan));
+        // No plan at all cannot be vouched for, so it counts as mock — fail safe, not fail silent.
+        Assert.True(MockDataState.PlanContainsFakeExecutor([]));
     }
 
     [Fact]
@@ -43,24 +45,4 @@ public sealed class MockDataStateTests
         Assert.True(MockDataState.PlanContainsFakeExecutor(plan));
     }
 
-    [Fact]
-    public void Empty_plan_is_mock()
-    {
-        Assert.True(MockDataState.PlanContainsFakeExecutor([]));
-    }
-
-    [Fact]
-    public void SetMock_flips_from_live_and_raises_changed()
-    {
-        var state = new MockDataState();
-        state.SetLive();
-        Assert.False(state.IsMockData);
-
-        var raised = false;
-        state.Changed += () => raised = true;
-        state.SetMock();
-
-        Assert.True(state.IsMockData);
-        Assert.True(raised);
-    }
 }

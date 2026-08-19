@@ -28,20 +28,8 @@ public class FftTests
         Assert.InRange(peak, 126, 130);
     }
 
-    [Fact]
-    public void A_constant_signal_has_all_its_energy_at_dc()
-    {
-        var buffer = Enumerable.Repeat(new Complex(1, 0), 256).ToArray();
-
-        Fft.Transform(buffer);
-
-        Assert.Equal(256.0, buffer[0].Magnitude, precision: 3);
-        for (var i = 1; i < 256; i++)
-        {
-            Assert.True(buffer[i].Magnitude < 1e-6, $"bin {i} had {buffer[i].Magnitude}");
-        }
-    }
-
+    /// <summary>A silent guard: a non-power-of-two length would corrupt the transform rather
+    /// than fail, and every chroma frame downstream would be quietly wrong.</summary>
     [Fact]
     public void Non_power_of_two_lengths_are_rejected()
         => Assert.Throws<ArgumentException>(() => Fft.Transform(new Complex[100]));

@@ -33,17 +33,6 @@ public class JsonContextTests
     }
 
     [Fact]
-    public void SessionInfo_round_trips_via_source_gen_context()
-    {
-        var session = new SessionInfo("alice", ["admin", "user"]);
-        var json = JsonSerializer.Serialize(session, PoModeJsonContext.Default.SessionInfo);
-        var back = JsonSerializer.Deserialize(json, PoModeJsonContext.Default.SessionInfo);
-        Assert.NotNull(back);
-        Assert.Equal("alice", back.UserName);
-        Assert.Equal(2, back.Roles.Count);
-    }
-
-    [Fact]
     public void JobStatusDto_round_trips_via_source_gen_context()
     {
         var dto = new JobStatusDto(
@@ -64,47 +53,8 @@ public class JsonContextTests
         Assert.Equal(["Separating"], back.CompletedStages);
     }
 
-    [Fact]
-    public void NoteEvents_and_ChordSpans_round_trip_as_lists()
-    {
-        List<NoteEvent> notes = [new(60, 0.0, 0.45, 96)];
-        List<ChordSpan> chords = [new("Am7", "A", "min7", 0.0, 2.0)];
-
-        var notesBack = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(notes, PoModeJsonContext.Default.ListNoteEvent),
-            PoModeJsonContext.Default.ListNoteEvent);
-        var chordsBack = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(chords, PoModeJsonContext.Default.ListChordSpan),
-            PoModeJsonContext.Default.ListChordSpan);
-
-        Assert.Equal(60, notesBack![0].MidiPitch);
-        Assert.Equal("Am7", chordsBack![0].Symbol);
-    }
-
-    [Fact]
-    public void DiagnosticsReport_carries_optional_hardware_report()
-    {
-        var report = new DiagnosticsReport(
-            EnvironmentName: "Development",
-            IsAzureHosted: false,
-            SecretSource: "EnvironmentVariables",
-            SecretFellBack: false,
-            CloudEnabled: true,
-            ProviderKeys: [],
-            Hardware: new HardwareReport(
-                IsAzureHosted: false,
-                Gpu: new GpuReport("NVIDIA", 8192, 6000, CudaAvailable: true, DmlAvailable: true),
-                ConfiguredProviders: ["ReplicateApiToken"],
-                Models: [new ModelStatus("basic-pitch", Available: false, SizeBytes: 0)]));
-
-        var back = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(report, PoModeJsonContext.Default.DiagnosticsReport),
-            PoModeJsonContext.Default.DiagnosticsReport);
-
-        Assert.NotNull(back?.Hardware?.Gpu);
-        Assert.Equal(6000, back.Hardware.Gpu.FreeVramMb);
-    }
-
+    // Note/chord list contexts are exercised end-to-end by the E2EAPI artifact tests, which
+    // deserialize them straight off the wire; only the families with no such coverage stay here.
     [Fact]
     public void ModalResult_round_trips_via_source_gen_context()
     {

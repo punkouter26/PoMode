@@ -55,6 +55,31 @@ public sealed class ModelAccuracyReportTests : IDisposable
 
     private sealed record ChordRow(string Name, string Kind, int ChordsFound, double Accuracy, long Milliseconds);
 
+    // ---- Real-song section ----
+
+    /// <summary>
+    /// A real recording to run the free executors over. There is no ground truth for it, so this
+    /// half of the report measures behaviour and cross-model agreement rather than accuracy.
+    /// Override with the <c>POMODE_REAL_SONG</c> environment variable; when the file is missing
+    /// (CI, another machine) the section simply reports that and the test still passes.
+    /// </summary>
+    private static string RealSongPath =>
+        Environment.GetEnvironmentVariable("POMODE_REAL_SONG")
+        ?? @"C:\Users\punko\OneDrive\VAULT\_SOUND\2023_SlowJen.wav";
+
+    private sealed record RealPitchRow(
+        string Name, string Kind, int NotesFound, double NotesPerSecond,
+        string PitchRange, string DetectedKey, long Milliseconds);
+
+    private sealed record RealChordRow(
+        string Name, string Kind, int ChordsFound, int DistinctChords,
+        double MeanChordSeconds, long Milliseconds);
+
+    private sealed record RealSongReport(
+        bool Present, string FileName, double DurationSec, int SampleRate, int Channels,
+        List<RealPitchRow> Pitch, List<RealChordRow> Chords,
+        double PitchAgreement, double ChordAgreement);
+
     [Fact]
     public async Task Every_free_model_is_scored_against_ground_truth_and_reported_as_html()
     {
@@ -98,11 +123,14 @@ public sealed class ModelAccuracyReportTests : IDisposable
             await ScoreChordsAsync(new ViterbiChordRecognizer(), "method", inputPath),
         };
 
-        // ---- 4. Deploy the HTML report ----
-        var reportPath = WriteReport(inputFormat, pitchRows, chordRows);
+        // ---- 4. Run the same executors over a real recording (no truth: agreement, not accuracy) ----
+        var realSong = await AnalyseRealSongAsync(registry);
+
+        // ---- 5. Deploy the HTML report ----
+        var reportPath = WriteReport(inputFormat, pitchRows, chordRows, realSong);
         Console.WriteLine($"Model accuracy report written to: {reportPath}");
 
-        // ---- 5. Sanity floor, not a leaderboard: the report is the deliverable ----
+        // ---- 6. Sanity floor, not a leaderboard: the report is the deliverable ----
         Assert.True(File.Exists(reportPath));
         var yin = pitchRows.Single(r => r.Name == nameof(YinPitchTracker));
         Assert.True(yin.F1 >= 0.5, $"YIN F1 was {yin.F1:0.00} on a clean sine melody");
@@ -216,7 +244,146 @@ public sealed class ModelAccuracyReportTests : IDisposable
             correct / (double)samples, stopwatch.ElapsedMilliseconds);
     }
 
-    private static string WriteReport(string inputFormat, List<PitchRow> pitchRows, List<ChordRow> chordRows)
+    /// <summary>
+    /// Runs every free executor over a real recording. Nothing here is scored against a truth —
+    /// there isn't one — so the honest signals are: what each model actually produced, how long it
+    /// took on real audio, what key the app would report, and how far the two independent models
+    /// agree with each other. Two models agreeing is weak evidence they are right; two models
+    /// disagreeing is strong evidence at least one is wrong, and that is worth seeing.
+    /// </summary>
+    private async Task<RealSongReport> AnalyseRealSongAsync(ModelRegistry registry)
+    {
+        var path = RealSongPath;
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"Real-song section skipped: '{path}' not present on this machine.");
+            return new RealSongReport(Present: false, Path.GetFileName(path), 0, 0, 0, [], [], 0, 0);
+        }
+
+        // A job dir of its own: the synthetic run wrote a vocals.wav into _dir, and the pitch
+        // trackers prefer that file — reusing the directory would silently analyse the wrong audio.
+        var jobDir = Path.Combine(_dir, "real");
+        Directory.CreateDirectory(jobDir);
+        var context = new StageContext("real", jobDir, path);
+
+        var decoded = PoMode.API.Features.Audio.AudioDecoder.Decode(path);
+        var duration = decoded.DurationSeconds;
+
+        var pitchRows = new List<RealPitchRow>();
+        var noteSets = new List<IReadOnlyList<NoteEvent>>();
+        var trackers = new List<(IPitchTracker Tracker, string Kind)> { (new YinPitchTracker(), "method") };
+        if (registry.IsDownloaded(ModelCatalog.BasicPitch))
+        {
+            trackers.Insert(0, (new OnnxPitchTracker(registry, NullLogger<OnnxPitchTracker>.Instance), "model"));
+        }
+
+        // One chord run feeds the modal engine for every tracker, so the reported keys differ only
+        // by the melody the tracker heard — the variable actually under test here.
+        var chordStopwatch = Stopwatch.StartNew();
+        var chromaChords = await new ChromaChordRecognizer().RecognizeAsync(context, CancellationToken.None);
+        chordStopwatch.Stop();
+        var viterbiStopwatch = Stopwatch.StartNew();
+        var viterbiChords = await new ViterbiChordRecognizer().RecognizeAsync(context, CancellationToken.None);
+        viterbiStopwatch.Stop();
+
+        foreach (var (tracker, kind) in trackers)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var notes = await tracker.TrackAsync(context, CancellationToken.None);
+            stopwatch.Stop();
+            noteSets.Add(notes);
+
+            var modal = PoMode.API.Features.ModalAnalysis.ModalAnalysisEngine.Analyze(notes, chromaChords);
+            var range = notes.Count == 0
+                ? "—"
+                : $"{PitchLabel(notes.Min(n => n.MidiPitch))}–{PitchLabel(notes.Max(n => n.MidiPitch))}";
+            pitchRows.Add(new RealPitchRow(
+                tracker.Name, kind, notes.Count,
+                duration > 0 ? notes.Count / duration : 0,
+                range,
+                $"{modal.TonicName} {modal.PrimaryMode?.ToString() ?? "(unclear)"}",
+                stopwatch.ElapsedMilliseconds));
+        }
+
+        var chordRows = new List<RealChordRow>
+        {
+            RealChordRowFor(new ChromaChordRecognizer().Name, chromaChords, chordStopwatch.ElapsedMilliseconds),
+            RealChordRowFor(new ViterbiChordRecognizer().Name, viterbiChords, viterbiStopwatch.ElapsedMilliseconds),
+        };
+
+        return new RealSongReport(
+            Present: true,
+            Path.GetFileName(path),
+            duration,
+            decoded.SampleRate,
+            decoded.Channels,
+            pitchRows,
+            chordRows,
+            noteSets.Count == 2 ? NoteAgreement(noteSets[0], noteSets[1]) : double.NaN,
+            ChordAgreement(chromaChords, viterbiChords, duration));
+    }
+
+    private static RealChordRow RealChordRowFor(string name, IReadOnlyList<ChordSpan> spans, long milliseconds)
+        => new(name, "method", spans.Count,
+            spans.Select(s => s.Symbol).Distinct().Count(),
+            spans.Count == 0 ? 0 : spans.Average(s => s.EndSec - s.StartSec),
+            milliseconds);
+
+    private static string PitchLabel(int midi) => $"{ScaleModes.NoteName(midi)}{(midi / 12) - 1}";
+
+    /// <summary>
+    /// F1 overlap between two note lists under the same rule the truth scoring uses: same pitch,
+    /// onset within 0.25 s, each prediction consumed once.
+    /// </summary>
+    private static double NoteAgreement(IReadOnlyList<NoteEvent> left, IReadOnlyList<NoteEvent> right)
+    {
+        if (left.Count == 0 || right.Count == 0)
+        {
+            return 0;
+        }
+        var consumed = new bool[right.Count];
+        var hits = 0;
+        foreach (var note in left)
+        {
+            for (var i = 0; i < right.Count; i++)
+            {
+                if (!consumed[i] && right[i].MidiPitch == note.MidiPitch
+                    && Math.Abs(right[i].StartSec - note.StartSec) <= 0.25)
+                {
+                    consumed[i] = true;
+                    hits++;
+                    break;
+                }
+            }
+        }
+        var precision = hits / (double)right.Count;
+        var recall = hits / (double)left.Count;
+        return precision + recall == 0 ? 0 : 2 * precision * recall / (precision + recall);
+    }
+
+    /// <summary>Share of 100 ms timeline samples where both recognizers name the same chord.</summary>
+    private static double ChordAgreement(
+        IReadOnlyList<ChordSpan> left, IReadOnlyList<ChordSpan> right, double durationSec)
+    {
+        var samples = 0;
+        var same = 0;
+        for (var t = 0.05; t < durationSec; t += 0.1)
+        {
+            samples++;
+            var l = TimelineSearch.IndexCovering(left, t, s => s.StartSec, s => s.EndSec);
+            var r = TimelineSearch.IndexCovering(right, t, s => s.StartSec, s => s.EndSec);
+            var leftSymbol = l is null ? "N" : left[l.Value].Symbol;
+            var rightSymbol = r is null ? "N" : right[r.Value].Symbol;
+            if (leftSymbol == rightSymbol)
+            {
+                same++;
+            }
+        }
+        return samples == 0 ? 0 : same / (double)samples;
+    }
+
+    private static string WriteReport(
+        string inputFormat, List<PitchRow> pitchRows, List<ChordRow> chordRows, RealSongReport realSong)
     {
         var reportDir = Path.Combine(TestPaths.RepoRoot(), "test-reports");
         Directory.CreateDirectory(reportDir);
@@ -272,6 +439,45 @@ public sealed class ModelAccuracyReportTests : IDisposable
         }
         html.Append("</table><p class=\"note\">Truth: C · G · Am · F, 2s each. Accuracy is the share of " +
             "100ms timeline samples whose predicted symbol equals the truth. Recognizers read the full mix.</p>");
+
+        // ---- Real recording: no truth exists, so this reports behaviour and agreement ----
+        html.Append("<h2>Real recording</h2>");
+        if (!realSong.Present)
+        {
+            html.Append(CultureInfo.InvariantCulture,
+                $"<p class=\"note\">No real song on this machine ({realSong.FileName}). Set POMODE_REAL_SONG to a .wav or .mp3 path to include this section.</p>");
+        }
+        else
+        {
+            html.Append(CultureInfo.InvariantCulture,
+                $"<p>{realSong.FileName} — {realSong.DurationSec:0}s, {realSong.SampleRate} Hz, {realSong.Channels} ch. <strong>There is no ground truth for a real recording</strong>, so nothing below is an accuracy score. These are the measurements the models actually produced, plus how far they agree with each other.</p>");
+            html.Append("<p class=\"note\"><strong>Read with this caveat:</strong> stem separation is too slow for this suite, so the pitch trackers here read the <em>full mix</em>, not an isolated vocal. Basic Pitch is polyphonic and copes; YIN is monophonic by design, so this is its worst case and its numbers understate what it does on a real separated stem. The case still matters — the short-clip fast path and Azure mode both skip separation.</p>");
+
+            html.Append("<h3>Melody</h3><table><tr>" +
+                "<th>Executor</th><th>Kind</th><th>Notes</th><th>Notes/sec</th><th>Pitch range</th><th>Key it implies</th><th>Runtime</th></tr>");
+            foreach (var row in realSong.Pitch)
+            {
+                html.Append(CultureInfo.InvariantCulture,
+                    $"<tr><td>{row.Name}</td><td>{row.Kind}</td><td>{row.NotesFound}</td><td>{row.NotesPerSecond:0.0}</td><td>{row.PitchRange}</td><td>{row.DetectedKey}</td><td>{row.Milliseconds} ms</td></tr>");
+            }
+            html.Append("</table>");
+
+            html.Append("<h3>Chords</h3><table><tr>" +
+                "<th>Executor</th><th>Kind</th><th>Chords</th><th>Distinct</th><th>Mean length</th><th>Runtime</th></tr>");
+            foreach (var row in realSong.Chords)
+            {
+                html.Append(CultureInfo.InvariantCulture,
+                    $"<tr><td>{row.Name}</td><td>{row.Kind}</td><td>{row.ChordsFound}</td><td>{row.DistinctChords}</td><td>{row.MeanChordSeconds:0.0}s</td><td>{row.Milliseconds} ms</td></tr>");
+            }
+            html.Append("</table>");
+
+            var pitchAgreement = double.IsNaN(realSong.PitchAgreement)
+                ? "only one tracker available"
+                : realSong.PitchAgreement.ToString("P0", CultureInfo.InvariantCulture);
+            html.Append(CultureInfo.InvariantCulture,
+                $"<h3>Model agreement</h3><table><tr><th>Pair</th><th>Agreement</th></tr><tr><td>Pitch trackers (same note, onset within 0.25s)</td><td>{pitchAgreement}</td></tr><tr><td>Chord recognizers (100ms timeline samples)</td><td>{realSong.ChordAgreement:P0}</td></tr></table>");
+            html.Append("<p class=\"note\">Agreement is not accuracy. Two models agreeing is weak evidence they are both right; two models disagreeing is strong evidence at least one is wrong. Read low agreement as \"go listen to this song and see who is closer\", not as a score.</p>");
+        }
 
         html.Append("<h2>Not compared here</h2><p class=\"note\">" +
             "Separating: OnnxStemSeparator (HTDemucs) needs minutes of runtime and ~5.7 GB of memory per run, " +

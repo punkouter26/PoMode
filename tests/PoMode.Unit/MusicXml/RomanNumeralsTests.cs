@@ -10,15 +10,13 @@ public sealed class RomanNumeralsTests
     private static ChordSpan Chord(string root, string quality)
         => new($"{root}{(quality is "min" or "m" ? "m" : "")}", root, quality, 0, 1);
 
+    // One row per numeral shape: uppercase major, lowercase minor, accidental prefix, and a
+    // non-C tonic proving the numeral is relative to the tonic rather than to C.
     [Theory]
     [InlineData("C", "maj", 0, "I")]
-    [InlineData("G", "maj", 0, "V")]
     [InlineData("A", "min", 0, "vi")]
-    [InlineData("D", "min", 0, "ii")]
     [InlineData("Bb", "maj", 0, "bVII")]
-    [InlineData("F#", "min", 0, "#iv")]
-    [InlineData("D", "maj", 2, "I")]  // D tonic: D major is I
-    [InlineData("E", "min", 2, "ii")] // D tonic: E minor is ii
+    [InlineData("E", "min", 2, "ii")]
     public void Triads_map_to_the_expected_numeral(string root, string quality, int tonic, string expected)
     {
         Assert.Equal(expected, RomanNumerals.Analyze(Chord(root, quality), tonic));
@@ -32,9 +30,7 @@ public sealed class RomanNumeralsTests
     }
 
     [Theory]
-    [InlineData("C", 0)]   // natural
-    [InlineData("C#", 1)]  // sharp
-    [InlineData("Bb", 10)] // flat
+    [InlineData("Bb", 10)] // flat accidental
     [InlineData("N", -1)]  // reject
     public void Pitch_class_parsing_handles_accidentals_and_rejects_junk(string root, int expected)
     {

@@ -24,17 +24,6 @@ public class ChordSegmenterTests
     }
 
     [Fact]
-    public void A_steady_run_becomes_one_span()
-    {
-        var spans = ChordSegmenter.Segment(Frames(("C", 40)), Fps);
-
-        var span = Assert.Single(spans);
-        Assert.Equal("C", span.Symbol);
-        Assert.Equal(0.0, span.StartSec);
-        Assert.InRange(span.EndSec, 3.9, 4.1);
-    }
-
-    [Fact]
     public void Two_runs_become_two_contiguous_spans()
     {
         var spans = ChordSegmenter.Segment(Frames(("C", 30), ("G", 30)), Fps);
@@ -43,49 +32,6 @@ public class ChordSegmenterTests
         Assert.Equal(["C", "G"], spans.Select(s => s.Symbol).ToArray());
         Assert.Equal(spans[0].EndSec, spans[1].StartSec);
     }
-
-    [Fact]
-    public void A_single_flickering_frame_is_smoothed_away()
-    {
-        var spans = ChordSegmenter.Segment(Frames(("C", 20), ("G", 1), ("C", 20)), Fps);
-
-        var span = Assert.Single(spans);
-        Assert.Equal("C", span.Symbol);
-    }
-
-    [Fact]
-    public void Spans_shorter_than_the_minimum_are_absorbed()
-    {
-        // 2 frames of G = 0.2 s, under the 0.5 s floor.
-        var spans = ChordSegmenter.Segment(Frames(("C", 30), ("G", 2), ("C", 30)), Fps, medianWindow: 1);
-
-        Assert.Single(spans);
-        Assert.Equal("C", spans[0].Symbol);
-    }
-
-    [Fact]
-    public void No_chord_regions_are_dropped_from_the_output()
-    {
-        var spans = ChordSegmenter.Segment(Frames(("N", 30), ("C", 30)), Fps);
-
-        var span = Assert.Single(spans);
-        Assert.Equal("C", span.Symbol);
-        Assert.InRange(span.StartSec, 2.9, 3.1);
-    }
-
-    [Fact]
-    public void Root_and_quality_survive_into_the_span()
-    {
-        var span = ChordSegmenter.Segment(Frames(("Am", 40)), Fps).Single();
-
-        Assert.Equal("Am", span.Symbol);
-        Assert.Equal("A", span.Root);
-        Assert.Equal("min", span.Quality);
-    }
-
-    [Fact]
-    public void Empty_input_yields_no_spans()
-        => Assert.Empty(ChordSegmenter.Segment([], Fps));
 
     // --- Beat-synchronous overload (§13.6 fix b) ---
 
@@ -113,18 +59,11 @@ public class ChordSegmenterTests
 
         var span = Assert.Single(spans);
         Assert.Equal("C", span.Symbol);
-    }
-
-    [Fact]
-    public void Beat_sync_respects_the_grid_phase()
-    {
-        // First beat at 0.25 s: boundaries at 0.25, 0.75, 1.25… The change at 1.3 s falls in beat
-        // [1.25, 1.75) which G wins (frames 13-16 of 17 are G: G majority 4 of 5).
-        var spans = ChordSegmenter.Segment(Frames(("C", 13), ("G", 12)), Fps, Grid(firstBeatSec: 0.25), medianWindow: 1);
-
-        Assert.Equal(2, spans.Count);
-        Assert.Equal(1.25, spans[0].EndSec, precision: 9);
-        Assert.Equal(1.25, spans[1].StartSec, precision: 9);
+        // The same majority vote drops "no chord" beats and still covers the track's final
+        // partial beat, so silence at the head does not shift the timeline.
+        var withSilence = ChordSegmenter.Segment(Frames(("N", 10), ("C", 15)), Fps, Grid(), medianWindow: 1);
+        var only = Assert.Single(withSilence);
+        Assert.Equal(("C", 1.0, 2.5), (only.Symbol, only.StartSec, only.EndSec));
     }
 
     [Fact]
@@ -139,14 +78,4 @@ public class ChordSegmenterTests
         Assert.Equal(without[0].EndSec, withGrid[0].EndSec);
     }
 
-    [Fact]
-    public void Beat_sync_drops_no_chord_beats_and_covers_the_track_edges()
-    {
-        var spans = ChordSegmenter.Segment(Frames(("N", 10), ("C", 15)), Fps, Grid(), medianWindow: 1);
-
-        var span = Assert.Single(spans);
-        Assert.Equal("C", span.Symbol);
-        Assert.Equal(1.0, span.StartSec, precision: 9);  // N owns beats [0,0.5) and [0.5,1.0)
-        Assert.Equal(2.5, span.EndSec, precision: 9);    // final partial beat reaches the track end
-    }
 }

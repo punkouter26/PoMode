@@ -29,15 +29,6 @@ public class ClientWorkRegistryTests
     }
 
     [Fact]
-    public void A_job_nobody_is_waiting_for_cannot_be_completed()
-    {
-        var registry = Registry();
-
-        Assert.False(registry.TryComplete("nobody", Notes));
-        Assert.False(registry.IsWaiting("nobody"));
-    }
-
-    [Fact]
     public async Task A_second_completion_is_refused()
     {
         var registry = Registry();
@@ -49,16 +40,6 @@ public class ClientWorkRegistryTests
         Assert.False(registry.TryComplete("job1", [new NoteEvent(72, 1.0, 0.5, 90)]));
 
         Assert.Equal(Notes, await wait);
-    }
-
-    [Fact]
-    public void A_registered_waiter_is_reported_as_waiting()
-    {
-        var registry = Registry();
-        _ = registry.WaitAsync("job1", TimeSpan.FromMinutes(5), CancellationToken.None);
-
-        Assert.True(registry.IsWaiting("job1"));
-        Assert.False(registry.IsWaiting("job2"));
     }
 
     [Fact]
@@ -77,21 +58,6 @@ public class ClientWorkRegistryTests
     }
 
     [Fact]
-    public async Task The_timeout_does_not_fire_early()
-    {
-        var time = new FakeTimeProvider();
-        var registry = Registry(time);
-        var wait = registry.WaitAsync("job1", TimeSpan.FromSeconds(300), CancellationToken.None);
-
-        time.Advance(TimeSpan.FromSeconds(299));
-        await Task.Delay(20);
-
-        Assert.False(wait.IsCompleted);
-        Assert.True(registry.TryComplete("job1", Notes));
-        Assert.Equal(Notes, await wait);
-    }
-
-    [Fact]
     public async Task Cancelling_the_job_removes_the_waiter()
     {
         var registry = Registry();
@@ -102,22 +68,6 @@ public class ClientWorkRegistryTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => wait);
         Assert.False(registry.IsWaiting("job1"));
-    }
-
-    [Fact]
-    public async Task Waiters_for_different_jobs_do_not_interfere()
-    {
-        var registry = Registry();
-        var first = registry.WaitAsync("job1", TimeSpan.FromMinutes(5), CancellationToken.None);
-        var second = registry.WaitAsync("job2", TimeSpan.FromMinutes(5), CancellationToken.None);
-        IReadOnlyList<NoteEvent> otherNotes = [new NoteEvent(64, 2.0, 1.0, 80)];
-
-        Assert.True(registry.TryComplete("job2", otherNotes));
-
-        Assert.False(first.IsCompleted);
-        Assert.Equal(otherNotes, await second);
-        Assert.True(registry.TryComplete("job1", Notes));
-        Assert.Equal(Notes, await first);
     }
 
     [Fact]

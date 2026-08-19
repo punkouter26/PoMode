@@ -73,15 +73,4 @@ public sealed class WavWriterTests : IDisposable
         Assert.All(decoded.Samples, s => Assert.InRange(s, -1.0f, 1.0f));
     }
 
-    [Fact]
-    public void Writes_a_file_that_exists_with_nonzero_length()
-    {
-        var buffer = new AudioBuffer([0.1f, -0.1f, 0.2f, -0.2f], 8000, 1);
-        var path = Path.Combine(_dir, "nonempty.wav");
-
-        WavWriter.Write(path, buffer);
-
-        Assert.True(File.Exists(path));
-        Assert.True(new FileInfo(path).Length > 44); // header + data
-    }
 }

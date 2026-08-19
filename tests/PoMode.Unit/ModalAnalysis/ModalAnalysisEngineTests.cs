@@ -42,43 +42,20 @@ public class ModalAnalysisEngineTests
     }
 
     [Fact]
-    public void Notes_are_assigned_to_the_window_containing_their_start()
+    public void Windows_take_the_notes_that_start_in_them_and_measure_numbers_follow_the_tempo()
     {
-        List<NoteEvent> notes = [At(60, 0.5), At(62, 0.9), At(64, 1.1), At(65, 2.5), At(67, 2.9), At(69, 3.1)];
-        List<ChordSpan> chords = [new("C", "C", "maj", 0, 2), new("F", "F", "maj", 2, 4)];
-
-        var result = ModalAnalysisEngine.Analyze(notes, chords);
-
-        Assert.Equal(2, result.Windows.Count);
-        Assert.Equal(3, result.Windows[0].SungIntervals.Count);
-        Assert.Equal(3, result.Windows[1].SungIntervals.Count);
-    }
-
-    [Fact]
-    public void Vocal_mask_matches_the_sung_intervals()
-    {
-        List<NoteEvent> notes = [At(60, 0.0), At(62, 0.3), At(64, 0.6), At(65, 0.9)];
-        List<ChordSpan> chords = [new("C", "C", "maj", 0, 2)];
-
-        var window = ModalAnalysisEngine.Analyze(notes, chords).Windows[0];
-
-        var expected = window.SungIntervals.Aggregate(0, (mask, interval) => mask | (1 << interval));
-        Assert.Equal(expected, window.VocalMask);
-    }
-
-    [Fact]
-    public void Measure_numbers_follow_the_tempo_at_four_four()
-    {
-        // 120 BPM ⇒ 2 s per measure.
+        // 120 BPM ⇒ 2 s per measure; three notes start inside each chord's span.
         List<NoteEvent> notes = [At(60, 0.1), At(62, 0.3), At(64, 0.5), At(65, 4.1), At(67, 4.3), At(69, 4.5)];
         List<ChordSpan> chords = [new("C", "C", "maj", 0, 2), new("F", "F", "maj", 4, 6)];
 
         var result = ModalAnalysisEngine.Analyze(notes, chords, tempoBpm: 120.0);
 
+        Assert.Equal(2, result.Windows.Count);
+        Assert.Equal(3, result.Windows[0].SungIntervals.Count);
+        Assert.Equal(3, result.Windows[1].SungIntervals.Count);
         Assert.Equal(1, result.Windows[0].MeasureNumber);
         Assert.Equal(3, result.Windows[1].MeasureNumber);
         Assert.Equal(120.0, result.TempoBpm);
-        Assert.True(result.TempoEstimated);
     }
 
     [Fact]
@@ -111,25 +88,15 @@ public class ModalAnalysisEngineTests
     }
 
     [Fact]
-    public void Result_carries_schema_version_one()
-        => Assert.Equal(1, ModalAnalysisEngine.Analyze([], []).SchemaVersion);
-
-    [Fact]
-    public void Real_tempo_is_reported_as_not_estimated()
-    {
-        var result = ModalAnalysisEngine.Analyze([], [], tempoBpm: 96.0, tempoEstimated: false);
-
-        Assert.Equal(96.0, result.TempoBpm);
-        Assert.False(result.TempoEstimated);
-    }
-
-    [Fact]
-    public void Default_still_reports_an_estimated_120()
+    public void An_empty_analysis_still_carries_the_schema_version_and_the_estimated_default_tempo()
     {
         var result = ModalAnalysisEngine.Analyze([], []);
 
+        Assert.Equal(1, result.SchemaVersion);
         Assert.Equal(120.0, result.TempoBpm);
         Assert.True(result.TempoEstimated);
+        // A real measured tempo must not be mislabelled as an estimate.
+        Assert.False(ModalAnalysisEngine.Analyze([], [], tempoBpm: 96.0, tempoEstimated: false).TempoEstimated);
     }
 
     [Fact]

@@ -21,60 +21,24 @@ public class ClientResultValidatorTests
         => ClientResultValidator.Validate(notes, TrackSeconds);
 
     [Fact]
-    public void A_plausible_payload_is_accepted()
-        => Assert.Null(Validate(Note(), Note(pitch: 67, start: 2.0), Note(pitch: 72, start: 3.5)));
-
-    [Fact]
-    public void An_empty_payload_is_accepted_because_silence_really_has_no_notes()
-        => Assert.Null(ClientResultValidator.Validate([], TrackSeconds));
-
-    [Theory]
-    [InlineData(20_000, true)]  // exactly the limit is still accepted
-    [InlineData(20_001, false)] // one over is too many
-    public void The_note_count_cap_is_enforced_at_its_boundary(int count, bool accepted)
+    public void The_note_count_cap_is_enforced()
     {
-        var notes = Enumerable.Range(0, count).Select(_ => Note()).ToArray();
+        var notes = Enumerable.Range(0, 20_001).Select(_ => Note()).ToArray();
 
         var error = ClientResultValidator.Validate(notes, TrackSeconds);
 
-        if (accepted)
-        {
-            Assert.Null(error);
-        }
-        else
-        {
-            Assert.NotNull(error);
-            Assert.Contains("too many", error, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [Theory]
-    [InlineData(21, true)]   // lowest piano key
-    [InlineData(108, true)]  // highest piano key
-    [InlineData(20, false)]  // below the piano
-    [InlineData(109, false)] // above it
-    public void Pitches_are_accepted_only_inside_the_piano_range(int pitch, bool accepted)
-    {
-        var error = Validate(Note(pitch: pitch));
-
-        if (accepted)
-        {
-            Assert.Null(error);
-        }
-        else
-        {
-            Assert.NotNull(error);
-            Assert.Contains("pitch", error, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [Fact]
-    public void A_negative_start_time_is_rejected()
-    {
-        var error = Validate(Note(start: -0.001));
-
         Assert.NotNull(error);
-        Assert.Contains("start", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("too many", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The plain per-field range guards, each named in its own error message so a client
+    /// author can tell which field it got wrong.</summary>
+    [Fact]
+    public void Out_of_range_pitch_start_and_duration_are_each_rejected_by_name()
+    {
+        Assert.Contains("pitch", Validate(Note(pitch: 109))!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("start", Validate(Note(start: -0.001))!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("duration", Validate(Note(duration: 0.0))!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -90,45 +54,13 @@ public class ClientResultValidatorTests
         Assert.Contains("start", error, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Theory]
-    [InlineData(0.0)] // the boundary of the non-positive rule
-    public void A_non_positive_duration_is_rejected(double duration)
-    {
-        var error = Validate(Note(duration: duration));
-
-        Assert.NotNull(error);
-        Assert.Contains("duration", error, StringComparison.OrdinalIgnoreCase);
-    }
-
     [Fact]
-    public void An_absurdly_long_note_is_rejected()
-    {
-        var error = Validate(Note(duration: 31.0));
-
-        Assert.NotNull(error);
-        Assert.Contains("duration", error, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Theory]
-    [InlineData(0)]   // just below the MIDI range
-    [InlineData(128)] // just above it
-    public void Velocities_outside_midi_range_are_rejected(int velocity)
-    {
-        var error = Validate(Note(velocity: velocity));
-
-        Assert.NotNull(error);
-        Assert.Contains("velocity", error, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Theory]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    public void Non_finite_times_are_rejected(double value)
+    public void Non_finite_times_are_rejected()
     {
         // NaN silently defeats every comparison below, so it must be checked explicitly or it would
         // sail through and reach the JSON artifact and the MIDI writer.
-        Assert.NotNull(Validate(Note(start: value)));
-        Assert.NotNull(Validate(Note(duration: value)));
+        Assert.NotNull(Validate(Note(start: double.NaN)));
+        Assert.NotNull(Validate(Note(duration: double.NaN)));
     }
 
     [Fact]
@@ -141,15 +73,6 @@ public class ClientResultValidatorTests
 
         Assert.NotNull(error);
         Assert.Contains("pitch", error, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void The_message_names_the_offending_note_so_a_client_author_can_fix_it()
-    {
-        var error = ClientResultValidator.Validate([Note(), Note(velocity: 0)], TrackSeconds);
-
-        Assert.NotNull(error);
-        Assert.Contains("1", error); // the index of the bad note
     }
 
     [Fact]

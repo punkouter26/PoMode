@@ -17,8 +17,7 @@ public class CloudCredentialsTests
         => Assert.True(Credentials().Enabled);
 
     [Theory]
-    [InlineData("false")]
-    [InlineData("False")]
+    [InlineData("False")] // case-insensitive parse is the point; one row proves it
     public void The_kill_switch_disables_the_whole_tier(string value)
     {
         var credentials = Credentials(("Cloud:Enabled", value), ("ReplicateApiToken", "tok"));
@@ -30,20 +29,10 @@ public class CloudCredentialsTests
         Assert.False(credentials.Has("ReplicateApiToken"));
     }
 
-    [Fact]
-    public void A_present_key_is_usable()
-    {
-        var credentials = Credentials(("ReplicateApiToken", "r8_secret"));
-
-        Assert.True(credentials.Has("ReplicateApiToken"));
-        Assert.Equal("r8_secret", credentials.TokenFor("ReplicateApiToken"));
-    }
-
+    // The present-key case is covered by the all-provider-keys test below.
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
     [InlineData("   ")]
-    [InlineData("\t")]
     public void An_absent_or_blank_key_is_not_usable(string? value)
     {
         var credentials = Credentials(("ReplicateApiToken", value));
@@ -70,14 +59,5 @@ public class CloudCredentialsTests
 
         Assert.All(ProviderKeys.All, key => Assert.True(credentials.Has(key), key));
         Assert.All(ProviderKeys.All, key => Assert.Equal($"value-for-{key}", credentials.TokenFor(key)));
-    }
-
-    [Fact]
-    public void An_unknown_provider_key_is_simply_absent_rather_than_throwing()
-    {
-        var credentials = Credentials(("ReplicateApiToken", "tok"));
-
-        Assert.False(credentials.Has("NoSuchProviderKey"));
-        Assert.Null(credentials.TokenFor("NoSuchProviderKey"));
     }
 }

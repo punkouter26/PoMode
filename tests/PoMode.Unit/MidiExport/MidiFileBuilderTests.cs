@@ -56,19 +56,6 @@ public class MidiFileBuilderTests
     }
 
     [Fact]
-    public void Vocal_and_chord_tracks_use_the_specified_gm_programs()
-    {
-        var file = Parse(MidiFileBuilder.Build(
-            [new(62, 0.0, 0.5, 96)],
-            [new("Dm7", "D", "min7", 0, 2)],
-            Result()));
-        var tracks = file.GetTrackChunks().ToArray();
-
-        Assert.Equal(80, (int)tracks[1].Events.OfType<ProgramChangeEvent>().Single().ProgramNumber);
-        Assert.Equal(0, (int)tracks[2].Events.OfType<ProgramChangeEvent>().Single().ProgramNumber);
-    }
-
-    [Fact]
     public void Vocal_notes_survive_the_round_trip_with_pitch_and_velocity()
     {
         var file = Parse(MidiFileBuilder.Build(

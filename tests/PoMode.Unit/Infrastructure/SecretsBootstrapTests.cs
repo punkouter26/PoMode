@@ -7,8 +7,7 @@ public class SecretsBootstrapTests
 {
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [InlineData("   ")] // blank and null take the same branch; one of each is enough
     public void No_vault_uri_means_environment_variables_without_fallback_flag(string? vaultUri)
     {
         var info = SecretsBootstrap.Decide(vaultUri, tryConnectKeyVault: () => throw new Exception("must not be called"));

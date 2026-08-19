@@ -34,29 +34,8 @@ public sealed class FakeExecutorTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_jobDir, "instrumental.wav")));
     }
 
-    [Fact]
-    public async Task FakePitchTracker_returns_deterministic_c_major_scale()
-    {
-        var notes = await new FakePitchTracker().TrackAsync(Context(), CancellationToken.None);
-
-        Assert.Equal(8, notes.Count);
-        Assert.Equal(60, notes[0].MidiPitch);
-        Assert.Equal(72, notes[7].MidiPitch);
-        Assert.Equal(3.5, notes[7].StartSec);
-        Assert.All(notes, n => Assert.Equal(96, n.Velocity));
-    }
-
-    [Fact]
-    public async Task FakeChordRecognizer_returns_four_two_second_chords()
-    {
-        var chords = await new FakeChordRecognizer().RecognizeAsync(Context(), CancellationToken.None);
-
-        Assert.Equal(4, chords.Count);
-        Assert.Equal(["C", "Am", "F", "G"], chords.Select(c => c.Symbol).ToArray());
-        Assert.All(chords, c => Assert.Equal(2.0, c.EndSec - c.StartSec));
-        Assert.Equal(8.0, chords[^1].EndSec);
-    }
-
+    // The fakes' canned note/chord payloads are asserted where they matter — the pipeline and
+    // endpoint tests that consume them. What must hold here is the planner-facing contract.
     [Fact]
     public async Task All_fakes_are_local_tier_and_available()
     {

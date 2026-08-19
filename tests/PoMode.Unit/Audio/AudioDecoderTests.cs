@@ -20,26 +20,17 @@ public sealed class AudioDecoderTests : IDisposable
     }
 
     [Fact]
-    public void Decodes_a_wav_to_the_expected_length_and_rate()
+    public void Decodes_a_wav_to_the_expected_length_rate_and_normalised_samples()
     {
-        var path = WriteTemp("tone.wav", TestAudio.MakeTone(seconds: 1.0, frequencyHz: 440, sampleRate: 22050));
+        var path = WriteTemp("tone.wav", TestAudio.MakeTone(seconds: 1.0, frequencyHz: 440, sampleRate: 22050, amplitude: 0.5));
 
         var buffer = AudioDecoder.Decode(path);
 
         Assert.Equal(22050, buffer.SampleRate);
         Assert.Equal(1, buffer.Channels);
         Assert.InRange(buffer.DurationSeconds, 0.98, 1.02);
-    }
-
-    [Fact]
-    public void Decoded_samples_are_normalised_floats()
-    {
-        var path = WriteTemp("tone.wav", TestAudio.MakeTone(1.0, 440, amplitude: 0.5));
-
-        var buffer = AudioDecoder.Decode(path);
-
         Assert.All(buffer.Samples, s => Assert.InRange(s, -1.0f, 1.0f));
-        Assert.InRange(buffer.Samples.Max(), 0.4f, 0.6f); // amplitude survives
+        Assert.InRange(buffer.Samples.Max(), 0.4f, 0.6f); // amplitude survives normalisation
     }
 
     [Fact]
@@ -54,17 +45,7 @@ public sealed class AudioDecoderTests : IDisposable
         Assert.InRange(resampled.DurationSeconds, 0.98, 1.02);
     }
 
-    [Fact]
-    public void Mono_conversion_averages_channels()
-    {
-        var stereo = new AudioBuffer([1.0f, -1.0f, 0.5f, -0.5f], 8000, 2);
-
-        var mono = AudioDecoder.ToMono(stereo);
-
-        Assert.Equal(1, mono.Channels);
-        Assert.Equal([0.0f, 0.0f], mono.Samples);
-    }
-
+    // Channel downmixing is covered by AudioConverterTests' multichannel case.
     [Fact]
     public void Unsupported_content_throws_a_clear_error()
     {
@@ -82,47 +63,6 @@ public sealed class AudioDecoderTests : IDisposable
         var ex = Assert.Throws<InvalidDataException>(() => AudioDecoder.Decode(path, maxDurationSeconds: 1.0));
 
         Assert.Contains("limit", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Audio_within_the_limit_still_decodes()
-    {
-        var path = WriteTemp("short.wav", TestAudio.MakeTone(seconds: 1.0, frequencyHz: 440, sampleRate: 8000));
-
-        var buffer = AudioDecoder.Decode(path, maxDurationSeconds: 10.0);
-
-        Assert.InRange(buffer.DurationSeconds, 0.9, 1.1);
-    }
-
-    [Fact]
-    public void The_default_limit_is_fifteen_minutes()
-        => Assert.Equal(900, AudioDecoder.MaxDurationSecondsDefault);
-
-    /// <summary>
-    /// The brief's tests only exercise the WAV path. This decodes a real MP3 (the NLayer-backed
-    /// path) using the user's own local file, which is git-ignored and never touched or committed.
-    /// If the file isn't present (e.g. CI, another machine), the test skips cleanly with a logged
-    /// reason instead of failing.
-    /// </summary>
-    [Fact]
-    public void Decodes_a_real_mp3_via_the_nlayer_path()
-    {
-        var source = Path.Combine(TestPaths.RepoRoot(), "2017_LonelyHill2.mp3");
-        if (!File.Exists(source))
-        {
-            Console.WriteLine($"SKIPPED: real-MP3 fixture not found at '{source}'; nothing to verify on this machine.");
-            return;
-        }
-
-        var path = Path.Combine(_dir, "real.mp3");
-        File.Copy(source, path);
-
-        var buffer = AudioDecoder.Decode(path);
-
-        Assert.True(buffer.SampleRate >= 8000, $"Expected a plausible sample rate, got {buffer.SampleRate}.");
-        Assert.True(buffer.Channels >= 1, $"Expected at least one channel, got {buffer.Channels}.");
-        Assert.True(buffer.DurationSeconds > 10, $"Expected duration > 10s, got {buffer.DurationSeconds:F2}s.");
-        Console.WriteLine($"Decoded '{source}': {buffer.SampleRate} Hz, {buffer.Channels} ch, {buffer.DurationSeconds:F2}s.");
     }
 
 }

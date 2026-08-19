@@ -33,35 +33,8 @@ public sealed class MusicXmlBuilderTests
         Assert.Equal(2, root.Descendants("harmony").Count());
     }
 
-    [Fact]
-    public void Annotates_each_chord_with_its_roman_numeral()
-    {
-        List<ChordSpan> chords = [new("C", "C", "maj", 0.0, 2.0), new("G", "G", "maj", 2.0, 4.0)];
-
-        var xml = XDocument.Parse(MusicXmlBuilder.Build([], chords, Result(), "t"));
-
-        var words = xml.Descendants("words").Select(w => w.Value).ToList();
-        Assert.Contains("I", words);
-        Assert.Contains("V", words);
-    }
-
-    [Fact]
-    public void Empty_measures_hold_a_whole_measure_rest()
-    {
-        var xml = XDocument.Parse(MusicXmlBuilder.Build([], [], Result(), "t"));
-
-        var rest = Assert.Single(xml.Descendants("rest"));
-        Assert.Equal("yes", rest.Attribute("measure")!.Value);
-    }
-
-    [Fact]
-    public void Nonsense_tempo_falls_back_to_120()
-    {
-        var xml = XDocument.Parse(MusicXmlBuilder.Build([], [], Result(tempo: 0), "t"));
-
-        Assert.Equal("120", xml.Descendants("per-minute").Single().Value);
-    }
-
+    // Roman-numeral text is covered by RomanNumeralsTests; the export endpoint itself is covered
+    // by E2EAPI. What stays here is the document shape no other test asserts.
     [Fact]
     public void First_measure_declares_key_time_and_clef()
     {
