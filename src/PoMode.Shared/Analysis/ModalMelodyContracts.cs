@@ -67,6 +67,14 @@ public sealed record ModalMelodyRequest(
     int Octave = 4,
     double TargetPurity = 90.0);
 
+/// <summary>
+/// A mode the melody turned out to fit better than the one that was asked for. Only ever set when the
+/// difference is worth saying out loud: a loose setting lets the melody drift off its own tonic, and
+/// since all seven relative modes share a note set, what it drifts into is usually a real mode with a
+/// different home note.
+/// </summary>
+public sealed record ModeFitDto(ScaleMode Mode, int TonicPitchClass, string Name, double Percentage);
+
 public sealed record GeneratedMelodyDto(
     string ProgressionId,
     string ProgressionName,
@@ -83,7 +91,8 @@ public sealed record GeneratedMelodyDto(
     IReadOnlyList<NoteEvent> BackingNotes,
     IReadOnlyList<ChordSpan> Chords,
     VisualizationPayload Visual,
-    ModalResult ModalAnalysis);
+    ModalResult ModalAnalysis,
+    ModeFitDto? BetterFit = null);
 
 public sealed record ModeComparisonItemDto(
     ScaleMode Mode,

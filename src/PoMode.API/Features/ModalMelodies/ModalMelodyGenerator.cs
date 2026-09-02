@@ -255,7 +255,79 @@ public sealed class ModalMelodyGenerator
             BackingNotes: backingNotes,
             Chords: chords,
             Visual: visual,
-            ModalAnalysis: modalResult);
+            ModalAnalysis: modalResult,
+            BetterFit: FindBetterFit(request.Mode, modeRootClass, melodyNotes, modePercentage));
+    }
+
+    /// <summary>How far ahead a rival mode has to score before it is worth naming.</summary>
+    private const double BetterFitMarginPoints = 2.0;
+
+    /// <summary>
+    /// Scores the melody against every mode on every root and returns the winner, but only when it
+    /// beats the mode that was asked for by more than <see cref="BetterFitMarginPoints"/>. At a loose
+    /// purity setting the melody stops anchoring to its own tonic, and because the relative modes all
+    /// draw on one set of notes, what comes out often has a genuinely different home note. Saying so is
+    /// more honest than reporting a low score against a mode the melody is no longer really in.
+    /// </summary>
+    private static ModeFitDto? FindBetterFit(
+        ScaleMode requestedMode,
+        int requestedRootClass,
+        IReadOnlyList<NoteEvent> melodyNotes,
+        double requestedScore)
+    {
+        if (melodyNotes.Count == 0) return null;
+
+        // Every pitch class the melody actually sounds. A rival reading has to account for all of them:
+        // scale adherence is only part of the score, so without this the winner can be a mode built on
+        // notes the melody never plays, named on the strength of where it happens to start and end.
+        var sounded = 0;
+        foreach (var note in melodyNotes)
+        {
+            sounded |= 1 << (((note.MidiPitch % 12) + 12) % 12);
+        }
+
+        ModeFitDto? best = null;
+        foreach (var mode in Enum.GetValues<ScaleMode>())
+        {
+            // A mode's root is fixed by the parent it is measured from, so walking all twelve parents
+            // covers every root exactly once.
+            for (var parentClass = 0; parentClass < 12; parentClass++)
+            {
+                var rootClass = (parentClass + ScaleModes.ModeDegreeOffset(mode)) % 12;
+                if (mode == requestedMode && rootClass == requestedRootClass) continue;
+
+                // On the same root, a scale built from a subset of the requested one is not a rival
+                // reading, just the same music described with fewer notes. A major melody that happens
+                // to skip its 4th and 7th would otherwise always be announced as pentatonic, which says
+                // nothing about where home is.
+                if (rootClass == requestedRootClass
+                    && (ModeDefinitions.Mask(mode) & ~ModeDefinitions.Mask(requestedMode)) == 0)
+                {
+                    continue;
+                }
+
+                if ((sounded & ~AbsoluteScaleMask(mode, rootClass)) != 0) continue;
+
+                var score = CalculateModePercentage(parentClass, mode, melodyNotes);
+                if (best is null || score > best.Percentage)
+                {
+                    best = new ModeFitDto(mode, rootClass, $"{PitchNames.Name(rootClass)} {mode}", score);
+                }
+            }
+        }
+
+        return best is not null && best.Percentage > requestedScore + BetterFitMarginPoints ? best : null;
+    }
+
+    /// <summary>The mode's pitch classes as a 12-bit mask, placed on <paramref name="rootClass"/>.</summary>
+    private static int AbsoluteScaleMask(ScaleMode mode, int rootClass)
+    {
+        var mask = 0;
+        foreach (var interval in ScaleModes.Intervals(mode))
+        {
+            mask |= 1 << ((rootClass + interval) % 12);
+        }
+        return mask;
     }
 
     public ModalComparisonResponse GenerateComparison(

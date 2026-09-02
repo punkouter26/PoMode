@@ -9,6 +9,19 @@
 <PageTitle>PoMode · Mode Lab</PageTitle>
 
 <div class="modelab-studio-container">
+    @* Loosen the purity setting far enough and the melody stops anchoring to its own tonic. Since all
+       seven relative modes share one set of notes, what it drifts into is usually a real mode with a
+       different home note. The server names it rather than reporting a poor score against a mode the
+       melody has left. *@
+    @if (_melody?.BetterFit is { } betterFit)
+    {
+        <div class="better-fit-banner" role="status" data-better-fit="@betterFit.Name">
+            <span class="better-fit-lead">This actually sounds like</span>
+            <span class="better-fit-mode">@betterFit.Name</span>
+            <span class="better-fit-score">@($"{betterFit.Percentage:0.#}% fit, against {_melody.ModePercentage:0.#}% for {GetModeDisplayName(_selectedMode)}")</span>
+        </div>
+    }
+
     <!-- Top Studio Toolbar: Title, Transport, and Key/Progression/Style/Purity Selectors -->
     <div class="studio-top-bar">
         <div class="studio-brand">

@@ -30,6 +30,7 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(List<ChordProgressionDefinition>))]
 [JsonSerializable(typeof(ModalMelodyRequest))]
 [JsonSerializable(typeof(GeneratedMelodyDto))]
+[JsonSerializable(typeof(ModeFitDto))]
 [JsonSerializable(typeof(ModeComparisonItemDto))]
 [JsonSerializable(typeof(ModalComparisonResponse))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

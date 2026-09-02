@@ -1,3 +1,38 @@
+.better-fit-banner {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.6rem;
+    padding: 0.6rem 0.9rem;
+    border: 2px solid #ef4444;
+    border-left-width: 6px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.better-fit-lead {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ef4444;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.better-fit-mode {
+    font-size: 1.9rem;
+    font-weight: 900;
+    line-height: 1.1;
+    color: #ef4444;
+    letter-spacing: -0.01em;
+}
+
+.better-fit-score {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--pm-fg-muted);
+}
+
 .modelab-studio-container {
     display: flex;
     flex-direction: column;
