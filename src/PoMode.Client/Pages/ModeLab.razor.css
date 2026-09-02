@@ -203,6 +203,10 @@
     width: 65px !important;
 }
 
+::deep .compact-slider.purity-slider.rz-slider {
+    width: 110px !important;
+}
+
 /* --- 7 Relative Modes Color-Themed Strip --- */
 .studio-modes-strip {
     display: grid;
@@ -387,6 +391,13 @@
     font-weight: 700;
     color: var(--pm-fg-muted);
     text-transform: uppercase;
+}
+
+.purity-measured {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--pm-fg-muted);
+    white-space: nowrap;
 }
 
 .purity-badge {

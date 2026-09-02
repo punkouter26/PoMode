@@ -2,6 +2,7 @@
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
@@ -18,6 +19,13 @@
         {
             <RadzenButton Text="Stop" ButtonStyle="ButtonStyle.Danger" Click="@StopAsync" />
             <RadzenText class="live-hint" Text="@($"Listening… {_noteCount} notes heard")" />
+        }
+        @if (_hasTake)
+        {
+            <RadzenButton Text="@(_sending ? "Sending…" : "Analyze this take →")"
+                          ButtonStyle="ButtonStyle.Secondary" Disabled="@_sending"
+                          Click="@SendToAnalyzerAsync" id="live-send-analyzer"
+                          title="Send what you just sang through the full analysis pipeline: stem separation, pitch tracking, chords and modes" />
         }
         @if (_error is not null)
         {
@@ -48,6 +56,8 @@
     private ModalResult? _result;
     private int? _selectedWindow;
     private Timer? _timer;
+    private bool _hasTake;
+    private bool _sending;
 
     private async Task StartAsync()
     {
@@ -59,6 +69,7 @@
             return;
         }
         _running = true;
+        _hasTake = true;
         _visual = null;
         _result = null;
         _selectedWindow = null;
@@ -100,6 +111,62 @@
         catch (JSDisconnectedException)
         {
             // Torn down mid-tick; the timer dies with the component.
+        }
+    }
+
+    /// <summary>
+    /// Hands the recorded take to the full analysis pipeline. The live view only ever sees pitch the
+    /// browser detected; the analyzer works on the audio itself, so the recording is uploaded rather
+    /// than the notes on screen.
+    /// </summary>
+    private async Task SendToAnalyzerAsync()
+    {
+        if (_module is null || _sending)
+        {
+            return;
+        }
+
+        _sending = true;
+        _error = null;
+        try
+        {
+            if (_running)
+            {
+                await StopAsync();
+            }
+
+            var encoded = await _module.InvokeAsync<string>("takeWavBase64", _root);
+            if (string.IsNullOrEmpty(encoded))
+            {
+                _error = "Nothing was recorded yet.";
+                return;
+            }
+
+            var job = await Analysis.UploadAsync(
+                Convert.FromBase64String(encoded),
+                $"live-take-{DateTime.Now:yyyyMMdd-HHmmss}.wav",
+                clientCanInfer: false);
+
+            if (job is not null && !string.IsNullOrEmpty(job.JobId))
+            {
+                Navigation.NavigateTo($"/?job={job.JobId}");
+            }
+            else
+            {
+                _error = "The analyzer would not accept the take.";
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-send.
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _sending = false;
         }
     }
 

@@ -88,14 +88,6 @@
                                 Change="@(_ => OnConfigChanged())" class="compact-dropdown style-dd" id="style-select" />
             </div>
 
-            <div class="selector-field purity-field">
-                <span class="field-label" title="Target Modal Purity: adjust how strictly the melody anchors to the mode's root and characteristic color tones">
-                    Purity: @($"{_targetPurity:0}%")
-                </span>
-                <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="40" Max="100" Step="5"
-                              Change="@(args => OnPurityChanged(args))" class="compact-slider purity-slider" id="purity-slider" />
-            </div>
-
             <div class="selector-field tempo-field">
                 <span class="field-label">@($"{_bpm:0} BPM")</span>
                 <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="180" Step="2"
@@ -174,8 +166,15 @@
 
             <div class="modal-purity-box">
                 <span class="ribbon-label">Modal Purity:</span>
-                <span class="purity-badge" title="Target: @($"{_targetPurity:0}%") | Measured: @($"{_melody.ModePercentage:0.#}%")">
-                    🎯 @($"{_melody.ModePercentage:0.#}%")
+                <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
+                              Change="@(args => OnPurityChanged(args))"
+                              class="compact-slider purity-slider" id="purity-slider" />
+                <span class="purity-badge" data-purity-target="@($"{_targetPurity:0}")"
+                      title="How hard the example insists on its mode. At the top the melody starts and ends on the mode root and the loop opens on the home chord; lower settings loosen both, so the opening chord need not be the mode's own.">
+                    🎯 @($"{_targetPurity:0}%")
+                </span>
+                <span class="purity-measured" title="Modal purity actually measured in the generated melody">
+                    measured @($"{_melody.ModePercentage:0.#}%")
                 </span>
             </div>
 
@@ -420,6 +419,8 @@
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
+            // The arrangement just changed underneath the playhead, so this is a new take.
+            await StopAsync();
             await PlayAsync();
         }
     }
@@ -429,6 +430,8 @@
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
+            // The arrangement just changed underneath the playhead, so this is a new take.
+            await StopAsync();
             await PlayAsync();
         }
     }
@@ -445,6 +448,8 @@
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
+            // The arrangement just changed underneath the playhead, so this is a new take.
+            await StopAsync();
             await PlayAsync();
         }
     }
@@ -454,6 +459,8 @@
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
+            // The arrangement just changed underneath the playhead, so this is a new take.
+            await StopAsync();
             await PlayAsync();
         }
     }
@@ -462,9 +469,14 @@
     {
         _seed = Random.Shared.Next(1, 100000);
         await RefreshMelodyAsync();
-        if (_isPlaying && _playerModule is not null && _melody is not null)
+
+        // A new melody is a new take, so it starts from bar one. Swapping the notes underneath a
+        // running playhead left it partway through a phrase that no longer existed.
+        var wasPlaying = _isPlaying;
+        await StopAsync();
+        if (wasPlaying)
         {
-            await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec);
+            await PlayAsync();
         }
     }
 

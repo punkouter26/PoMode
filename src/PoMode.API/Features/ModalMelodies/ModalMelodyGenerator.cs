@@ -218,10 +218,13 @@ public sealed class ModalMelodyGenerator
         var modeRootClass = (parentTonicClass + modeDegreeOffset) % 12;
         var modeRootName = PitchNames.Name(modeRootClass);
 
-        var chords = BuildChordSpans(progression, parentTonicClass, modeRootClass, bpm);
-        var backingNotes = ChordPadBuilder.Build(chords);
+        // 0 is a real setting now, not a floor: at the bottom of the slider the melody stops anchoring
+        // to the mode root and the loop stops opening on the home chord.
+        var targetPurity = Math.Clamp(request.TargetPurity, 0.0, 100.0);
 
-        var targetPurity = Math.Clamp(request.TargetPurity, 40.0, 100.0);
+        var chords = DelayTheHomeChord(
+            BuildChordSpans(progression, parentTonicClass, modeRootClass, bpm), modeRootClass, targetPurity);
+        var backingNotes = ChordPadBuilder.Build(chords);
         var melodyNotes = GenerateRelativeModalMelodyNotes(
             parentTonicClass: parentTonicClass,
             mode: request.Mode,
@@ -397,6 +400,52 @@ public sealed class ModalMelodyGenerator
 
         var totalPercentage = scaleAdherencePts + tonicPts + charPts + singabilityPts;
         return Math.Clamp(Math.Round(totalPercentage, 1), 0.0, 100.0);
+    }
+
+    /// <summary>
+    /// Decides how plainly the loop states where home is. At the top of the purity slider the mode's
+    /// own chord lands on bar one, which is the most direct way to name a tonal centre. Lower settings
+    /// push it further into the loop, so the bar the ear lands on first is no longer home and the mode
+    /// has to be heard from the melody and the colour chords instead.
+    /// </summary>
+    private static IReadOnlyList<ChordSpan> DelayTheHomeChord(
+        IReadOnlyList<ChordSpan> chords, int modeRootClass, double targetPurity)
+    {
+        if (chords.Count < 2) return chords;
+
+        var delay = Math.Clamp(
+            (int)Math.Floor((100.0 - targetPurity) / 100.0 * chords.Count), 0, chords.Count - 1);
+        if (delay == 0) return chords;
+
+        // Rotating reuses the exact same chords, so no setting of the slider can push the harmony out
+        // of the mode. Skip a rotation that would land on home anyway: an alternating vamp comes back
+        // to itself every other step, and the point of the setting is to open somewhere else.
+        for (var attempt = 0; attempt < chords.Count; attempt++)
+        {
+            var shift = (delay + attempt) % chords.Count;
+            if (shift == 0) continue;
+
+            var rotated = RotateOverTimeSlots(chords, shift);
+            if (!(PitchNames.TryParseRoot(rotated[0].Root, out var openingRoot) && openingRoot == modeRootClass))
+            {
+                return rotated;
+            }
+        }
+
+        return chords;
+    }
+
+    /// <summary>Reorders the chords by <paramref name="shift"/> while the measure boundaries stay put.</summary>
+    private static IReadOnlyList<ChordSpan> RotateOverTimeSlots(IReadOnlyList<ChordSpan> chords, int shift)
+    {
+        var count = chords.Count;
+        var rotated = new List<ChordSpan>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var source = chords[(((i - shift) % count) + count) % count];
+            rotated.Add(source with { StartSec = chords[i].StartSec, EndSec = chords[i].EndSec });
+        }
+        return rotated;
     }
 
     /// <summary>
