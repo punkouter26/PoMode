@@ -34,10 +34,11 @@ public static class ChromaExtractor
     public const int TargetSampleRate = 22050;
 
     /// <summary>Computes a chroma vector for one frame of samples. All-zero input yields an all-zero vector.</summary>
-    public static float[] Frame(ReadOnlySpan<float> samples, int sampleRate)
-        => Frame(samples, sampleRate, new Complex[samples.Length], HannWindow(samples.Length));
+    public static float[] Frame(ReadOnlySpan<float> samples, int sampleRate, double tuningOffsetCents = 0.0)
+        => Frame(samples, sampleRate, new Complex[samples.Length], HannWindow(samples.Length), tuningOffsetCents);
 
-    private static float[] Frame(ReadOnlySpan<float> samples, int sampleRate, Complex[] buffer, double[] hannWindow)
+    private static float[] Frame(
+        ReadOnlySpan<float> samples, int sampleRate, Complex[] buffer, double[] hannWindow, double tuningOffsetCents)
     {
         var n = samples.Length;
         for (var i = 0; i < n; i++)
@@ -63,7 +64,12 @@ public static class ChromaExtractor
             // bin sitting between two semitones then contributes to both instead of being rounded
             // wholesale into whichever is nearer — the rounding was what turned bass-register
             // spectral smear into confident wrong pitch classes.
-            var midi = PoMode.Shared.Analysis.ScaleModes.MidiFromFrequency(frequency);
+            // Subtracting the recording's offset moves the semitone grid onto the notes actually
+            // played. Without it a song a few cents flat leaks energy into the neighbouring pitch
+            // class on every single bin, which is exactly the smear the triangular split exists to
+            // avoid.
+            var midi = PoMode.Shared.Analysis.ScaleModes.MidiFromFrequency(frequency)
+                - (tuningOffsetCents / 100.0);
             var lower = (int)Math.Floor(midi);
             var fraction = midi - lower;
             var magnitude = buffer[bin].Magnitude;
@@ -108,7 +114,8 @@ public static class ChromaExtractor
     /// default window at 22.05 kHz spans ~371 ms — long enough to resolve bass semitones
     /// (~2.7 Hz bins), still well under a beat at any plausible tempo.
     /// </summary>
-    public static ChromaGram Compute(AudioBuffer buffer, int windowSize = 8192, int hopSize = 2048)
+    public static ChromaGram Compute(
+        AudioBuffer buffer, double tuningOffsetCents = 0.0, int windowSize = 8192, int hopSize = 2048)
     {
         if (windowSize <= 0 || (windowSize & (windowSize - 1)) != 0)
         {
@@ -134,7 +141,7 @@ public static class ChromaExtractor
             {
                 Array.Clear(windowed, available, windowSize - available);
             }
-            frames.Add(Frame(windowed, mono.SampleRate, fftBuffer, hannWindow));
+            frames.Add(Frame(windowed, mono.SampleRate, fftBuffer, hannWindow, tuningOffsetCents));
         }
 
         var framesPerSecond = mono.SampleRate / (double)hopSize;

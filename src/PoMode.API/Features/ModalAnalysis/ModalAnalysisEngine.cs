@@ -17,7 +17,8 @@ public static class ModalAnalysisEngine
         IReadOnlyList<NoteEvent> notes,
         IReadOnlyList<ChordSpan> chords,
         double tempoBpm = 120.0,
-        bool tempoEstimated = true)
+        bool tempoEstimated = true,
+        double tuningOffsetCents = 0.0)
     {
         var bpm = tempoBpm <= 0 ? 120.0 : tempoBpm;
         var tonic = TonicDetector.Detect(notes, chords);
@@ -58,7 +59,8 @@ public static class ModalAnalysisEngine
             PrimaryConfidence: primaryConfidence,
             TempoBpm: bpm,
             TempoEstimated: tempoEstimated,
-            Windows: windows);
+            Windows: windows,
+            TuningOffsetCents: tuningOffsetCents);
     }
 
     /// <summary>Distinct, ascending intervals above the tonic sung inside the chord's half-open

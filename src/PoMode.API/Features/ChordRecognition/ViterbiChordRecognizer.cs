@@ -20,7 +20,7 @@ public sealed class ViterbiChordRecognizer : IChordRecognizer
     public Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct)
     {
         var buffer = context.DecodePreferredAnalysisAudio();
-        var chromaGram = ChromaExtractor.Compute(buffer);
+        var chromaGram = ChromaExtractor.Compute(buffer, context.TuningOffsetCents());
         var frames = ChordViterbiDecoder.Decode(chromaGram.Frames);
 
         // Same beat-grid snapping as the default recognizer; the Viterbi path is already smooth,

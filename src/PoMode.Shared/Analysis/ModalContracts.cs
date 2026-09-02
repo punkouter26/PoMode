@@ -40,7 +40,14 @@ public sealed record ModalResult(
     double PrimaryConfidence,
     double TempoBpm,
     bool TempoEstimated,
-    IReadOnlyList<ModalWindow> Windows);
+    IReadOnlyList<ModalWindow> Windows,
+    /// <summary>
+    /// How far the recording sat from A=440, in cents, before its notes were read. Negative means
+    /// it was flat. Zero means either that it was already in tune or that no single offset described
+    /// it, which are reported the same way on purpose: in both cases nothing was corrected.
+    /// Defaulted so results written before this existed still load.
+    /// </summary>
+    double TuningOffsetCents = 0.0);
 
 public static class ModalResultExtensions
 {

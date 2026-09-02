@@ -19,7 +19,7 @@ public sealed class ChromaChordRecognizer : IChordRecognizer
     public Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct)
     {
         var buffer = context.DecodePreferredAnalysisAudio();
-        var chromaGram = ChromaExtractor.Compute(buffer);
+        var chromaGram = ChromaExtractor.Compute(buffer, context.TuningOffsetCents());
 
         var frames = chromaGram.Frames
             .Select(chroma => ChordMatcher.Match(chroma))

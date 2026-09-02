@@ -1,7 +1,6 @@
 using System.Text.Json;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
-using PoMode.Shared.Hardware;
 using PoMode.Shared.Serialization;
 using Xunit;
 
@@ -9,8 +8,13 @@ namespace PoMode.Unit.Serialization;
 
 public class JsonContextTests
 {
+    /// <summary>
+    /// One pass over every contract the source-generated context has to carry that nothing else
+    /// covers. Note and chord lists are left out on purpose: the E2EAPI artifact tests deserialize
+    /// those straight off the wire, which is stronger evidence than a round trip here.
+    /// </summary>
     [Fact]
-    public void DiagnosticsReport_round_trips_via_source_gen_context()
+    public void Every_contract_without_wire_coverage_round_trips_through_the_source_gen_context()
     {
         var report = new DiagnosticsReport(
             EnvironmentName: "Development",
@@ -19,19 +23,16 @@ public class JsonContextTests
             SecretFellBack: true,
             Hardware: null);
 
-        var json = JsonSerializer.Serialize(report, PoModeJsonContext.Default.DiagnosticsReport);
-        var back = JsonSerializer.Deserialize(json, PoModeJsonContext.Default.DiagnosticsReport);
+        var backReport = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(report, PoModeJsonContext.Default.DiagnosticsReport),
+            PoModeJsonContext.Default.DiagnosticsReport);
 
-        Assert.NotNull(back);
-        Assert.Equal("Development", back.EnvironmentName);
-        Assert.True(back.SecretFellBack);
-        Assert.Equal("EnvironmentVariables", back.SecretSource);
-    }
+        Assert.NotNull(backReport);
+        Assert.Equal("Development", backReport.EnvironmentName);
+        Assert.True(backReport.SecretFellBack);
+        Assert.Equal("EnvironmentVariables", backReport.SecretSource);
 
-    [Fact]
-    public void JobStatusDto_round_trips_via_source_gen_context()
-    {
-        var dto = new JobStatusDto(
+        var status = new JobStatusDto(
             JobId: "abc123",
             Stage: JobStage.PitchTracking,
             Progress: 0.25,
@@ -40,20 +41,15 @@ public class JsonContextTests
             Error: null,
             CreatedAt: DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
 
-        var json = JsonSerializer.Serialize(dto, PoModeJsonContext.Default.JobStatusDto);
-        var back = JsonSerializer.Deserialize(json, PoModeJsonContext.Default.JobStatusDto);
+        var backStatus = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(status, PoModeJsonContext.Default.JobStatusDto),
+            PoModeJsonContext.Default.JobStatusDto);
 
-        Assert.NotNull(back);
-        Assert.Equal(JobStage.PitchTracking, back.Stage);
-        Assert.Equal("FakeStemSeparator", back.Plan[0].Executor);
-        Assert.Equal(["Separating"], back.CompletedStages);
-    }
+        Assert.NotNull(backStatus);
+        Assert.Equal(JobStage.PitchTracking, backStatus.Stage);
+        Assert.Equal("FakeStemSeparator", backStatus.Plan[0].Executor);
+        Assert.Equal(["Separating"], backStatus.CompletedStages);
 
-    // Note/chord list contexts are exercised end-to-end by the E2EAPI artifact tests, which
-    // deserialize them straight off the wire; only the families with no such coverage stay here.
-    [Fact]
-    public void ModalResult_round_trips_via_source_gen_context()
-    {
         var result = new ModalResult(
             SchemaVersion: 1,
             TonicPitchClass: 2,
@@ -75,16 +71,35 @@ public class JsonContextTests
                     SungIntervals: [0, 2, 3, 5, 7, 9, 10],
                     InsufficientEvidence: false,
                     Matches: [new ModalMatch(ScaleMode.Dorian, 1.0, [0, 2, 3], [])])
-            ]);
+            ],
+            TuningOffsetCents: -6.5);
 
-        var json = JsonSerializer.Serialize(result, PoModeJsonContext.Default.ModalResult);
-        var back = JsonSerializer.Deserialize(json, PoModeJsonContext.Default.ModalResult);
+        var backResult = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(result, PoModeJsonContext.Default.ModalResult),
+            PoModeJsonContext.Default.ModalResult);
+
+        Assert.NotNull(backResult);
+        Assert.Equal(ScaleMode.Dorian, backResult.PrimaryMode);
+        Assert.Equal("D", backResult.TonicName);
+        Assert.Equal(1, backResult.Windows[0].MeasureNumber);
+        Assert.Equal(ScaleMode.Dorian, backResult.Windows[0].Matches[0].Mode);
+        Assert.True(backResult.TempoEstimated);
+        // result.json is persisted, so the measured offset has to survive a round trip.
+        Assert.Equal(-6.5, backResult.TuningOffsetCents);
+    }
+
+    /// <summary>A result written before tuning measurement existed must still load, at zero.</summary>
+    [Fact]
+    public void A_result_written_without_a_tuning_offset_loads_as_uncorrected()
+    {
+        const string legacy = """
+            {"schemaVersion":1,"tonicPitchClass":0,"tonicName":"C","tonicConfidence":0.5,
+             "primaryMode":null,"primaryConfidence":0,"tempoBpm":120,"tempoEstimated":true,"windows":[]}
+            """;
+
+        var back = JsonSerializer.Deserialize(legacy, PoModeJsonContext.Default.ModalResult);
 
         Assert.NotNull(back);
-        Assert.Equal(ScaleMode.Dorian, back.PrimaryMode);
-        Assert.Equal("D", back.TonicName);
-        Assert.Equal(1, back.Windows[0].MeasureNumber);
-        Assert.Equal(ScaleMode.Dorian, back.Windows[0].Matches[0].Mode);
-        Assert.True(back.TempoEstimated);
+        Assert.Equal(0.0, back.TuningOffsetCents);
     }
 }

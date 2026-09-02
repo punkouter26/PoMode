@@ -25,6 +25,7 @@
                 }
                 <RadzenText class="hud-sub"
                             Text="@($"Tempo {Result.TempoBpm:0} BPM{(Result.TempoEstimated ? " (estimated)" : "")} · {Windows.Count} windows")" />
+                <TuningNotice Cents="Result.TuningOffsetCents" />
             </div>
             <button class="hud-landscape-link" type="button" @onclick="OnShowLandscapeAsync" title="Open the 3D mode landscape">
                 3D landscape ↗

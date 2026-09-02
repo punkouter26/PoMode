@@ -39,6 +39,39 @@ public sealed record StageContext(string JobId, string JobDir, string InputPath,
     }
 
     public void ReleaseAnalysisAudio() => _decodedAnalysisAudio = null;
+
+    private double? _tuningOffsetCents;
+
+    /// <summary>
+    /// How far this recording sits from A=440, in cents, measured once and reused by every stage
+    /// that turns a frequency into a note. Zero when the deviations did not cluster tightly enough
+    /// for one number to describe the recording.
+    ///
+    /// <para>Cached because it is a property of the song, not of a stage: the note transcriber and
+    /// the chroma extractor must correct by the same amount or they will disagree about what note
+    /// was played. A failure here is never fatal — an unmeasurable offset simply means no
+    /// correction, which is the behaviour the pipeline had before.</para>
+    /// </summary>
+    public double TuningOffsetCents(ILogger? logger = null)
+    {
+        if (_tuningOffsetCents is { } cached)
+        {
+            return cached;
+        }
+
+        try
+        {
+            var estimate = Features.Audio.TuningEstimator.Estimate(DecodePreferredAnalysisAudio());
+            _tuningOffsetCents = estimate.AppliedCents;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Tuning estimation failed for job {JobId}; analysing at A=440.", JobId);
+            _tuningOffsetCents = 0.0;
+        }
+
+        return _tuningOffsetCents.Value;
+    }
 }
 
 public interface IStageExecutor

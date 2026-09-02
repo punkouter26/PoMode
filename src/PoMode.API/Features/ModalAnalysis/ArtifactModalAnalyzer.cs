@@ -18,7 +18,8 @@ public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalA
 
         var (bpm, estimated) = await EstimateTempoAsync(context, ct);
 
-        var result = ModalAnalysisEngine.Analyze(notes, chords, bpm, estimated);
+        var result = ModalAnalysisEngine.Analyze(
+            notes, chords, bpm, estimated, context.TuningOffsetCents(logger));
 
         await store.WriteArtifactAsync(context.JobId, "result.json", result, ct);
     }

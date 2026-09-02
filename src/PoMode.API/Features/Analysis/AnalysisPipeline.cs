@@ -218,7 +218,7 @@ public sealed class AnalysisPipeline(
         try
         {
             var buffer = context.DecodePreferredAnalysisAudio();
-            var chroma = Features.ChordRecognition.ChromaExtractor.Compute(buffer);
+            var chroma = Features.ChordRecognition.ChromaExtractor.Compute(buffer, context.TuningOffsetCents());
             var histogram = new double[12];
             foreach (var frame in chroma.Frames)
             {

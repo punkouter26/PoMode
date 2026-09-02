@@ -22,9 +22,14 @@ public sealed class YinPitchTracker : IPitchTracker, IFileTranscriber
     {
         // Same input choice as OnnxPitchTracker: the separated vocal stem when it exists.
         var vocalsPath = Path.Combine(context.JobDir, "vocals.wav");
-        return TranscribeFileAsync(File.Exists(vocalsPath) ? vocalsPath : context.InputPath, ct);
+        var path = File.Exists(vocalsPath) ? vocalsPath : context.InputPath;
+        var offsetCents = context.TuningOffsetCents();
+        return Task.Run(
+            () => YinMelodyTranscriber.Transcribe(AudioDecoder.Decode(path), offsetCents), ct);
     }
 
+    /// <summary>No stage context here, so no measured offset: this path transcribes an arbitrary
+    /// file (the backing stem) and is not the one whose notes the user reads as a melody.</summary>
     public Task<IReadOnlyList<NoteEvent>> TranscribeFileAsync(string audioPath, CancellationToken ct)
         => Task.Run(() => YinMelodyTranscriber.Transcribe(AudioDecoder.Decode(audioPath)), ct);
 }

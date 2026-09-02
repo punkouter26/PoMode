@@ -39,7 +39,14 @@ public static class YinMelodyTranscriber
     /// <summary>Frames quieter than this RMS are silence regardless of what the lag search finds.</summary>
     private const double SilenceRms = 0.01;
 
-    public static IReadOnlyList<NoteEvent> Transcribe(AudioBuffer buffer)
+    /// <param name="tuningOffsetCents">
+    /// How far the recording sits from A=440, subtracted before each frame's fractional pitch is
+    /// rounded to a note. A voice sitting six cents sharp of C throughout would otherwise round
+    /// correctly only until a note drifted past the halfway mark, at which point it would jump to
+    /// the neighbouring semitone. One shift applied to every frame keeps the sung intervals exactly
+    /// as performed while putting the whole line back on the grid.
+    /// </param>
+    public static IReadOnlyList<NoteEvent> Transcribe(AudioBuffer buffer, double tuningOffsetCents = 0.0)
     {
         var mono = AudioDecoder.ToMono(buffer);
         if (mono.SampleRate != TargetSampleRate)
@@ -73,6 +80,21 @@ public static class YinMelodyTranscriber
         }
 
         MedianSmooth(midis);
+
+        // Applied to the continuous pitch track before rounding, so it moves the grid rather than
+        // any individual note: every interval the singer actually sang survives untouched.
+        if (tuningOffsetCents != 0)
+        {
+            var semitones = tuningOffsetCents / 100.0;
+            for (var i = 0; i < midis.Length; i++)
+            {
+                if (midis[i] is { } value)
+                {
+                    midis[i] = value - semitones;
+                }
+            }
+        }
+
         return Segment(midis, rmsPerFrame);
     }
 
