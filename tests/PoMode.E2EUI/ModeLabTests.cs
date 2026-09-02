@@ -79,4 +79,65 @@ public class ModeLabTests(AppFixture app)
             page.Locator(".compact-mode-card", new() { HasText = "Lydian" }).Locator(".compact-sample-btn.playing"))
             .ToBeVisibleAsync(Visible);
     }
+
+    /// <summary>
+    /// Instruments Web Audio and watches a whole progression play. Guards the scheduler rewrite:
+    /// the loop-relative cursor it replaced read "already scheduled past the lookahead" as "wrapped
+    /// around", which dumped every note of the song into the opening frame, sounded each one twice,
+    /// and left the following passes through the loop without their chords.
+    /// </summary>
+    [Fact]
+    public async Task Playing_schedules_the_whole_progression_just_in_time_and_keeps_looping()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await ModeLabPageAsync(browser);
+
+        // Record every oscillator as (audio time it is due, clock reading when it was handed over).
+        await page.EvaluateAsync(@"() => {
+            window.__sched = [];
+            const AC = window.AudioContext ?? window.webkitAudioContext;
+            const realCreate = AC.prototype.createOscillator;
+            AC.prototype.createOscillator = function () {
+                const ctx = this;
+                const osc = realCreate.call(ctx);
+                const realStart = osc.start.bind(osc);
+                osc.start = function (t) {
+                    window.__sched.push([Number(t ?? ctx.currentTime), ctx.currentTime]);
+                    return realStart(t);
+                };
+                return osc;
+            };
+        }");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Play" }).First.ClickAsync();
+        await Assertions.Expect(page.Locator("body[data-modal-player='playing']"))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = AppFixture.ExpectTimeoutMs });
+
+        var loopText = await StateAsync(page, "data-modal-loop-sec");
+        Assert.NotNull(loopText);
+        var loopSec = double.Parse(loopText, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(loopSec > 1, $"expected a real loop length, got {loopSec}");
+
+        // Long enough to cross the loop point and start a second pass.
+        await page.WaitForTimeoutAsync((int)((loopSec + 1.0) * 1000));
+
+        var onsets = await page.EvaluateAsync<double[]>(
+            "() => [...new Set((window.__sched || []).map(p => Math.round(p[0] * 100) / 100))].sort((a, b) => a - b)");
+        var maxLead = await page.EvaluateAsync<double>(
+            "() => (window.__sched || []).reduce((m, p) => Math.max(m, p[0] - p[1]), 0)");
+
+        // Every chord of the progression, not just the first.
+        var withinFirstPass = onsets.Where(t => t < loopSec).ToArray();
+        Assert.True(withinFirstPass.Length >= 4,
+            $"expected the whole progression to sound, got {withinFirstPass.Length} onsets: {string.Join(", ", withinFirstPass)}");
+
+        // Handed over shortly before each note is due. The old cursor scheduled the far end of the
+        // song within the first frame, which is what this number catches.
+        Assert.True(maxLead < 1.0, $"notes were scheduled {maxLead:0.00}s ahead; expected just-in-time delivery");
+
+        // The loop keeps producing material past its own end.
+        Assert.True(onsets.Any(t => t > loopSec),
+            $"expected notes scheduled beyond the {loopSec:0.00}s loop point, latest was {(onsets.Length > 0 ? onsets[^1] : -1):0.00}");
+    }
 }

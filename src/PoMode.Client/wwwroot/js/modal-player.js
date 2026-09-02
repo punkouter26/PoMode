@@ -19,7 +19,12 @@ let playCount = 0;
 
 let currentMelodyNotes = [];
 let currentBackingNotes = [];
-let lastScheduledTime = 0;
+let scheduledElapsed = 0;
+
+// How far ahead of the audio clock notes are handed to Web Audio. PRIME_SEC covers the gap before
+// the first animation frame; LOOKAHEAD_SEC keeps each later frame a little ahead of the playhead.
+const PRIME_SEC = 0.4;
+const LOOKAHEAD_SEC = 0.22;
 
 // Mirror player state onto the document, matching the mixer.js/canvas.js contract: Playwright
 // asserts on these attributes instead of reaching into module internals. modalPlays counts actual
@@ -256,25 +261,41 @@ function stopActiveVoices() {
     activeVoices = [];
 }
 
-function scheduleWindow(ctx, fromLoopSec, toLoopSec, audioBaseTime) {
-    // Acoustic Piano chord accompaniment
-    for (const n of currentBackingNotes) {
-        if (n.startSec >= fromLoopSec && n.startSec < toLoopSec) {
-            const when = audioBaseTime + (n.startSec - fromLoopSec);
+// Sound every note whose loop-relative start falls in [fromLoopSec, toLoopSec), placing it at
+// loopBaseTime + startSec. loopBaseTime is the audio-clock instant this pass through the loop
+// begins on, so a note keeps its position in the bar and each repeat lands exactly one loop later.
+function scheduleWindow(ctx, fromLoopSec, toLoopSec, loopBaseTime) {
+    const emit = (notes, playNote) => {
+        for (const n of notes) {
+            if (n.startSec < fromLoopSec || n.startSec >= toLoopSec) continue;
+            const when = loopBaseTime + n.startSec;
             if (when >= ctx.currentTime - 0.02) {
-                playPianoChordNote(ctx, n, when);
+                playNote(ctx, n, when);
             }
         }
-    }
+    };
 
-    // Concert Flute melody lead
-    for (const n of currentMelodyNotes) {
-        if (n.startSec >= fromLoopSec && n.startSec < toLoopSec) {
-            const when = audioBaseTime + (n.startSec - fromLoopSec);
-            if (when >= ctx.currentTime - 0.02) {
-                playFluteMelodyNote(ctx, n, when);
-            }
-        }
+    emit(currentBackingNotes, playPianoChordNote);  // Acoustic Piano chord accompaniment
+    emit(currentMelodyNotes, playFluteMelodyNote);  // Concert Flute melody lead
+}
+
+/// Fill the schedule out to <paramref name="targetElapsed"/> seconds past the start of playback,
+/// one pass through the loop at a time. Progress is tracked in absolute elapsed time on purpose:
+/// a loop-relative cursor cannot tell "we wrapped" apart from "we are already scheduled past the
+/// lookahead point", and reading the second case as the first dumped the entire song into the
+/// opening frame and then left the following passes unscheduled.
+function scheduleUpTo(ctx, targetElapsed) {
+    if (loopDuration <= 0) return;
+
+    // One pass per iteration, so a long stall cannot spin forever.
+    for (let guard = 0; scheduledElapsed < targetElapsed && guard < 64; guard++) {
+        const pass = Math.floor(scheduledElapsed / loopDuration);
+        if (!isLooping && pass > 0) return;
+
+        const passStart = pass * loopDuration;
+        const sliceEnd = Math.min(targetElapsed, passStart + loopDuration);
+        scheduleWindow(ctx, scheduledElapsed - passStart, sliceEnd - passStart, playbackStartTime + passStart);
+        scheduledElapsed = sliceEnd;
     }
 }
 
@@ -282,9 +303,7 @@ function tick() {
     if (!isPlaying || !audioCtx) return;
 
     const ctx = audioCtx;
-    const now = ctx.currentTime;
-    const elapsed = (now - playbackStartTime);
-    const loopPos = loopDuration > 0 ? (elapsed % loopDuration) : 0;
+    const elapsed = ctx.currentTime - playbackStartTime;
 
     if (!isLooping && elapsed >= loopDuration) {
         stop();
@@ -297,22 +316,10 @@ function tick() {
     }
 
     if (onPlayheadCallback) {
-        onPlayheadCallback(loopPos);
+        onPlayheadCallback(loopDuration > 0 ? (elapsed % loopDuration) : 0);
     }
 
-    // Lookahead scheduling (0.22s)
-    const lookahead = 0.22;
-    const schedEnd = (now + lookahead - playbackStartTime) % loopDuration;
-
-    if (schedEnd > lastScheduledTime) {
-        scheduleWindow(ctx, lastScheduledTime, schedEnd, now + (lastScheduledTime - loopPos));
-    } else if (schedEnd < lastScheduledTime) {
-        // Wrapped around loop
-        scheduleWindow(ctx, lastScheduledTime, loopDuration, now + (lastScheduledTime - loopPos));
-        scheduleWindow(ctx, 0, schedEnd, now + (loopDuration - loopPos));
-    }
-    lastScheduledTime = schedEnd;
-
+    scheduleUpTo(ctx, elapsed + LOOKAHEAD_SEC);
     animFrameId = requestAnimationFrame(tick);
 }
 
@@ -339,13 +346,12 @@ export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper) {
     }
 
     playbackStartTime = ctx.currentTime - pauseOffset;
-    lastScheduledTime = pauseOffset % loopDuration;
+    scheduledElapsed = pauseOffset;
     isPlaying = true;
 
-    // Schedule initial immediate block
-    const initialLook = Math.min(loopDuration, 0.4);
-    scheduleWindow(ctx, lastScheduledTime, (lastScheduledTime + initialLook) % loopDuration, ctx.currentTime);
-    lastScheduledTime = (lastScheduledTime + initialLook) % loopDuration;
+    // A deeper first block than the per-frame lookahead, so the opening bar cannot stutter while
+    // the animation loop spins up.
+    scheduleUpTo(ctx, pauseOffset + PRIME_SEC);
 
     if (animFrameId) cancelAnimationFrame(animFrameId);
     animFrameId = requestAnimationFrame(tick);
@@ -360,7 +366,6 @@ export function updateMelody(melodyNotes, backingNotes, totalDuration) {
     if (backingNotes) currentBackingNotes = backingNotes;
     if (totalDuration > 0) {
         loopDuration = totalDuration;
-        lastScheduledTime = lastScheduledTime % loopDuration;
     }
     publishState();
 }
@@ -388,7 +393,7 @@ export function seek(positionSec) {
     if (isPlaying && audioCtx) {
         stopActiveVoices();
         playbackStartTime = audioCtx.currentTime - pauseOffset;
-        lastScheduledTime = pauseOffset % loopDuration;
+        scheduledElapsed = pauseOffset;
     } else if (onPlayheadCallback) {
         onPlayheadCallback(pauseOffset);
     }
