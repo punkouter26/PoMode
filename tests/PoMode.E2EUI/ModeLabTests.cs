@@ -140,4 +140,70 @@ public class ModeLabTests(AppFixture app)
         Assert.True(onsets.Any(t => t > loopSec),
             $"expected notes scheduled beyond the {loopSec:0.00}s loop point, latest was {(onsets.Length > 0 ? onsets[^1] : -1):0.00}");
     }
+
+    private static async Task<string[]> ChordSymbolsAsync(IPage page) =>
+        [.. (await page.Locator(".compact-chord-pill .ch-sym").AllTextContentsAsync()).Select(t => t.Trim())];
+
+    /// <summary>
+    /// The point of the strip: picking a mode must move the harmony onto that mode's own tonic. While
+    /// the chords stayed on the parent key, every card sounded like that key with the melody starting
+    /// somewhere else, which is the one thing a mode demonstrator must not do.
+    /// </summary>
+    [Fact]
+    public async Task Picking_a_mode_moves_the_harmony_onto_that_modes_tonic()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await ModeLabPageAsync(browser);
+
+        await Assertions.Expect(page.Locator("#match-harmony-toggle"))
+            .ToHaveAttributeAsync("data-match-harmony", "on", new() { Timeout = AppFixture.ExpectTimeoutMs });
+
+        // Key of C throughout, so each mode's home chord is built on its own degree of C major.
+        await SampleButtonFor(page, "Dorian").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".compact-chord-pill .ch-sym").First)
+            .ToHaveTextAsync("Dm", new() { Timeout = AppFixture.ExpectTimeoutMs });
+        var dorian = await ChordSymbolsAsync(page);
+
+        await SampleButtonFor(page, "Phrygian").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".compact-chord-pill .ch-sym").First)
+            .ToHaveTextAsync("Em", new() { Timeout = AppFixture.ExpectTimeoutMs });
+        var phrygian = await ChordSymbolsAsync(page);
+
+        await SampleButtonFor(page, "Mixolydian").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".compact-chord-pill .ch-sym").First)
+            .ToHaveTextAsync("G", new() { Timeout = AppFixture.ExpectTimeoutMs });
+        var mixolydian = await ChordSymbolsAsync(page);
+
+        Assert.NotEqual(dorian, phrygian);
+        Assert.NotEqual(phrygian, mixolydian);
+    }
+
+    /// <summary>
+    /// Turning the match off restores the older lesson, where one fixed progression shows that all
+    /// seven modes are drawn from a single set of notes.
+    /// </summary>
+    [Fact]
+    public async Task Turning_the_match_off_holds_one_progression_across_modes()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var page = await ModeLabPageAsync(browser);
+
+        await page.Locator("#match-harmony-toggle").ClickAsync();
+        await Assertions.Expect(page.Locator("#match-harmony-toggle"))
+            .ToHaveAttributeAsync("data-match-harmony", "off", new() { Timeout = AppFixture.ExpectTimeoutMs });
+
+        await SampleButtonFor(page, "Dorian").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".compact-chord-pill").First)
+            .ToBeVisibleAsync(Visible);
+        var dorian = await ChordSymbolsAsync(page);
+
+        await SampleButtonFor(page, "Lydian").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".compact-chord-pill").First)
+            .ToBeVisibleAsync(Visible);
+        var lydian = await ChordSymbolsAsync(page);
+
+        Assert.Equal(dorian, lydian);
+    }
 }

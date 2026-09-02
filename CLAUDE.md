@@ -21,6 +21,13 @@ dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~TempoEstimator"   # s
 - Known-failing on master: `CanvasTests.Clicking_the_canvas_seeks_and_moves_the_playhead` (timing-sensitive; fails on unmodified code too). Do not chase it as a regression of your change without checking a clean checkout first.
 - API reference UI: `/scalar`. Health: `/health`, `/health/live`, `/health/ready`. Diagnostics: `/diag`.
 
+## Working rules
+
+- **Do not run the test suites after making code changes.** Build to check it compiles, then stop and
+  hand back. The suites are the user's to run when they want them; running them unprompted burns
+  minutes on every edit. This overrides any instinct to verify by testing — say what you changed and
+  what you did not verify, rather than testing to find out.
+
 ## Architecture
 
 One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the REST endpoints, a SignalR hub (`/hubs/analysis`), and the background analysis worker. `PoMode.Shared` holds DTOs and the source-generated `PoModeJsonContext`, plus — as the one deliberate carve-out from NET_RULES' "zero business logic" — pure, dependency-free lookup extensions over those DTOs that both API and Client need (e.g. `ModalResultExtensions.WindowIndexAt`, `TimelineSearch`); anything with I/O, state, or musical judgment stays out.
@@ -34,6 +41,22 @@ Users can pin an executor per stage: `GET /api/analysis/executors` feeds the hom
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
 **Tier 2 (client-delegated)**: the browser probes onnxruntime-web support (`pitch-worker.js`), uploads declare `clientCanInfer=true`, and when a job reaches `AwaitingClient` the browser runs the model and POSTs validated notes back to `/api/analysis/{jobId}/client-result`.
+
+### Mode Lab harmony
+
+A mode is a tonal centre, not just a note set, so the Mode Lab's harmony has to move with the mode or
+every card sounds like the parent key with a displaced melody. Each progression in
+`ModalMelodyGenerator.Presets` declares `RootsOn`: pop progressions count their roman numerals from
+the parent key (`I` is the key), modal ones count from the mode root (`i` is the mode's own tonic).
+Rooting the second kind on the parent is what used to put an E flat under a D Dorian melody.
+
+Nine presets carry `IsModeSignature` — one per card on the strip — and every one is still built only
+from the parent key's seven notes, which is the point: the note set never changes, only which note
+the harmony treats as home. The client's "Match to mode" toggle (default on) swaps in
+`ProgressionCatalog.SignatureFor(mode)` when a card is picked, and `FirstSharedHarmony()` when it is
+switched off, which restores the older one-progression-under-all-modes lesson. The melody pitch pool
+is the mode's own scale, not the parent's — identical for the seven diatonic modes, and the reason a
+pentatonic card no longer sounds the two notes its scale exists to omit.
 
 ### Song statistics and interpretation
 

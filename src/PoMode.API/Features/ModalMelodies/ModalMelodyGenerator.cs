@@ -7,8 +7,6 @@ namespace PoMode.API.Features.ModalMelodies;
 
 public sealed class ModalMelodyGenerator
 {
-    private static readonly int[] MajorScaleIntervals = [0, 2, 4, 5, 7, 9, 11];
-
     private static readonly IReadOnlyList<ChordProgressionDefinition> Presets =
     [
         new(
@@ -63,53 +61,125 @@ public sealed class ModalMelodyGenerator
 
         new(
             Id: "mixolydian-rock",
-            Name: "Classic Rock Vamp (C - Bb - F - C / I - bVII - IV - I)",
+            Name: "Classic Rock Vamp (I - bVII - IV - I)",
             Category: "Modal & Grooves",
             RomanNumerals: "I - bVII - IV - I",
             ChordFormulas: ["I:maj", "bVII:maj", "IV:maj", "I:maj"],
             Description: "The driving classic rock and Southern rock groove powered by the flat 7th ('Sweet Home Alabama', 'Hey Jude').",
             SuggestedMode: ScaleMode.Mixolydian,
-            DefaultBpm: 116.0),
+            DefaultBpm: 116.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
 
         new(
             Id: "dorian-vamp",
-            Name: "Dorian Groove (Cm - F - Cm - F / i - IV - i - IV)",
+            Name: "Dorian Groove (i - IV - i - IV)",
             Category: "Modal & Grooves",
             RomanNumerals: "i - IV - i - IV",
             ChordFormulas: ["i:min", "IV:maj", "i:min", "IV:maj"],
             Description: "The legendary Dorian vamp ('Oye Como Va', 'So What', 'Get Lucky') powered by the natural 6th.",
             SuggestedMode: ScaleMode.Dorian,
-            DefaultBpm: 112.0),
+            DefaultBpm: 112.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
 
         new(
             Id: "phrygian-tension",
-            Name: "Phrygian Tension (Cm - Db - Bbm - Cm / i - bII - bVII - i)",
+            Name: "Phrygian Tension (i - bII - bVII - i)",
             Category: "Modal & Grooves",
             RomanNumerals: "i - bII - bVII - i",
             ChordFormulas: ["i:min", "bII:maj", "bVII:min", "i:min"],
             Description: "Dark Spanish flamenco and cinematic tension featuring the ominous minor 2nd half-step.",
             SuggestedMode: ScaleMode.Phrygian,
-            DefaultBpm: 96.0),
+            DefaultBpm: 96.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
 
         new(
             Id: "lydian-space",
-            Name: "Lydian Wonder (C - D - C - D / I - II - I - II)",
+            Name: "Lydian Wonder (I - II - I - II)",
             Category: "Modal & Grooves",
             RomanNumerals: "I - II - I - II",
             ChordFormulas: ["I:maj", "II:maj", "I:maj", "II:maj"],
             Description: "Cinematic sci-fi wonder and floating dreamscapes featuring the raised sharp 4th (#4).",
             SuggestedMode: ScaleMode.Lydian,
-            DefaultBpm: 84.0),
+            DefaultBpm: 84.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
 
         new(
             Id: "andalusian",
-            Name: "Andalusian Descent (Am - G - F - E / i - bVII - bVI - V)",
+            Name: "Andalusian Descent (i - bVII - bVI - V)",
             Category: "Modal & Grooves",
             RomanNumerals: "i - bVII - bVI - V",
             ChordFormulas: ["i:min", "bVII:maj", "bVI:maj", "V:maj"],
             Description: "Dramatic flamenco descent with powerful harmonic resolution ('Sultans of Swing', 'Hit the Road Jack').",
             SuggestedMode: ScaleMode.Aeolian,
-            DefaultBpm: 100.0),
+            DefaultBpm: 100.0,
+            RootsOn: HarmonicRoot.ModeRoot),
+
+        // Mode Signatures: one cadence per mode, counted from that mode's own tonic. Each is still
+        // built only from the parent key's seven notes, which is the whole point — the note set never
+        // changes, only which note the harmony treats as home. That is what makes a mode audible.
+        new(
+            Id: "mode-ionian",
+            Name: "Ionian Cadence (I - IV - V - I)",
+            Category: "Mode Signatures",
+            RomanNumerals: "I - IV - V - I",
+            ChordFormulas: ["I:maj", "IV:maj", "V:maj", "I:maj"],
+            Description: "The plain major cadence. The leading tone pulls back to the tonic, so nothing sounds unresolved.",
+            SuggestedMode: ScaleMode.Ionian,
+            DefaultBpm: 104.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
+
+        new(
+            Id: "mode-aeolian",
+            Name: "Aeolian Lament (i - bVI - bIII - bVII)",
+            Category: "Mode Signatures",
+            RomanNumerals: "i - bVI - bIII - bVII",
+            ChordFormulas: ["i:min", "bVI:maj", "bIII:maj", "bVII:maj"],
+            Description: "Natural minor with no raised leading tone, so it falls away from home instead of resolving to it.",
+            SuggestedMode: ScaleMode.Aeolian,
+            DefaultBpm: 88.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
+
+        new(
+            Id: "mode-locrian",
+            Name: "Locrian Unrest (i dim - bII - bV - i dim)",
+            Category: "Mode Signatures",
+            RomanNumerals: "i(dim) - bII - bV - i(dim)",
+            ChordFormulas: ["i:dim", "bII:maj", "bV:maj", "i:dim"],
+            Description: "The one mode whose own tonic chord is diminished. The flat 5th denies it a stable home, which is why it is heard as tension rather than a key.",
+            SuggestedMode: ScaleMode.Locrian,
+            DefaultBpm: 92.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
+
+        new(
+            Id: "mode-major-pentatonic",
+            Name: "Pentatonic Open Air (I - IV - V - I)",
+            Category: "Mode Signatures",
+            RomanNumerals: "I - IV - V - I",
+            ChordFormulas: ["I:maj", "IV:maj", "V:maj", "I:maj"],
+            Description: "Major harmony under a five-note melody. Dropping the 4th and 7th removes every half step, so no melody note can clash.",
+            SuggestedMode: ScaleMode.MajorPentatonic,
+            DefaultBpm: 100.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
+
+        new(
+            Id: "mode-minor-pentatonic",
+            Name: "Blues Pentatonic (i - bIII - bVII - i)",
+            Category: "Mode Signatures",
+            RomanNumerals: "i - bIII - bVII - i",
+            ChordFormulas: ["i:min", "bIII:maj", "bVII:maj", "i:min"],
+            Description: "The rock and blues vocal scale over its own minor tonic, leaning on the flat 3rd and flat 7th.",
+            SuggestedMode: ScaleMode.MinorPentatonic,
+            DefaultBpm: 108.0,
+            RootsOn: HarmonicRoot.ModeRoot,
+            IsModeSignature: true),
 
         new(
             Id: "jazz-turnaround",
@@ -148,7 +218,7 @@ public sealed class ModalMelodyGenerator
         var modeRootClass = (parentTonicClass + modeDegreeOffset) % 12;
         var modeRootName = PitchNames.Name(modeRootClass);
 
-        var chords = BuildChordSpans(progression, parentTonicClass, bpm);
+        var chords = BuildChordSpans(progression, parentTonicClass, modeRootClass, bpm);
         var backingNotes = ChordPadBuilder.Build(chords);
 
         var targetPurity = Math.Clamp(request.TargetPurity, 40.0, 100.0);
@@ -197,7 +267,11 @@ public sealed class ModalMelodyGenerator
         var parentTonicClass = ((tonicPitchClass % 12) + 12) % 12;
         var parentTonicName = PitchNames.Name(parentTonicClass);
 
-        var chords = BuildChordSpans(progression, parentTonicClass, effectiveBpm);
+        // One fixed backing track for every mode in the comparison, rooted on whichever mode the
+        // progression itself was written from, so the nine melodies are judged against one harmony.
+        var harmonyRootClass =
+            (parentTonicClass + ScaleModes.ModeDegreeOffset(progression.SuggestedMode)) % 12;
+        var chords = BuildChordSpans(progression, parentTonicClass, harmonyRootClass, effectiveBpm);
         var backingNotes = ChordPadBuilder.Build(chords);
 
         var modesToCompare = new[]
@@ -325,11 +399,18 @@ public sealed class ModalMelodyGenerator
         return Math.Clamp(Math.Round(totalPercentage, 1), 0.0, 100.0);
     }
 
+    /// <summary>
+    /// Lays the progression out over one measure per chord. Which pitch the roman numerals count up
+    /// from is the progression's own choice: a pop progression counts from the parent key, a modal one
+    /// from the mode root, so that i really is the mode's tonic.
+    /// </summary>
     private static IReadOnlyList<ChordSpan> BuildChordSpans(
         ChordProgressionDefinition progression,
-        int tonicClass,
+        int parentTonicClass,
+        int modeRootClass,
         double bpm)
     {
+        var tonicClass = progression.RootsOn == HarmonicRoot.ModeRoot ? modeRootClass : parentTonicClass;
         var secondsPerBeat = 60.0 / bpm;
         var secondsPerMeasure = secondsPerBeat * 4.0;
         var chords = new List<ChordSpan>();
@@ -418,13 +499,17 @@ public sealed class ModalMelodyGenerator
         var secondsPerBeat = 60.0 / bpm;
         var rng = new Random(seed ^ ((int)mode * 29) ^ (int)(targetPurity * 13));
 
-        // Build pitch pool containing ONLY notes of the parent scale across the comfortable vocal range (C4 to A5)
+        // Pitch pool: the mode's own scale across the comfortable vocal range (C4 to A5). For the seven
+        // diatonic modes this is the parent major scale re-spelled from the mode root, so nothing
+        // changes. For the pentatonics it is the five notes they are actually made of — drawing from
+        // all seven let a "Major Pentatonic" melody sound the 4th and 7th the scale exists to omit.
         var pitchPool = new List<int>();
+        var modeIntervals = ScaleModes.Intervals(mode);
         for (var oct = baseOctave; oct <= baseOctave + 1; oct++)
         {
-            foreach (var iv in MajorScaleIntervals)
+            foreach (var iv in modeIntervals)
             {
-                var pitch = (oct + 1) * 12 + ((parentTonicClass + iv) % 12);
+                var pitch = (oct + 1) * 12 + ((modeRootClass + iv) % 12);
                 if (pitch >= parentTonicMidi - 2 && pitch <= parentTonicMidi + 21) // Bb3 to A5
                 {
                     if (!pitchPool.Contains(pitch))

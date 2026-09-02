@@ -64,6 +64,17 @@
                                 Change="@(_ => OnConfigChanged())" class="compact-dropdown key-dd" id="tonic-select" />
             </div>
 
+            <div class="selector-field match-field">
+                <span class="field-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
+                    Match to mode:
+                </span>
+                <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
+                        id="match-harmony-toggle" data-match-harmony="@(_matchHarmonyToMode ? "on" : "off")"
+                        @onclick="ToggleMatchHarmonyAsync">
+                    @(_matchHarmonyToMode ? "On" : "Off")
+                </button>
+            </div>
+
             <div class="selector-field prog-field">
                 <span class="field-label">Progression:</span>
                 <RadzenDropDown TValue="string" @bind-Value="_selectedProgressionId" Data="@_progressions"
@@ -266,6 +277,7 @@
     private double _targetPurity = 90.0;
     private double _bpm = 100.0;
     private int _seed = 42;
+    private bool _matchHarmonyToMode = true;
 
     private GeneratedMelodyDto? _melody;
     private bool _isLoading = true;
@@ -331,6 +343,10 @@
                 _selectedProgressionId = _progressions[0].Id;
                 _selectedProgressionName = _progressions[0].Name;
                 _bpm = _progressions[0].DefaultBpm;
+
+                // Open on the harmony that matches the mode the strip starts on, so the first thing
+                // heard is already the mode rather than the parent key.
+                ApplyModeHarmony(_selectedMode);
             }
             await RefreshMelodyAsync();
         }
@@ -369,9 +385,27 @@
         }
     }
 
+    /// <summary>
+    /// Points the harmony at the selected mode's own signature cadence. A mode is a tonal centre, not
+    /// just a note set: over a progression that keeps insisting on the parent key, every mode comes out
+    /// sounding like that key with the melody starting somewhere else.
+    /// </summary>
+    private void ApplyModeHarmony(ScaleMode mode)
+    {
+        if (!_matchHarmonyToMode) return;
+
+        var signature = _progressions.SignatureFor(mode);
+        if (signature is null || signature.Id == _selectedProgressionId) return;
+
+        _selectedProgressionId = signature.Id;
+        _selectedProgressionName = signature.Name;
+        _bpm = signature.DefaultBpm;
+    }
+
     private async Task SampleModeAsync(ScaleMode mode)
     {
         _selectedMode = mode;
+        ApplyModeHarmony(mode);
         await RefreshMelodyAsync();
 
         // Always restart the picked mode from its first beat. Falling through to updateMelody while
@@ -505,6 +539,33 @@
         _playheadSec = 0;
         _activeWindowIndex = null;
         await _playerModule.InvokeVoidAsync("stop");
+    }
+
+    private async Task ToggleMatchHarmonyAsync()
+    {
+        _matchHarmonyToMode = !_matchHarmonyToMode;
+        if (_matchHarmonyToMode)
+        {
+            ApplyModeHarmony(_selectedMode);
+        }
+        else if (_progressions.FirstOrDefault(p => p.Id == _selectedProgressionId)?.RootsOn == HarmonicRoot.ModeRoot)
+        {
+            // Turning the match off is a request for one harmony that does not follow the mode, so a
+            // mode-rooted progression has to give way to a parent-rooted one or nothing would change.
+            var shared = _progressions.FirstSharedHarmony();
+            if (shared is not null)
+            {
+                _selectedProgressionId = shared.Id;
+                _selectedProgressionName = shared.Name;
+                _bpm = shared.DefaultBpm;
+            }
+        }
+        await RefreshMelodyAsync();
+        if (_isPlaying)
+        {
+            await StopAsync();
+            await PlayAsync();
+        }
     }
 
     private async Task ToggleLoopAsync()
