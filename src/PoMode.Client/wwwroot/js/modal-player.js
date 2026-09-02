@@ -1,6 +1,6 @@
 // Web Audio acoustic synthesizer for the Mode Lab:
 // - Acoustic Grand Piano for the chord progression (hammer percussive attack, detuned unison strings, soundboard filter decay)
-// - Concert Flute for the melody (pure sine/triangle fundamental, breath air noise chiff, and expressive vibrato)
+// - Concert Flute for the melody (pure sine/triangle fundamental with breath air noise chiff)
 // - Real-time mode morphing, loop scheduling, and 7-mode comparative tour playback.
 
 let audioCtx = null;
@@ -13,10 +13,27 @@ let pauseOffset = 0;
 let activeVoices = [];
 let animFrameId = null;
 let onPlayheadCallback = null;
+let dotNetRef = null;
+
+let playCount = 0;
 
 let currentMelodyNotes = [];
 let currentBackingNotes = [];
 let lastScheduledTime = 0;
+
+// Mirror player state onto the document, matching the mixer.js/canvas.js contract: Playwright
+// asserts on these attributes instead of reaching into module internals. modalPlays counts actual
+// play() calls, which is what distinguishes a genuine restart from a silent melody swap.
+function publishState() {
+    try {
+        const el = document.body;
+        if (!el) return;
+        el.dataset.modalPlayer = isPlaying ? 'playing' : 'stopped';
+        el.dataset.modalPlays = String(playCount);
+        el.dataset.modalLoopSec = (loopDuration || 0).toFixed(3);
+        el.dataset.modalBackingCount = String(currentBackingNotes.length);
+    } catch { }
+}
 
 function clamp(val, min, max) {
     return Math.max(min, Math.min(max, val));
@@ -41,7 +58,7 @@ function midiToFreq(midiPitch) {
 }
 
 /// Concert Flute Synthesizer: simulates a wooden/silver concert flute
-/// with pure sine fundamental, gentle overtone, breath chiff noise, and natural vibrato.
+/// with pure sine fundamental, gentle overtone, and breath chiff noise.
 function playFluteMelodyNote(ctx, note, startTime) {
     const freq = midiToFreq(note.midiPitch);
     const duration = Math.max(0.08, note.durationSec);
@@ -124,22 +141,21 @@ function playFluteMelodyNote(ctx, note, startTime) {
 
     osc1.start(startTime);
     osc2.start(startTime);
-    lfo.start(startTime);
     if (breathSource) breathSource.start(startTime);
 
     const stopTime = startTime + duration + 0.1;
     osc1.stop(stopTime);
     osc2.stop(stopTime);
-    lfo.stop(stopTime);
     if (breathSource) breathSource.stop(stopTime);
 
     osc1.onended = () => {
         env.disconnect();
         bodyFilter.disconnect();
-        lfoGain.disconnect();
     };
 
-    activeVoices.push(osc1, osc2, lfo);
+    // The breath noise belongs here too, or pause/stop leaves it hissing after the tone is cut.
+    activeVoices.push(osc1, osc2);
+    if (breathSource) activeVoices.push(breathSource);
 }
 
 /// Acoustic Grand Piano Synthesizer: simulates hammer strike percussive transient,
@@ -272,6 +288,11 @@ function tick() {
 
     if (!isLooping && elapsed >= loopDuration) {
         stop();
+        // Tell Blazor the take ended. Without this its _isPlaying stays true forever, and every
+        // later Sample click is swallowed by the "already playing" guard.
+        if (dotNetRef) {
+            try { dotNetRef.invokeMethodAsync('OnPlaybackEnded'); } catch { }
+        }
         return;
     }
 
@@ -309,6 +330,7 @@ export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper) {
     loopDuration = totalDuration || 8.0;
 
     if (dotNetHelper) {
+        dotNetRef = dotNetHelper;
         onPlayheadCallback = (pos) => {
             try {
                 dotNetHelper.invokeMethodAsync('OnPlayheadUpdated', pos);
@@ -327,10 +349,20 @@ export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper) {
 
     if (animFrameId) cancelAnimationFrame(animFrameId);
     animFrameId = requestAnimationFrame(tick);
+    playCount++;
+    publishState();
 }
 
-export function updateMelody(melodyNotes) {
+export function updateMelody(melodyNotes, backingNotes, totalDuration) {
     currentMelodyNotes = melodyNotes || [];
+    // The piano chords and the loop length belong to the same arrangement as the lead. Swapping
+    // only the melody leaves the previous mode's harmony playing underneath it.
+    if (backingNotes) currentBackingNotes = backingNotes;
+    if (totalDuration > 0) {
+        loopDuration = totalDuration;
+        lastScheduledTime = lastScheduledTime % loopDuration;
+    }
+    publishState();
 }
 
 export function pause() {
@@ -339,6 +371,7 @@ export function pause() {
     pauseOffset = (audioCtx.currentTime - playbackStartTime) % (loopDuration || 1);
     stopActiveVoices();
     if (animFrameId) cancelAnimationFrame(animFrameId);
+    publishState();
 }
 
 export function stop() {
@@ -346,6 +379,7 @@ export function stop() {
     pauseOffset = 0;
     stopActiveVoices();
     if (animFrameId) cancelAnimationFrame(animFrameId);
+    publishState();
     if (onPlayheadCallback) onPlayheadCallback(0);
 }
 
@@ -367,4 +401,5 @@ export function setLooping(loop) {
 export function dispose() {
     stop();
     onPlayheadCallback = null;
+    dotNetRef = null;
 }

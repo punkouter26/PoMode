@@ -364,7 +364,7 @@
 
             if (_isPlaying && _playerModule is not null)
             {
-                await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes);
+                await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec);
             }
         }
     }
@@ -373,10 +373,12 @@
     {
         _selectedMode = mode;
         await RefreshMelodyAsync();
-        if (!_isPlaying)
-        {
-            await PlayAsync();
-        }
+
+        // Always restart the picked mode from its first beat. Falling through to updateMelody while
+        // a take is in flight kept the previous mode's chords and loop length, and resuming on a
+        // stale pause offset dropped the new sample mid-phrase.
+        await StopAsync();
+        await PlayAsync();
     }
 
     private async Task OnConfigChanged(object? _ = null)
@@ -428,7 +430,7 @@
         await RefreshMelodyAsync();
         if (_isPlaying && _playerModule is not null && _melody is not null)
         {
-            await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes);
+            await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec);
         }
     }
 
@@ -522,6 +524,16 @@
             _ = _playerModule.InvokeVoidAsync("seek", seekSec);
         }
         UpdateActiveWindow(seekSec);
+    }
+
+    /// <summary>Raised by the player when a non-looping take runs off its end.</summary>
+    [JSInvokable]
+    public void OnPlaybackEnded()
+    {
+        _isPlaying = false;
+        _playheadSec = 0;
+        _activeWindowIndex = null;
+        StateHasChanged();
     }
 
     [JSInvokable]
