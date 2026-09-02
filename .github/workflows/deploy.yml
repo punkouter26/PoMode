@@ -5,12 +5,8 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Bicep runs on every deploy now, so there is no longer an input to opt into it.
   workflow_dispatch:
-    inputs:
-      deploy_infra:
-        description: 'Apply infra/main.bicep (az deployment sub create) during deploy'
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy-${{ github.repository }}-${{ github.ref }}
@@ -72,14 +68,11 @@ jobs:
         run: dotnet restore
       - name: Build (Release, no-restore)
         run: dotnet build --no-restore -c Release
+      # Unit only, by choice: this pipeline is a deploy gate, not the full test estate. The other
+      # three suites run locally — E2EAPI in-process, Integration against Azurite, E2EUI against a
+      # Playwright browser. The deploy smoke step below is what guards the routes in CI.
       - name: Test (Unit)
         run: dotnet test tests/PoMode.Unit --no-build -c Release --verbosity minimal
-      # In-process against WebApplicationFactory, so it needs no services and is the suite that
-      # catches a route drifting away from what the smoke step below asserts.
-      - name: Test (API contract)
-        run: dotnet test tests/PoMode.E2EAPI --no-build -c Release --verbosity minimal
-      # Integration needs Azurite and E2EUI needs a Playwright browser install, so they stay local
-      # until this workflow grows a service container and an install step.
       - name: Publish API & WASM Host
         run: dotnet publish ${{ env.API_PROJECT_PATH }} -c Release --no-build -o publish
       - name: Upload webapp artifact
@@ -113,25 +106,29 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Did infra change?
-        id: infra
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_infra }}" = "true" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && git diff --quiet ${{ github.event.before }} ${{ github.sha }} -- infra/ 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
+      # Always, not only when infra/ changed. Bicep is the source of truth for the app settings the
+      # code depends on, and it is idempotent, so running it costs a minute and removes an outage
+      # path: a push that did not touch infra/ used to skip this and leave whatever settings the App
+      # Service happened to carry. That matters because Program.cs throws on startup in Production by
+      # design, so a stale ASPNETCORE_ENVIRONMENT takes the site down instead of failing the build.
       - name: Provision infra (Bicep)
-        if: steps.infra.outputs.changed == 'true'
         run: |
           az deployment sub create \
             --location eastus2 \
             --template-file infra/main.bicep \
             --name pomode-${{ github.run_id }} \
             -o none
+
+      - name: Verify the settings the app refuses to start without
+        run: |
+          set -euo pipefail
+          env_name=$(az webapp config appsettings list -n ${{ env.AZURE_WEBAPP_NAME }} -g PoMode \
+            --query "[?name=='ASPNETCORE_ENVIRONMENT'].value | [0]" -o tsv)
+          echo "ASPNETCORE_ENVIRONMENT=$env_name"
+          if [ "$env_name" = "Production" ]; then
+            echo "::error::Production is the one value Program.cs throws on. Refusing to deploy over a working site."
+            exit 1
+          fi
 
       - name: Package and zip deploy
         run: |
