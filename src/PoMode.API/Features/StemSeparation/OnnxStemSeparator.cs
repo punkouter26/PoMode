@@ -9,8 +9,7 @@ namespace PoMode.API.Features.StemSeparation;
 
 /// <summary>
 /// Real vocal/instrumental separation via the HTDemucs v4 ONNX model on the CPU execution provider —
-/// the model established by the 2026-08-16 stem-separation feasibility gate
-/// (<c>.superpowers/spikes/2026-08-16-stem-model-feasibility.md</c>). Falls back to
+/// the model established by the 2026-08-16 stem-separation feasibility gate. Falls back to
 /// <see cref="FakeStemSeparator"/> automatically via <see cref="ExecutionPlanner"/> when the model has
 /// not been downloaded yet.
 ///

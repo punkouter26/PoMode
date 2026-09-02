@@ -18,7 +18,6 @@ dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~TempoEstimator"   # s
 - `tests/PoMode.Integration` includes `ModelAccuracyReportTests`: it renders a known-truth sample MP3, races every free pitch/chord executor against it, and rewrites `test-reports/model-accuracy.html` on every run.
 
 - First E2EUI run: install browsers with `pwsh tests/PoMode.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium`.
-- Known-failing on master: `CanvasTests.Clicking_the_canvas_seeks_and_moves_the_playhead` (timing-sensitive; fails on unmodified code too). Do not chase it as a regression of your change without checking a clean checkout first.
 - API reference UI: `/scalar`. Health: `/health`, `/health/live`, `/health/ready`. Diagnostics: `/diag`.
 
 ## Working rules
@@ -70,11 +69,12 @@ plain-English paragraph; its rule is that a weak figure (unconfident mode, missi
 `GET /api/analysis/{id}/interpretation?interpreter=` turns those statistics into prose behind the
 `ISongInterpreter` seam. It extends `IStageExecutor`, so `ExecutionPlanner.EffectiveRank` orders the
 implementations without new rules: `OllamaSongInterpreter` (Local, uses whatever model Ollama has
-installed) → `TemplateSongInterpreter` (deterministic, always available, `IsClassicFallback`) →
-`AzureOpenAiSongInterpreter` (Cloud, key `AzureOpenAiApiKey`). Cloud is never reached automatically —
-only when the query names it. `SongInterpreterSelector` falls through on failure exactly like
-`RunWithFallbackAsync`. Both LLMs send the identical `InterpretationPrompt`, which contains only
-measured numbers — no audio, title or artist — so a model cannot report what it was never given.
+installed) → `TemplateSongInterpreter` (deterministic, always available, `IsClassicFallback`). There
+is no cloud interpreter; a paid one was documented here for a while but never existed in the repo.
+`SongInterpreterSelector` falls through on failure exactly like `RunWithFallbackAsync`, and ranks by
+answer quality rather than by `ExecutionPlanner.EffectiveRank`, because one small prompt is not the
+cost question a pipeline stage poses. `InterpretationPrompt` contains only measured numbers, no audio,
+title or artist, so a model cannot report what it was never given.
 Ollama requests set `think: false`: reasoning models otherwise spend the whole output budget on
 `thinking` and return empty `content`.
 

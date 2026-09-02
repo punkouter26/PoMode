@@ -40,6 +40,5 @@ The server already prefers those models automatically when installed.
 
 ## Config presets
 
-- Cheapest metered cloud: set only `Cloud:Replicate:*` credentials; leave LALAL unset.
 - Fastest copilot: `ollama pull llama3.2:3b` (no config change needed — preference order picks it up).
 - No spend ever: leave all cloud credentials unset; the planner then never reaches a paid tier.

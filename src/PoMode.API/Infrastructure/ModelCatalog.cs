@@ -13,10 +13,7 @@ public static class ModelCatalog
     /// than <c>raw/main</c>, so the bytes behind this URL cannot change under us. The SHA-256 below was
     /// computed from a fresh download of that exact pinned URL (230,444 bytes) during the Task 4 fix
     /// round and cross-checked by loading the file with <c>Microsoft.ML.OnnxRuntime</c> and confirming
-    /// its input/output metadata matches the spike report
-    /// (<c>.superpowers/spikes/2026-08-16-onnx-arm64-spike.md</c> §4) — see
-    /// <c>.superpowers/sdd/2026-08-16-phase4-local-inference/task-4-report.md</c> "Fix Round 1" for the
-    /// full verification trail.
+    /// its input/output metadata matches what the loader expects.
     /// </summary>
     public static readonly ModelDescriptor BasicPitch = new(
         Key: "basic-pitch",
@@ -30,8 +27,7 @@ public static class ModelCatalog
     /// (<c>d54ed9eb60e258ea82131c6ee14578628816456a</c>, resolved via the Hugging Face models API for
     /// <c>StemSplitio/htdemucs-onnx</c>) rather than <c>resolve/main</c>, so the bytes behind this URL
     /// cannot silently change under us. The SHA-256 below was re-verified against a fresh download of
-    /// that exact pinned URL (165,612,636 bytes) during the Phase 4 final-review fix round — see
-    /// <c>.superpowers/sdd/2026-08-16-phase4-local-inference/finalfix-report.md</c> for the trail.
+    /// that exact pinned URL (165,612,636 bytes) during the Phase 4 final-review fix round.
     /// </summary>
     public static readonly ModelDescriptor HtDemucs = new(
         Key: "htdemucs",

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generates the five demo songs in samples/.
+"""Generates five demo songs into samples/, creating the folder if it is absent.
+
+The committed copies were removed from the repo; run this to get a set to try the app on.
 
 Why generated rather than downloaded: the files are committed, so they have to be unambiguously
 free to redistribute. Synthesising them settles that question outright, keeps them small, and lets
