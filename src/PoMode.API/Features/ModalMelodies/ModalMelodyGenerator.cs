@@ -510,19 +510,13 @@ public sealed class ModalMelodyGenerator
         _ => 0,
     };
 
-    private static int GetPrimaryCharacteristicInterval(ScaleMode mode) => mode switch
-    {
-        ScaleMode.Lydian => 6,           // #4 (Augmented 4th, e.g. B in F Lydian)
-        ScaleMode.Ionian => 11,         // Natural 7th (e.g. B in C Ionian)
-        ScaleMode.Mixolydian => 10,     // b7 (Flat 7th, e.g. F in G Mixolydian)
-        ScaleMode.Dorian => 9,          // Natural 6th (e.g. B in D Dorian)
-        ScaleMode.Aeolian => 8,         // b6 (Minor 6th, e.g. F in A Aeolian)
-        ScaleMode.Phrygian => 1,        // b2 (Minor 2nd, e.g. F in E Phrygian)
-        ScaleMode.Locrian => 6,         // b5 (Diminished 5th, e.g. F in B Locrian)
-        ScaleMode.MajorPentatonic => 4, // Major 3rd
-        ScaleMode.MinorPentatonic => 3, // Minor 3rd
-        _ => 0,
-    };
+    /// <summary>
+    /// The one degree that most separates a mode from its neighbours, taken from the canonical table
+    /// in <see cref="ModeDefinitions"/>. It used to be restated here, which meant two tables to keep
+    /// in agreement for no benefit.
+    /// </summary>
+    private static int GetPrimaryCharacteristicInterval(ScaleMode mode)
+        => ModeDefinitions.CharacteristicIntervals(mode)[0];
 
     /// <summary>
     /// Generates melodies that strictly use ONLY the notes of the parent scale (e.g. C Major: C D E F G A B),

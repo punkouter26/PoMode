@@ -329,17 +329,9 @@
     {
         var offset = ScaleModes.ModeDegreeOffset(mode);
         var modeRootClass = (parentTonic + offset) % 12;
-        var charInterval = mode switch
-        {
-            ScaleMode.Lydian => 6,      // #4
-            ScaleMode.Mixolydian => 10, // b7
-            ScaleMode.Dorian => 9,      // Natural 6
-            ScaleMode.Aeolian => 8,     // b6
-            ScaleMode.Phrygian => 1,    // b2
-            ScaleMode.Locrian => 6,     // b5
-            _ => -1,
-        };
-        if (charInterval < 0) return false;
+        // The table lives in PoMode.Shared so the client and the analyzer cannot drift apart on which
+        // degree gives a mode its colour.
+        var charInterval = ScaleModes.CharacteristicIntervals(mode)[0];
         var charPitchClass = (modeRootClass + charInterval) % 12;
         return string.Equals(noteName, ScaleModes.NoteName(charPitchClass), StringComparison.OrdinalIgnoreCase);
     }

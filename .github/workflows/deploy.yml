@@ -26,6 +26,7 @@ env:
   AZURE_WEBAPP_NAME: app-pomode
   AZURE_WEBAPP_URL: https://app-pomode.azurewebsites.net
   API_PROJECT_PATH: src/PoMode.API/PoMode.API.csproj
+  BICEP_VERSION: v0.30.23
 
 jobs:
   lint-infra:
@@ -38,9 +39,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.azure/bin
-          key: bicep-${{ runner.os }}
+          # Version in the key: without it the cache is restored forever and az bicep install
+          # becomes a no-op against an increasingly stale copy.
+          key: bicep-${{ runner.os }}-${{ env.BICEP_VERSION }}
       - name: Install Bicep CLI
-        run: az bicep install
+        run: az bicep install --version ${{ env.BICEP_VERSION }}
       - name: Compile Bicep → ARM (catches template errors)
         run: |
           set -euo pipefail
@@ -69,8 +72,14 @@ jobs:
         run: dotnet restore
       - name: Build (Release, no-restore)
         run: dotnet build --no-restore -c Release
-      - name: Test (Unit tests)
+      - name: Test (Unit)
         run: dotnet test tests/PoMode.Unit --no-build -c Release --verbosity minimal
+      # In-process against WebApplicationFactory, so it needs no services and is the suite that
+      # catches a route drifting away from what the smoke step below asserts.
+      - name: Test (API contract)
+        run: dotnet test tests/PoMode.E2EAPI --no-build -c Release --verbosity minimal
+      # Integration needs Azurite and E2EUI needs a Playwright browser install, so they stay local
+      # until this workflow grows a service container and an install step.
       - name: Publish API & WASM Host
         run: dotnet publish ${{ env.API_PROJECT_PATH }} -c Release --no-build -o publish
       - name: Upload webapp artifact

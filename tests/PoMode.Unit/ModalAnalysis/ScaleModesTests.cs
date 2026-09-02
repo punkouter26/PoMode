@@ -6,9 +6,14 @@ namespace PoMode.Unit.ModalAnalysis;
 public class ScaleModesTests
 {
     [Fact]
-    public void F_sharp_ionian_spells_the_major_scale_with_sharp_names()
+    public void Note_spelling_is_sharp_named_and_defined_for_every_pitch_class()
     {
         Assert.Equal(["F#", "G#", "A#", "B", "C#", "D#", "F"], ScaleModes.NoteNames(6, ScaleMode.Ionian));
+
+        for (var pitchClass = 0; pitchClass < 12; pitchClass++)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(ScaleModes.NoteName(pitchClass)));
+        }
     }
 
     [Fact]
@@ -30,15 +35,5 @@ public class ScaleModesTests
         Assert.Equal(7, ScaleModes.ModeDegreeOffset(ScaleMode.Mixolydian));
         Assert.Equal(9, ScaleModes.ModeDegreeOffset(ScaleMode.Aeolian));
         Assert.Equal(11, ScaleModes.ModeDegreeOffset(ScaleMode.Locrian));
-    }
-
-    [Fact]
-    public void PitchClassNames_SpellsAllTwelveKeysWithoutErrors()
-    {
-        for (var pc = 0; pc < 12; pc++)
-        {
-            var name = ScaleModes.NoteName(pc);
-            Assert.False(string.IsNullOrWhiteSpace(name));
-        }
     }
 }

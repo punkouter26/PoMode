@@ -44,67 +44,49 @@ public class ModeSignatureHarmonyTests
         return [.. ChordPadBuilder.VoicingFor(chord.Quality).Select(iv => (rootClass + iv) % 12)];
     }
 
+    /// <summary>
+    /// One walk of the strip asserting everything that has to hold for a card to sound like its mode:
+    /// a cadence exists, it counts from the mode's own tonic, a diatonic mode's chords stay inside the
+    /// notes it owns, the melody never leaves the mode it claims, and the modes do not all land on the
+    /// same home chord. Kept as one sweep so a failure names the mode and the invariant together.
+    /// </summary>
     [Fact]
-    public void Every_mode_on_the_strip_has_a_signature_cadence()
+    public void Every_mode_signature_puts_that_modes_own_tonic_at_home()
     {
         var catalog = _generator.GetProgressions();
+        var openingChords = new List<string>();
 
         foreach (var mode in EveryStripMode)
         {
-            Assert.True(catalog.SignatureFor(mode) is not null, $"{mode} has no signature cadence");
-        }
-    }
+            var signature = catalog.SignatureFor(mode);
+            Assert.True(signature is not null, $"{mode} has no signature cadence");
 
-    [Fact]
-    public void Signature_cadences_are_rooted_on_the_mode_not_the_parent_key()
-    {
-        foreach (var mode in EveryStripMode)
-        {
-            var signature = _generator.GetProgressions().SignatureFor(mode)!;
-            var result = _generator.Generate(Request(mode, signature.Id));
+            var result = _generator.Generate(Request(mode, signature!.Id));
+            var modeRoot = ScaleModes.ModeDegreeOffset(mode) % 12;
+            var allowed = ScaleModes.Intervals(mode).Select(iv => (modeRoot + iv) % 12).ToHashSet();
+            openingChords.Add(result.Chords[0].Symbol);
 
             // Parent key is C throughout, so the mode root is what the degree offset lands on.
-            var expectedRoot = ScaleModes.ModeDegreeOffset(mode) % 12;
             Assert.True(PitchNames.TryParseRoot(result.Chords[0].Root, out var firstChordRoot));
             Assert.True(
-                firstChordRoot == expectedRoot,
+                firstChordRoot == modeRoot,
                 $"{mode}: cadence opens on {result.Chords[0].Symbol}, expected the mode root " +
-                $"{ScaleModes.NoteName(expectedRoot)} — rooting on the parent key is the bug this guards");
-        }
-    }
+                $"{ScaleModes.NoteName(modeRoot)} — rooting on the parent key is the bug this guards");
 
-    [Fact]
-    public void Diatonic_signature_cadences_use_only_notes_the_mode_owns()
-    {
-        foreach (var mode in DiatonicModes)
-        {
-            var signature = _generator.GetProgressions().SignatureFor(mode)!;
-            var result = _generator.Generate(Request(mode, signature.Id));
-            var modeRoot = ScaleModes.ModeDegreeOffset(mode) % 12;
-            var allowed = ScaleModes.Intervals(mode).Select(iv => (modeRoot + iv) % 12).ToHashSet();
-
-            foreach (var chord in result.Chords)
+            // A pentatonic is a melodic subset, so its triads legitimately reach past the five notes.
+            if (DiatonicModes.Contains(mode))
             {
-                foreach (var pitchClass in PitchClassesOf(chord))
+                foreach (var chord in result.Chords)
                 {
-                    Assert.True(
-                        allowed.Contains(pitchClass),
-                        $"{mode}: {chord.Symbol} sounds {ScaleModes.NoteName(pitchClass)}, " +
-                        $"which is not in {string.Join(" ", result.ScaleNotes)}");
+                    foreach (var pitchClass in PitchClassesOf(chord))
+                    {
+                        Assert.True(
+                            allowed.Contains(pitchClass),
+                            $"{mode}: {chord.Symbol} sounds {ScaleModes.NoteName(pitchClass)}, " +
+                            $"which is not in {string.Join(" ", result.ScaleNotes)}");
+                    }
                 }
             }
-        }
-    }
-
-    [Fact]
-    public void Melodies_never_leave_the_mode_they_claim()
-    {
-        foreach (var mode in EveryStripMode)
-        {
-            var signature = _generator.GetProgressions().SignatureFor(mode)!;
-            var result = _generator.Generate(Request(mode, signature.Id));
-            var modeRoot = ScaleModes.ModeDegreeOffset(mode) % 12;
-            var allowed = ScaleModes.Intervals(mode).Select(iv => (modeRoot + iv) % 12).ToHashSet();
 
             foreach (var note in result.MelodyNotes)
             {
@@ -114,15 +96,6 @@ public class ModeSignatureHarmonyTests
                     $"{mode}: melody sounds {ScaleModes.NoteName(pitchClass)}, outside {string.Join(" ", result.ScaleNotes)}");
             }
         }
-    }
-
-    [Fact]
-    public void Switching_mode_moves_the_harmony_so_the_modes_do_not_all_sound_alike()
-    {
-        var openingChords = EveryStripMode
-            .Select(mode => _generator.Generate(Request(mode, _generator.GetProgressions().SignatureFor(mode)!.Id)))
-            .Select(result => result.Chords[0].Symbol)
-            .ToList();
 
         // Seven distinct tonal centres for the seven diatonic modes; the pentatonics reuse two of them.
         Assert.True(openingChords.Distinct().Count() >= 7,

@@ -26,6 +26,26 @@ public static class ScaleModes
     public static IReadOnlyList<ScaleMode> All { get; } = [.. IntervalSets.Keys];
 
     /// <summary>Semitone offsets above the tonic, ascending, tonic (0) first.</summary>
+    /// <summary>
+    /// The degrees that separate a mode from its nearest neighbours, most telling first. Lives here
+    /// rather than in the API because the client highlights them too, and three copies of this table
+    /// is three chances for them to disagree.
+    /// </summary>
+    private static readonly Dictionary<ScaleMode, int[]> CharacteristicSets = new()
+    {
+        [ScaleMode.Ionian] = [11],           // major 7
+        [ScaleMode.Dorian] = [9, 3],         // natural 6 over a minor 3
+        [ScaleMode.Phrygian] = [1],          // flat 2
+        [ScaleMode.Lydian] = [6],            // sharp 4
+        [ScaleMode.Mixolydian] = [10, 4],    // flat 7 over a major 3
+        [ScaleMode.Aeolian] = [8, 3],        // flat 6 over a minor 3
+        [ScaleMode.Locrian] = [6, 1],        // flat 5 and flat 2
+        [ScaleMode.MinorPentatonic] = [3, 10],
+        [ScaleMode.MajorPentatonic] = [4, 9],
+    };
+
+    public static IReadOnlyList<int> CharacteristicIntervals(ScaleMode mode) => CharacteristicSets[mode];
+
     public static IReadOnlyList<int> Intervals(ScaleMode mode) => IntervalSets[mode];
 
     /// <summary>Sharp-spelled pitch-class name — the app's one naming convention.</summary>

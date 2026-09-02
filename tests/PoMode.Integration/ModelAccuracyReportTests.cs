@@ -83,9 +83,26 @@ public sealed class ModelAccuracyReportTests : IDisposable
         List<RealPitchRow> Pitch, List<RealChordRow> Chords,
         double PitchAgreement, double ChordAgreement);
 
+    /// <summary>Set to any value to run the report. Off by default, see the note on the method.</summary>
+    private const string OptInVariable = "POMODE_MODEL_REPORT";
+
+    /// <summary>
+    /// This is a reporting tool rather than a test: it races every free executor against a known-truth
+    /// sample and rewrites test-reports/model-accuracy.html. It asserts nothing about the change you
+    /// are making, and it is the slowest thing in this suite, so it stays off unless asked for:
+    ///
+    /// <code>POMODE_MODEL_REPORT=1 dotnet test tests/PoMode.Integration</code>
+    /// </summary>
     [Fact]
     public async Task Every_free_model_is_scored_against_ground_truth_and_reported_as_html()
     {
+        // Returns rather than skipping: this xUnit version has no runtime skip, and the report
+        // asserts nothing, so doing no work is the honest no-op.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(OptInVariable)))
+        {
+            return;
+        }
+
         // ---- 1. Render the sample song and its melody-only "vocal stem" ----
         var melodyTones = TruthMelody
             .Select(note => (note.Midi, note.StartSec, TruthNoteSeconds, 0.4))
