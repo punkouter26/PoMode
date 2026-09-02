@@ -153,15 +153,27 @@ jobs:
             sleep 10
           done
 
-          # Diagnostics summary endpoint check
-          diag=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${{ env.AZURE_WEBAPP_URL }}/api/diagnostics/summary")
-          [ "$diag" = "200" ] || { echo "::error::/api/diagnostics/summary returned $diag, expected 200"; exit 1; }
+          # Every API check below asserts JSON, not just a 200. MapFallbackToFile serves the SPA shell
+          # for anything unmatched, so a status-only check passes against a route that does not exist
+          # and against any typo. The previous /api/diagnostics/summary check did exactly that.
+          check_json() {
+            body=$(curl -s --max-time 20 -H 'Accept: application/json' "${{ env.AZURE_WEBAPP_URL }}$1")
+            case "$body" in
+              '{'*|'['*) ;;
+              *) echo "::error::$1 did not return JSON. First bytes: $(printf '%.80s' "$body")"; exit 1 ;;
+            esac
+          }
 
-          # Pipeline executors endpoint check
-          executors=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${{ env.AZURE_WEBAPP_URL }}/api/analysis/executors")
-          [ "$executors" = "200" ] || { echo "::error::/api/analysis/executors returned $executors, expected 200"; exit 1; }
+          # Diagnostics report
+          check_json /diag
 
-          # Mode Lab / SPA shell route check
+          # Pipeline executors
+          check_json /api/analysis/executors
+
+          # Mode Lab data the page cannot render without
+          check_json /api/modal-melodies/progressions
+
+          # SPA shell still serves its routes
           modes=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${{ env.AZURE_WEBAPP_URL }}/modes")
           [ "$modes" = "200" ] || { echo "::error::/modes returned $modes, expected 200"; exit 1; }
 

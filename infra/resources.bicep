@@ -105,12 +105,19 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
       minTlsVersion: '1.2'
       appSettings: [
         {
-          name: 'KeyVault__Uri'
+          // Must match the key SecretsBootstrap reads, 'KeyVault:VaultUri'. Under the old name the
+          // value never reached configuration, so the app silently used environment variables while
+          // the access policy below granted secrets to an identity that never called the vault.
+          name: 'KeyVault__VaultUri'
           value: sharedKeyVault.properties.vaultUri
         }
         {
+          // Deliberately not Production. Program.cs throws on startup in Production because
+          // FakeAuthHandler is the only authentication configured, so shipping Production here
+          // crash-looped the container on every deploy. Change this the same day a real identity
+          // provider is wired up, not before.
           name: 'ASPNETCORE_ENVIRONMENT'
-          value: 'Production'
+          value: 'Staging'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

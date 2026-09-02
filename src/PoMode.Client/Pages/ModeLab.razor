@@ -440,6 +440,9 @@
 
     private async Task OnPurityChanged(double _ = 0)
     {
+        // The slider hands back negative zero at the bottom of its travel, which formats as "-0%".
+        if (_targetPurity <= 0) _targetPurity = 0;
+
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
