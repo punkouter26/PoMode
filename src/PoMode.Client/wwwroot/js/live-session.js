@@ -67,20 +67,14 @@ export function stop(root) {
     root.dataset.live = 'off';
 }
 
-/// The take as a base64 16-bit PCM WAV, ready to upload. Works while listening and after stopping.
-/// Empty string when nothing has been recorded.
-export function takeWavBase64(root) {
+/// The take as a 16-bit PCM WAV, ready to upload. Works while listening and after stopping, and
+/// returns an empty array when nothing has been recorded.
+export function takeWavBytes(root) {
     const source = sessions.get(root) ?? takes.get(root);
     if (!source || source.frames === 0) {
-        return '';
+        return new Uint8Array(0);
     }
-    return toBase64(encodeWav(source.pcm, source.frames, source.sampleRate));
-}
-
-/// Seconds of audio held for the analyzer, whether or not the microphone is still open.
-export function takeSeconds(root) {
-    const source = sessions.get(root) ?? takes.get(root);
-    return source && source.sampleRate > 0 ? source.frames / source.sampleRate : 0;
+    return encodeWav(source.pcm, source.frames, source.sampleRate);
 }
 
 function encodeWav(chunks, frames, sampleRate) {
@@ -114,12 +108,3 @@ function encodeWav(chunks, frames, sampleRate) {
     return new Uint8Array(view.buffer);
 }
 
-function toBase64(bytes) {
-    // In chunks: String.fromCharCode blows the argument limit on a whole take.
-    let binary = '';
-    const step = 0x8000;
-    for (let i = 0; i < bytes.length; i += step) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
-    }
-    return btoa(binary);
-}

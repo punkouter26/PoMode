@@ -135,17 +135,15 @@
                 await StopAsync();
             }
 
-            var encoded = await _module.InvokeAsync<string>("takeWavBase64", _root);
-            if (string.IsNullOrEmpty(encoded))
+            var wav = await _module.InvokeAsync<byte[]>("takeWavBytes", _root);
+            if (wav.Length == 0)
             {
-                _error = "Nothing was recorded yet.";
+                _error = "Nothing was recorded yet. Press Start listening and sing first.";
                 return;
             }
 
             var job = await Analysis.UploadAsync(
-                Convert.FromBase64String(encoded),
-                $"live-take-{DateTime.Now:yyyyMMdd-HHmmss}.wav",
-                clientCanInfer: false);
+                wav, $"live-take-{DateTime.Now:yyyyMMdd-HHmmss}.wav", clientCanInfer: false);
 
             if (job is not null && !string.IsNullOrEmpty(job.JobId))
             {

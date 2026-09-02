@@ -93,7 +93,25 @@ if (secretSource.FellBack)
 }
 
 app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = served =>
+    {
+        // The app's own scripts and styles carry no fingerprint in their URL, so a browser left to its
+        // own heuristics will keep serving a copy from before the last deploy. That is how a page ends
+        // up calling into a JS module that no longer matches the C# beside it, and the symptom is an
+        // exported function the page swears does not exist. "no-cache" still lets the browser store
+        // the file; it just has to revalidate first, so an unchanged one costs a 304 and nothing more.
+        // The fingerprinted framework files come through UseBlazorFrameworkFiles and are not touched.
+        var name = served.File.Name;
+        if (name.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".mjs", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+        {
+            served.Context.Response.Headers.CacheControl = "no-cache";
+        }
+    },
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
