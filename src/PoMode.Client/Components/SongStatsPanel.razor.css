@@ -297,6 +297,8 @@
 }
 
 .bar-fill {
+    /* The width arrives as --pm-fill so the declaration lives here, not in the markup. */
+    width: var(--pm-fill, 0%);
     height: 100%;
     border-radius: 4px;
     /* Bars grow when a new job's numbers arrive; motion makes the change legible. */
@@ -366,6 +368,7 @@
 }
 
 .tempo-fill {
+    height: var(--pm-fill, 0%);
     width: 100%;
     background: #818cf8;
     border-radius: 2px 2px 0 0;

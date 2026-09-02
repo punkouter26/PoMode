@@ -128,10 +128,6 @@
                                                     Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
                                                     ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
                                                     Text="Show vocal notes" title="Highlight the vocal notes on the canvas (no audio)" />
-                                <RadzenToggleButton Value="@_backingNotesOn" Change="@(on => SetOverlayAsync("backing", on))"
-                                                    Disabled="@(_status is "idle" or "loading" || _backingNoteCount == 0)"
-                                                    ButtonStyle="ButtonStyle.Light" ToggleButtonStyle="ButtonStyle.Primary"
-                                                    Text="Show backing notes" title="Highlight the backing notes on the canvas (no audio)" />
                                 <div class="bpm-nudge" role="group" aria-label="Tempo nudge">
                                     <button class="icon-button bpm-step" type="button" @onclick="@(() => NudgeBpmAsync(-2))"
                                             disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
@@ -293,7 +289,6 @@
         return true;
     }
     private bool _vocalNotesOn;   // canvas overlay: glows vocal dots
-    private bool _backingNotesOn; // canvas overlay: backing has no canvas yet, kept for parity
     private bool _metronomeOn;
     private double _beatBpm;
 
@@ -479,7 +474,6 @@
             _sentSeek = null;
             _synthOn.Clear();
             _vocalNotesOn = false;
-            _backingNotesOn = false;
             _metronomeOn = false;
             _beatBpm = 0;
             _tempoMapBpm = 0;
@@ -692,14 +686,7 @@
         {
             return;
         }
-        if (source == "vocal")
-        {
-            _vocalNotesOn = on;
-        }
-        else
-        {
-            _backingNotesOn = on;
-        }
+        _vocalNotesOn = on;
         try
         {
             await _module.InvokeVoidAsync("setOverlay", _root, source, on);

@@ -67,12 +67,13 @@
             {
                 <RadzenText class="upload-error" Text="@_uploadError" />
             }
-            @if (ViewState.IsAdvanced)
-            {
-                <button class="more-ways" type="button" @onclick="ToggleMoreInputsAsync"
-                        aria-expanded="@_moreInputsOpen" aria-controls="more-inputs-panel">
-                    @(_moreInputsOpen ? "Hide other ways" : "More ways to get audio in")
-                </button>
+            @* Not gated on the view mode. Basic is the default, so hiding these here meant a
+               first-time user could not reach URL intake, recording or batch upload at all. The
+               disclosure button already keeps them out of the way until asked for. *@
+            <button class="more-ways" type="button" @onclick="ToggleMoreInputsAsync"
+                    aria-expanded="@_moreInputsOpen" aria-controls="more-inputs-panel">
+                @(_moreInputsOpen ? "Hide other ways" : "More ways to get audio in")
+            </button>
                 @if (_moreInputsOpen)
                 {
                     <div id="more-inputs-panel" class="more-inputs" role="region" aria-label="Other ways to provide audio">
@@ -117,7 +118,6 @@
                         </fieldset>
                     </div>
                 }
-            }
         </div>
         @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
            declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
@@ -187,8 +187,6 @@ else if (ViewState.IsAdvanced)
 
         <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow"
                   OnShowLandscape="ShowLandscapeAsync" />
-
-        <AdvancedStatsPanel Result="_result" Visual="_visual" />
 
         <div class="export-row">
             <RadzenButton class="share-card-button" Text="Share card (PNG)" Size="ButtonSize.Small"

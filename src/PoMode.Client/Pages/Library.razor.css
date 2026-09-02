@@ -91,6 +91,8 @@
 }
 
 .mode-segment {
+    /* Segment width arrives as --pm-grow; the rule stays in the stylesheet. */
+    flex-grow: var(--pm-grow, 1);
     display: inline-block;
     min-width: 2px;
     min-height: 0.8rem;

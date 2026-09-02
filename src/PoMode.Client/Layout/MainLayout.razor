@@ -1,7 +1,10 @@
+@using Microsoft.AspNetCore.Components.Routing
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject AnalysisClient Analysis
 @inject AnalysisViewState ViewState
+@inject NavigationManager Navigation
+@implements IDisposable
 @implements IAsyncDisposable
 
 <a class="skip-link" href="#main-content">Skip to content</a>
@@ -17,7 +20,9 @@
         <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
     </nav>
     <div class="session">
-        <div class="nav-scene-switcher" role="tablist" aria-label="Analysis view mode">
+        @* Only the Analyze page reads AnalysisViewState, so the switcher is hidden elsewhere rather
+           than sitting in the header doing nothing on four routes out of five. *@
+        <div class="nav-scene-switcher @(IsAnalyzePage ? "" : "hidden")" role="tablist" aria-label="Analysis view mode">
             <button class="nav-scene-btn @(ViewState.IsBasic ? "active" : "")" type="button" role="tab"
                     aria-selected="@ViewState.IsBasic" @onclick="@(() => ViewState.SetViewMode("basic"))"
                     title="Switch to Basic View">
@@ -40,7 +45,6 @@
         @if (_overflowOpen)
         {
             <div class="overflow-menu" role="menu">
-                <a class="overflow-item" href="diagnostics" role="menuitem">Diagnostics</a>
                 <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
                     Keyboard shortcuts
                 </button>
@@ -77,6 +81,9 @@
 
 @code {
     private ElementReference _background;
+    private bool IsAnalyzePage =>
+        string.IsNullOrEmpty(Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].TrimEnd('/'));
+
     private IJSObjectReference? _fx;
     private IJSObjectReference? _theme;
     private string _themeMode = "system";
@@ -110,9 +117,19 @@
     protected override void OnInitialized()
     {
         ViewState.Changed += OnViewStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
     }
 
     private void OnViewStateChanged() => InvokeAsync(StateHasChanged);
+
+    /// <summary>The view switcher only belongs on the Analyze page, so the header follows the route.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        ViewState.Changed -= OnViewStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

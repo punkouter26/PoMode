@@ -184,7 +184,7 @@
                                 </span>
                                 <div class="bar-track">
                                     <div class="bar-fill @(vote.IsPrimary ? "winner-fill" : "runner-fill")"
-                                         style="width:@(Width(vote.WindowPercent))"></div>
+                                         style="--pm-fill: @(Width(vote.WindowPercent))"></div>
                                 </div>
                                 <span class="chart-value">@($"{vote.WindowPercent:0}%")</span>
                             </div>
@@ -221,7 +221,7 @@
                         {
                             <div class="tempo-bar @(measure.Changed ? "tempo-changed" : "")"
                                  title="@($"Bar {measure.Number} · {measure.Bpm:0.0} BPM at {Clock(measure.StartSec)}")">
-                                <div class="tempo-fill" style="height:@(Height(tempo, measure))"></div>
+                                <div class="tempo-fill" style="--pm-fill: @(Height(tempo, measure))"></div>
                             </div>
                         }
                     </div>
@@ -256,7 +256,7 @@
                             </span>
                             <div class="bar-track">
                                 <div class="bar-fill @DegreeClass(degree)-fill"
-                                     style="width:@(Width(ScaledPercent(stats, degree)))"></div>
+                                     style="--pm-fill: @(Width(ScaledPercent(stats, degree)))"></div>
                             </div>
                             <span class="chart-value">@($"{degree.Percent:0}%")</span>
                         </div>

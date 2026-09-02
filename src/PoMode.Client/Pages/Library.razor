@@ -122,7 +122,7 @@
                             var mode = window is { InsufficientEvidence: false, Matches.Count: > 0 }
                                 ? window.Matches[0].Mode.ToString() : null;
                             <span class="mode-segment @SegmentClass(mode)"
-                                  style="flex-grow: @SegmentGrow(window)" title="@(mode ?? "unclear")"></span>
+                                  style="--pm-grow: @SegmentGrow(window)" title="@(mode ?? "unclear")"></span>
                         }
                     </div>
                     <div class="mode-legend">

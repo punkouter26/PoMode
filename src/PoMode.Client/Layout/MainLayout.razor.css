@@ -1,3 +1,7 @@
+.nav-scene-switcher.hidden {
+    display: none;
+}
+
 /* The reactive backdrop sits behind everything; the glass cards blur it. */
 .fx-background {
     position: fixed;
