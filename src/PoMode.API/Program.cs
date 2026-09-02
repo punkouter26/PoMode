@@ -12,7 +12,6 @@ using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.Session;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.StemSeparation;
 using PoMode.API.Features.UrlIngest;
@@ -124,7 +123,6 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 app.MapHealthChecks("/health/ready");
 app.MapDiagnostics();
 
-app.MapSession();
 app.MapAnalysis();
 app.MapBatch();
 app.MapLibrary();

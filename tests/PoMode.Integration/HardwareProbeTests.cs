@@ -17,7 +17,7 @@ public class HardwareProbeTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
         var modelRegistry = new ModelRegistry(
             configuration, provider.GetRequiredService<IHttpClientFactory>(), NullLogger<ModelRegistry>.Instance);
-        return new HardwareProbe(configuration, modelRegistry);
+        return new HardwareProbe(modelRegistry);
     }
 
     [Fact]

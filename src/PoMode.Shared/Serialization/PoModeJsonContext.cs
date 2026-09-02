@@ -2,13 +2,11 @@ using System.Text.Json.Serialization;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
 using PoMode.Shared.Hardware;
-using PoMode.Shared.Session;
 
 namespace PoMode.Shared.Serialization;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiagnosticsReport))]
-[JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(JobStatusDto))]
 [JsonSerializable(typeof(AnalyzeUrlRequest))]
 [JsonSerializable(typeof(BatchStatusDto))]
@@ -31,6 +29,4 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(ModalMelodyRequest))]
 [JsonSerializable(typeof(GeneratedMelodyDto))]
 [JsonSerializable(typeof(ModeFitDto))]
-[JsonSerializable(typeof(ModeComparisonItemDto))]
-[JsonSerializable(typeof(ModalComparisonResponse))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

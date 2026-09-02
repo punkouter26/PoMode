@@ -39,33 +39,4 @@ public sealed class DiagnosticsTests : IDisposable
         Assert.Contains(body, (string[])["Healthy", "Degraded"]);
     }
 
-    [Fact]
-    public async Task Diag_reports_provider_key_presence_without_leaking_values()
-    {
-        Environment.SetEnvironmentVariable("ReplicateApiToken", FakeSecret);
-        try
-        {
-            await using var factory = Factory();
-            using var client = factory.CreateClient();
-
-            var raw = await client.GetStringAsync("/diag");
-            var report = await client.GetFromJsonAsync<DiagnosticsReport>("/diag");
-
-            Assert.DoesNotContain(FakeSecret, raw); // redaction is non-negotiable
-            Assert.NotNull(report);
-            Assert.True(report.ProviderKeys.Single(k => k.Provider == "ReplicateApiToken").Configured);
-            Assert.False(report.ProviderKeys.Single(k => k.Provider == "LalalApiKey").Configured);
-            // Sonic API was dropped in Phase 7 (the service no longer exists), so /diag must not
-            // advertise a slot for it.
-            Assert.False(report.CloudEnabled);
-            Assert.False(report.IsAzureHosted);
-            Assert.Equal("EnvironmentVariables", report.SecretSource);
-            Assert.NotNull(report.Hardware);
-            Assert.False(report.Hardware.IsAzureHosted);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("ReplicateApiToken", null);
-        }
-    }
 }

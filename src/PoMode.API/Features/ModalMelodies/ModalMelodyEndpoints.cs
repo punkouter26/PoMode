@@ -28,19 +28,6 @@ public static class ModalMelodyEndpoints
         .WithName("GenerateModalMelody")
         .WithSummary("Generates an algorithmic melody and chord accompaniment for a scale mode and progression.");
 
-        group.MapPost("/compare", (ModalMelodyRequest request, ModalMelodyGenerator generator) =>
-        {
-            var comparison = generator.GenerateComparison(
-                tonicPitchClass: request.TonicPitchClass,
-                progressionId: request.ProgressionId,
-                bpm: request.Bpm,
-                style: request.Style,
-                seed: request.Seed);
-            return TypedResults.Ok(comparison);
-        })
-        .WithName("CompareModalMelodies")
-        .WithSummary("Generates multi-mode variations across all scale modes for direct auditory comparison.");
-
         group.MapGet("/midi", (
             [FromQuery] int tonicPitchClass,
             [FromQuery] ScaleMode mode,
@@ -71,20 +58,6 @@ public static class ModalMelodyEndpoints
         })
         .WithName("ExportModalMelodyMidiGet")
         .WithSummary("Exports the generated modal melody and chord track as a standard MIDI file (GET).");
-
-        group.MapPost("/midi", (ModalMelodyRequest request, ModalMelodyGenerator generator) =>
-        {
-            var generated = generator.Generate(request);
-            var midiBytes = MidiFileBuilder.Build(
-                notes: generated.MelodyNotes,
-                chords: generated.Chords,
-                result: generated.ModalAnalysis);
-
-            var fileName = $"modal-{generated.TonicPitchClass}-{generated.Mode}-{generated.ProgressionId}.mid";
-            return TypedResults.File(midiBytes, "audio/midi", fileName);
-        })
-        .WithName("ExportModalMelodyMidi")
-        .WithSummary("Exports the generated modal melody and chord track as a standard MIDI file.");
 
         group.MapGet("/wav", (
             [FromQuery] int tonicPitchClass,
@@ -117,21 +90,6 @@ public static class ModalMelodyEndpoints
         })
         .WithName("ExportModalMelodyWavGet")
         .WithSummary("Synthesizes and exports the generated modal melody and chords as a 44.1kHz 16-bit PCM WAV file (GET).");
-
-        group.MapPost("/wav", (ModalMelodyRequest request, ModalMelodyGenerator generator) =>
-        {
-            var generated = generator.Generate(request);
-            var duration = generated.Chords.Count > 0 ? generated.Chords[^1].EndSec : 8.0;
-            var wavBytes = ModalWavSynthesizer.Synthesize(
-                melodyNotes: generated.MelodyNotes,
-                chords: generated.Chords,
-                totalDurationSec: duration);
-
-            var fileName = $"modal-{generated.TonicPitchClass}-{generated.Mode}-{generated.ProgressionId}.wav";
-            return TypedResults.File(wavBytes, "audio/wav", fileName);
-        })
-        .WithName("ExportModalMelodyWav")
-        .WithSummary("Synthesizes and exports the generated modal melody and chords as a 44.1kHz 16-bit PCM WAV file.");
 
         group.MapPost("/analyze", async (
             ModalMelodyRequest request,

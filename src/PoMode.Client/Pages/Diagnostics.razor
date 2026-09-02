@@ -29,7 +29,6 @@
             <dt>Environment</dt><dd>@report.EnvironmentName</dd>
             <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
             <dt>Secret source</dt><dd>@report.SecretSource @(report.SecretFellBack ? "(fell back)" : "")</dd>
-            <dt>Cloud tier enabled</dt><dd>@YesNo(report.CloudEnabled)</dd>
             <dt>Jobs queued</dt><dd>@report.QueueDepth</dd>
         </dl>
     </RadzenCard>
@@ -56,24 +55,12 @@
     </RadzenCard>
 
     <RadzenCard>
-        <RadzenText TextStyle="TextStyle.H6" Text="Provider keys (presence only)" />
-        <dl class="diag-grid">
-            @foreach (var key in report.ProviderKeys)
-            {
-                <dt>@key.Provider</dt><dd>@(key.Configured ? "configured" : "not set")</dd>
-            }
-        </dl>
-    </RadzenCard>
-
-    <RadzenCard>
         <RadzenText TextStyle="TextStyle.H6" Text="Hardware" />
         @if (report.Hardware is { } hardware)
         {
             <dl class="diag-grid">
                 <dt>GPU</dt>
                 <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
-                <dt>Configured providers</dt>
-                <dd>@(hardware.ConfiguredProviders.Count > 0 ? string.Join(", ", hardware.ConfiguredProviders) : "none")</dd>
             </dl>
             <table class="diag-models">
                 <thead><tr><th>Model</th><th>Available</th><th>Size</th></tr></thead>

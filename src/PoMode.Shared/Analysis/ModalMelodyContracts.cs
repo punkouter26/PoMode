@@ -94,22 +94,3 @@ public sealed record GeneratedMelodyDto(
     ModalResult ModalAnalysis,
     ModeFitDto? BetterFit = null);
 
-public sealed record ModeComparisonItemDto(
-    ScaleMode Mode,
-    string ModeName,
-    string Mood,
-    string CharacteristicTone,
-    double ModePercentage,
-    IReadOnlyList<string> ScaleNotes,
-    IReadOnlyList<NoteEvent> MelodyNotes,
-    VisualizationPayload Visual);
-
-public sealed record ModalComparisonResponse(
-    string ProgressionId,
-    string ProgressionName,
-    int TonicPitchClass,
-    string TonicName,
-    double Bpm,
-    IReadOnlyList<ChordSpan> Chords,
-    IReadOnlyList<NoteEvent> BackingNotes,
-    IReadOnlyList<ModeComparisonItemDto> Modes);

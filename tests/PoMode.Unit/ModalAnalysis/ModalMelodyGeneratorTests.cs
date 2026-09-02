@@ -140,34 +140,6 @@ public sealed class ModalMelodyGeneratorTests
         }
     }
 
-    [Fact]
-    public void GenerateComparison_ProducesAllModesWithValidData()
-    {
-        var comparison = _generator.GenerateComparison(
-            tonicPitchClass: 0,
-            progressionId: "pop-axis",
-            bpm: 100.0,
-            style: MelodyStyle.Lyrical,
-            seed: 99);
-
-        Assert.NotNull(comparison);
-        Assert.Equal(9, comparison.Modes.Count);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Ionian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Dorian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Phrygian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Lydian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Mixolydian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Aeolian);
-        Assert.Contains(comparison.Modes, m => m.Mode == ScaleMode.Locrian);
-
-        foreach (var item in comparison.Modes)
-        {
-            Assert.NotEmpty(item.MelodyNotes);
-            Assert.NotEmpty(item.ScaleNotes);
-            Assert.False(string.IsNullOrWhiteSpace(item.Mood));
-            Assert.False(string.IsNullOrWhiteSpace(item.CharacteristicTone));
-        }
-    }
 
     [Fact]
     public void Serialization_ContractsRoundTripViaPoModeJsonContext()

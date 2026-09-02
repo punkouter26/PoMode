@@ -330,81 +330,6 @@ public sealed class ModalMelodyGenerator
         return mask;
     }
 
-    public ModalComparisonResponse GenerateComparison(
-        int tonicPitchClass = 0,
-        string progressionId = "pop-axis",
-        double bpm = 100.0,
-        MelodyStyle style = MelodyStyle.Lyrical,
-        int seed = 42)
-    {
-        var progression = GetProgression(progressionId);
-        var effectiveBpm = bpm is >= 40 and <= 240 ? bpm : progression.DefaultBpm;
-        var parentTonicClass = ((tonicPitchClass % 12) + 12) % 12;
-        var parentTonicName = PitchNames.Name(parentTonicClass);
-
-        // One fixed backing track for every mode in the comparison, rooted on whichever mode the
-        // progression itself was written from, so the nine melodies are judged against one harmony.
-        var harmonyRootClass =
-            (parentTonicClass + ScaleModes.ModeDegreeOffset(progression.SuggestedMode)) % 12;
-        var chords = BuildChordSpans(progression, parentTonicClass, harmonyRootClass, effectiveBpm);
-        var backingNotes = ChordPadBuilder.Build(chords);
-
-        var modesToCompare = new[]
-        {
-            ScaleMode.Ionian,
-            ScaleMode.Dorian,
-            ScaleMode.Phrygian,
-            ScaleMode.Lydian,
-            ScaleMode.Mixolydian,
-            ScaleMode.Aeolian,
-            ScaleMode.Locrian,
-            ScaleMode.MajorPentatonic,
-            ScaleMode.MinorPentatonic,
-        };
-
-        var items = new List<ModeComparisonItemDto>();
-        foreach (var mode in modesToCompare)
-        {
-            var modeDegreeOffset = ScaleModes.ModeDegreeOffset(mode);
-            var modeRootClass = (parentTonicClass + modeDegreeOffset) % 12;
-            var modeRootName = PitchNames.Name(modeRootClass);
-
-            var melodyNotes = GenerateRelativeModalMelodyNotes(
-                parentTonicClass: parentTonicClass,
-                mode: mode,
-                chords: chords,
-                bpm: effectiveBpm,
-                style: style,
-                seed: seed,
-                baseOctave: 4,
-                targetPurity: 90.0);
-
-            var modePercentage = CalculateModePercentage(parentTonicClass, mode, melodyNotes);
-            var modalResult = BuildModalResult(modeRootClass, modeRootName, mode, effectiveBpm, chords, melodyNotes);
-            var visual = VisualizationBuilder.Build(melodyNotes, chords, modalResult);
-
-            items.Add(new ModeComparisonItemDto(
-                Mode: mode,
-                ModeName: $"{modeRootName} {mode}",
-                Mood: MoodFor(mode),
-                CharacteristicTone: CharacteristicToneFor(parentTonicName, mode),
-                ModePercentage: modePercentage,
-                ScaleNotes: ScaleModes.RelativeScaleNoteNames(parentTonicClass, mode),
-                MelodyNotes: melodyNotes,
-                Visual: visual));
-        }
-
-        return new ModalComparisonResponse(
-            ProgressionId: progression.Id,
-            ProgressionName: progression.Name,
-            TonicPitchClass: parentTonicClass,
-            TonicName: parentTonicName,
-            Bpm: effectiveBpm,
-            Chords: chords,
-            BackingNotes: backingNotes,
-            Modes: items);
-    }
-
     /// <summary>
     /// Computes the modal purity / affinity percentage (0.0% to 100.0%) of the melody for the target mode.
     /// Evaluates: In-Mode note duration ratio (40 pts), Modal tonic anchoring &amp; cadence (30 pts),
@@ -862,37 +787,6 @@ public sealed class ModalMelodyGenerator
         var nextIdx = Math.Clamp(idx + delta, 0, scale.Count - 1);
         return scale[nextIdx];
     }
-
-    public static string CharacteristicToneFor(string parentKey, ScaleMode mode)
-    {
-        return mode switch
-        {
-            ScaleMode.Ionian => "Degree 1 (Tonic Major)",
-            ScaleMode.Dorian => "Degree 2 (Minor with Natural 6th)",
-            ScaleMode.Phrygian => "Degree 3 (Minor with Half-step 2nd)",
-            ScaleMode.Lydian => "Degree 4 (Major with Sharp 4th)",
-            ScaleMode.Mixolydian => "Degree 5 (Major with Flat 7th)",
-            ScaleMode.Aeolian => "Degree 6 (Natural Minor)",
-            ScaleMode.Locrian => "Degree 7 (Diminished 5th & b2)",
-            ScaleMode.MajorPentatonic => "Degrees 1, 2, 3, 5, 6",
-            ScaleMode.MinorPentatonic => "Degrees 6, 1, 2, 3, 5",
-            _ => "Scale Degree",
-        };
-    }
-
-    public static string MoodFor(ScaleMode mode) => mode switch
-    {
-        ScaleMode.Ionian => "Bright, joyful, heroic, resolved",
-        ScaleMode.Dorian => "Jazzy, soulful, melancholic yet optimistic",
-        ScaleMode.Phrygian => "Dark, exotic, flamenco, ominous tension",
-        ScaleMode.Lydian => "Dreamy, spacey, cinematic, floating wonder",
-        ScaleMode.Mixolydian => "Bluesy, classic rock groove, earthy warmth",
-        ScaleMode.Aeolian => "Sad, emotional, epic, somber natural minor",
-        ScaleMode.Locrian => "Tense, unstable, haunting, diminished dissonance",
-        ScaleMode.MajorPentatonic => "Open, bright, pastoral, universally pleasing",
-        ScaleMode.MinorPentatonic => "Gritty, bluesy, driving, raw soul",
-        _ => "Standard",
-    };
 
     public static string ExplainRelativeMode(string parentKey, ScaleMode mode)
     {

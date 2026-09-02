@@ -3,7 +3,6 @@ using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
 using PoMode.Shared.Hardware;
 using PoMode.Shared.Serialization;
-using PoMode.Shared.Session;
 using Xunit;
 
 namespace PoMode.Unit.Serialization;
@@ -18,8 +17,6 @@ public class JsonContextTests
             IsAzureHosted: false,
             SecretSource: "EnvironmentVariables",
             SecretFellBack: true,
-            CloudEnabled: true,
-            ProviderKeys: [new ProviderKeyStatus("ReplicateApiToken", Configured: true)],
             Hardware: null);
 
         var json = JsonSerializer.Serialize(report, PoModeJsonContext.Default.DiagnosticsReport);
@@ -28,8 +25,7 @@ public class JsonContextTests
         Assert.NotNull(back);
         Assert.Equal("Development", back.EnvironmentName);
         Assert.True(back.SecretFellBack);
-        Assert.Single(back.ProviderKeys);
-        Assert.True(back.ProviderKeys[0].Configured);
+        Assert.Equal("EnvironmentVariables", back.SecretSource);
     }
 
     [Fact]
