@@ -163,12 +163,24 @@ jobs:
           # Every API check below asserts JSON, not just a 200. MapFallbackToFile serves the SPA shell
           # for anything unmatched, so a status-only check passes against a route that does not exist
           # and against any typo. The previous /api/diagnostics/summary check did exactly that.
+          #
+          # Each one retries, because /health can answer from the container being replaced while the
+          # new one is still warming. The platform log puts that warm-up at roughly 20 to 25 seconds,
+          # and a single-shot check right after the health poll caught the site mid-swap and failed a
+          # deploy that had in fact succeeded.
           check_json() {
-            body=$(curl -s --max-time 20 -H 'Accept: application/json' "${{ env.AZURE_WEBAPP_URL }}$1")
-            case "$body" in
-              '{'*|'['*) ;;
-              *) echo "::error::$1 did not return JSON. First bytes: $(printf '%.80s' "$body")"; exit 1 ;;
-            esac
+            for attempt in $(seq 1 12); do
+              body=$(curl -s --max-time 20 -H 'Accept: application/json' "${{ env.AZURE_WEBAPP_URL }}$1" || echo '')
+              case "$body" in
+                '{'*|'['*)
+                  echo "$1 OK after ${attempt} attempt(s)"
+                  return 0
+                  ;;
+              esac
+              sleep 10
+            done
+            echo "::error::$1 never returned JSON. Last bytes: $(printf '%.80s' "$body")"
+            exit 1
           }
 
           # Diagnostics report
