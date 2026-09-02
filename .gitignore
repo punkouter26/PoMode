@@ -16,3 +16,5 @@ TestResults/
 .superpowers/
 .azurite_data/
 test-reports/
+publish/
+webapp.zip

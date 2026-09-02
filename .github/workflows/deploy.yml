@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      deploy_infra:
+        description: 'Apply infra/main.bicep (az deployment sub create) during deploy'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-${{ github.repository }}-${{ github.ref }}
@@ -13,7 +18,7 @@ concurrency:
 
 permissions:
   contents: read
-  # OIDC federated credential for Azure access without stored client secrets
+  # OIDC federated credential — exchanges GitHub OIDC token for Azure access token via azure/login@v2
   id-token: write
 
 env:
@@ -23,6 +28,27 @@ env:
   API_PROJECT_PATH: src/PoMode.API/PoMode.API.csproj
 
 jobs:
+  lint-infra:
+    name: Lint Infra (Bicep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Bicep CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.azure/bin
+          key: bicep-${{ runner.os }}
+      - name: Install Bicep CLI
+        run: az bicep install
+      - name: Compile Bicep → ARM (catches template errors)
+        run: |
+          set -euo pipefail
+          find infra -name '*.bicep' -print0 | while IFS= read -r -d '' f; do
+            echo "→ $f"
+            az bicep build --file "$f" --stdout > /dev/null
+          done
+
   build:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -57,7 +83,7 @@ jobs:
   deploy:
     name: Deploy to Azure
     runs-on: ubuntu-latest
-    needs: build
+    needs: [lint-infra, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     timeout-minutes: 15
     environment:
@@ -71,22 +97,45 @@ jobs:
         with:
           name: webapp
           path: publish
-      # OIDC federated identity login
+      # OIDC federated identity login — no client secrets stored in GitHub
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Did infra change?
+        id: infra
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_infra }}" = "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && git diff --quiet ${{ github.event.before }} ${{ github.sha }} -- infra/ 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Provision infra (Bicep)
+        if: steps.infra.outputs.changed == 'true'
+        run: |
+          az deployment sub create \
+            --location eastus2 \
+            --template-file infra/main.bicep \
+            --name pomode-${{ github.run_id }} \
+            -o none
+
       - name: Package and zip deploy
         run: |
           cd publish
           zip -r ../webapp.zip . -q
           cd ..
+
       - name: Deploy to App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: webapp.zip
+
       - name: Smoke test the deployed site
         run: |
           set -euo pipefail
