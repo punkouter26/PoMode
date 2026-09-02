@@ -231,6 +231,14 @@ function draw(state) {
         state.drawnText = drawnText;
         dataset.drawn = drawnText;
     }
+    // The opening note's server-decided pitch label. Published because what the first note is called
+    // is the whole question when a recording arrives off-tune, and it is otherwise only visible as
+    // painted pixels. The label is decided by VisualizationBuilder; this only mirrors it.
+    const firstNote = state.model?.notes?.length > 0 ? (state.model.notes[0].pitchLabel ?? '') : '';
+    if (state.firstNoteText !== firstNote) {
+        state.firstNoteText = firstNote;
+        dataset.firstNote = firstNote;
+    }
     dataset.painted = '1';
 }
 
