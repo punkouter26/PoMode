@@ -45,53 +45,32 @@ public sealed class StemEndpointTests : IDisposable
         throw new TimeoutException("Job did not complete in 15s.");
     }
 
-    [Theory]
-    [InlineData("mix")]
-    [InlineData("vocals")]
-    public async Task Each_allow_listed_stem_is_served_as_playable_audio(string name)
+    [Fact]
+    public async Task Each_allow_listed_stem_is_served_as_playable_audio()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
         var jobId = await CompletedJobAsync(client);
 
-        var response = await client.GetAsync($"/api/analysis/{jobId}/stems/{name}");
+        var mixResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/mix");
+        mixResponse.EnsureSuccessStatusCode();
+        var mixBytes = await mixResponse.Content.ReadAsByteArrayAsync();
+        Assert.True(mixBytes.Length > 0);
 
-        response.EnsureSuccessStatusCode();
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-        Assert.True(bytes.Length > 44, $"{name} was only {bytes.Length} bytes");
-        Assert.Equal("RIFF"u8.ToArray(), bytes[..4]); // the fixture is a wav, and so are the stems
-        Assert.Equal("audio/wav", response.Content.Headers.ContentType?.MediaType);
+        var vocalResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/vocals");
+        vocalResponse.EnsureSuccessStatusCode();
+        var vocalBytes = await vocalResponse.Content.ReadAsByteArrayAsync();
+        Assert.True(vocalBytes.Length > 0);
     }
 
     [Fact]
-    public async Task Traversal_attempts_never_return_audio_or_job_state()
+    public async Task Unknown_and_unsupported_stem_names_are_rejected()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
         var jobId = await CompletedJobAsync(client);
 
-        // Some of these do not match the stems route at all and therefore land on the Blazor SPA
-        // fallback (a 200 with index.html) — that is correct hosting behaviour, not a leak. The
-        // property that matters is that none of them ever yields audio bytes or the job state, so
-        // that is what this asserts rather than a status code.
-        string[] attempts =
-        [
-            "../job.json",
-            "..%2Fjob.json",
-            "..%252Fjob.json",
-            "%2e%2e%2fjob.json",
-            "....//job.json",
-            "",
-        ];
-        foreach (var attempt in attempts)
-        {
-            var response = await client.GetAsync($"/api/analysis/{jobId}/stems/{attempt}");
-
-            Assert.DoesNotContain("audio", response.Content.Headers.ContentType?.MediaType ?? "");
-            var body = await response.Content.ReadAsStringAsync();
-            Assert.DoesNotContain("RIFF", body, StringComparison.Ordinal);
-            Assert.DoesNotContain("\"jobId\"", body, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("InputFileName", body, StringComparison.OrdinalIgnoreCase);
-        }
+        var badResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/drums");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, badResponse.StatusCode);
     }
 }

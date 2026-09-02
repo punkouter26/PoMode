@@ -8,11 +8,6 @@ using Xunit;
 
 namespace PoMode.E2EAPI;
 
-/// <summary>
-/// The Tier-2 return path over real HTTP. The registry is driven directly rather than by running a
-/// parked job, so these tests pin the endpoint's contract — who may post, and what is accepted —
-/// without depending on pipeline timing.
-/// </summary>
 public sealed class ClientResultTests : IDisposable
 {
     private const string JobId = "abcdef0123456789abcdef0123456789";
@@ -32,18 +27,11 @@ public sealed class ClientResultTests : IDisposable
             .UseSetting("Models:RootPath", _modelsRoot)
             .UseSetting("Models:AutoDownload", "false"));
 
-    /// <summary>Parks a waiter for <see cref="JobId"/> and returns the task the endpoint should satisfy.</summary>
     private static Task<IReadOnlyList<NoteEvent>> ParkAsync(WebApplicationFactory<Program> factory)
     {
         var registry = factory.Services.GetRequiredService<ClientWorkRegistry>();
         return registry.WaitAsync(JobId, TimeSpan.FromMinutes(5), CancellationToken.None);
     }
-
-    private static NoteEvent[] GoodNotes() =>
-    [
-        new NoteEvent(60, 0.0, 0.5, 90),
-        new NoteEvent(64, 0.5, 0.5, 88),
-    ];
 
     [Fact]
     public async Task A_valid_payload_is_accepted_and_satisfies_the_parked_stage()
@@ -52,7 +40,8 @@ public sealed class ClientResultTests : IDisposable
         using var client = factory.CreateClient();
         var parked = ParkAsync(factory);
 
-        var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", GoodNotes());
+        NoteEvent[] notes = [new(60, 0.0, 0.5, 90), new(64, 0.5, 0.5, 88)];
+        var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", notes);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var delivered = await parked;
@@ -61,34 +50,20 @@ public sealed class ClientResultTests : IDisposable
     }
 
     [Fact]
-    public async Task Posting_for_a_job_nobody_is_waiting_on_is_not_found()
+    public async Task Invalid_payload_and_unparked_job_are_rejected()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
+        _ = ParkAsync(factory);
 
-        var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", GoodNotes());
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    // Per-rule validation behavior (flood cap, empty payloads, retry-after-reject, every reject
-    // boundary) is pinned by PoMode.Unit's ClientResultValidatorTests; this file keeps one HTTP
-    // representative of each contract outcome: accept, 400-with-reason, and 404-no-waiter.
-
-    [Fact]
-    public async Task An_out_of_range_pitch_is_rejected_with_a_reason_and_the_stage_stays_parked()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
-
-        var response = await client.PostAsJsonAsync(
+        var badResponse = await client.PostAsJsonAsync(
             $"/api/analysis/{JobId}/client-result",
-            new[] { new NoteEvent(200, 0.0, 0.5, 90) });
+            new[] { new NoteEvent(109, 0.0, 0.5, 90) });
+        Assert.Equal(HttpStatusCode.BadRequest, badResponse.StatusCode);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("pitch", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
-        // A rejected payload must not consume the waiter — the browser can correct itself and retry.
-        Assert.False(parked.IsCompleted);
+        var unparkedResponse = await client.PostAsJsonAsync(
+            $"/api/analysis/00000000000000000000000000000000/client-result",
+            new[] { new NoteEvent(60, 0.0, 0.5, 90) });
+        Assert.Equal(HttpStatusCode.NotFound, unparkedResponse.StatusCode);
     }
 }

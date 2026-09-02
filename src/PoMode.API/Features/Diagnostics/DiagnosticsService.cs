@@ -1,5 +1,4 @@
 using PoMode.API.Features.Analysis;
-using PoMode.API.Features.Cloud;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
@@ -12,7 +11,6 @@ public sealed class DiagnosticsService(
     IConfiguration configuration,
     IHostEnvironment environment,
     SecretSourceInfo secretSource,
-    CloudCredentials cloudCredentials,
     HardwareProbe hardwareProbe,
     JobQueue queue,
     ExecutionPlanner planner)
@@ -25,7 +23,7 @@ public sealed class DiagnosticsService(
         ProviderKeys: ProviderKeys.All
             .Select(name => new ProviderKeyStatus(name, !string.IsNullOrEmpty(configuration[name])))
             .ToArray(),
-        CloudEnabled: cloudCredentials.Enabled,
+        CloudEnabled: false,
         Hardware: await hardwareProbe.ProbeAsync(ct),
         QueueDepth: queue.Depth,
         DefaultPlan: await DefaultPlanAsync(ct));

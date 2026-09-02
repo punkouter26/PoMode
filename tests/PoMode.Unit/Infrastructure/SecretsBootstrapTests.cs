@@ -1,33 +1,31 @@
-using Xunit;
 using PoMode.API.Infrastructure;
+using Xunit;
 
 namespace PoMode.Unit.Infrastructure;
 
 public class SecretsBootstrapTests
 {
-    [Theory]
-    [InlineData(null)]
-    [InlineData("   ")] // blank and null take the same branch; one of each is enough
-    public void No_vault_uri_means_environment_variables_without_fallback_flag(string? vaultUri)
+    [Fact]
+    public void No_vault_uri_means_environment_variables_without_fallback_flag()
     {
-        var info = SecretsBootstrap.Decide(vaultUri, tryConnectKeyVault: () => throw new Exception("must not be called"));
-        Assert.Equal(SecretSource.EnvironmentVariables, info.Source);
-        Assert.False(info.FellBack);
+        var infoNull = SecretsBootstrap.Decide(null, tryConnectKeyVault: () => throw new Exception("must not be called"));
+        Assert.Equal(SecretSource.EnvironmentVariables, infoNull.Source);
+        Assert.False(infoNull.FellBack);
+
+        var infoBlank = SecretsBootstrap.Decide("   ", tryConnectKeyVault: () => throw new Exception("must not be called"));
+        Assert.Equal(SecretSource.EnvironmentVariables, infoBlank.Source);
+        Assert.False(infoBlank.FellBack);
     }
 
     [Fact]
-    public void Reachable_vault_wins()
+    public void Vault_connectivity_determines_source_and_fallback_flag()
     {
-        var info = SecretsBootstrap.Decide("https://poshared-kv.vault.azure.net/", () => true);
-        Assert.Equal(SecretSource.KeyVault, info.Source);
-        Assert.False(info.FellBack);
-    }
+        var infoReachable = SecretsBootstrap.Decide("https://poshared-kv.vault.azure.net/", () => true);
+        Assert.Equal(SecretSource.KeyVault, infoReachable.Source);
+        Assert.False(infoReachable.FellBack);
 
-    [Fact]
-    public void Unreachable_vault_falls_back_to_environment_and_flags_it()
-    {
-        var info = SecretsBootstrap.Decide("https://poshared-kv.vault.azure.net/", () => false);
-        Assert.Equal(SecretSource.EnvironmentVariables, info.Source);
-        Assert.True(info.FellBack);
+        var infoUnreachable = SecretsBootstrap.Decide("https://poshared-kv.vault.azure.net/", () => false);
+        Assert.Equal(SecretSource.EnvironmentVariables, infoUnreachable.Source);
+        Assert.True(infoUnreachable.FellBack);
     }
 }

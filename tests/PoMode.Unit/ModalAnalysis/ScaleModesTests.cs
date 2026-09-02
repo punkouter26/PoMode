@@ -19,4 +19,26 @@ public class ScaleModesTests
         Assert.Equal(["C", "D", "D#", "F", "G", "A", "A#"], result.PrimaryScaleNoteNames()!);
         Assert.Null((result with { PrimaryMode = null }).PrimaryScaleNoteNames());
     }
+
+    [Fact]
+    public void ModeDegreeOffsets_AreAccurateForAllSevenChurchModes()
+    {
+        Assert.Equal(0, ScaleModes.ModeDegreeOffset(ScaleMode.Ionian));
+        Assert.Equal(2, ScaleModes.ModeDegreeOffset(ScaleMode.Dorian));
+        Assert.Equal(4, ScaleModes.ModeDegreeOffset(ScaleMode.Phrygian));
+        Assert.Equal(5, ScaleModes.ModeDegreeOffset(ScaleMode.Lydian));
+        Assert.Equal(7, ScaleModes.ModeDegreeOffset(ScaleMode.Mixolydian));
+        Assert.Equal(9, ScaleModes.ModeDegreeOffset(ScaleMode.Aeolian));
+        Assert.Equal(11, ScaleModes.ModeDegreeOffset(ScaleMode.Locrian));
+    }
+
+    [Fact]
+    public void PitchClassNames_SpellsAllTwelveKeysWithoutErrors()
+    {
+        for (var pc = 0; pc < 12; pc++)
+        {
+            var name = ScaleModes.NoteName(pc);
+            Assert.False(string.IsNullOrWhiteSpace(name));
+        }
+    }
 }

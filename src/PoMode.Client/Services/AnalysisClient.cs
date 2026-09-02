@@ -129,4 +129,35 @@ public sealed class AnalysisClient(HttpClient http)
         }
         return (null, error ?? $"The server answered {(int)response.StatusCode}.");
     }
+
+    /// <summary>Standard chord progression presets across genres and modes.</summary>
+    public Task<List<ChordProgressionDefinition>?> GetModalProgressionsAsync()
+        => http.GetFromJsonAsync<List<ChordProgressionDefinition>>("api/modal-melodies/progressions");
+
+    /// <summary>Generates an algorithmic melody and chord accompaniment for a scale mode and progression.</summary>
+    public async Task<GeneratedMelodyDto?> GenerateModalMelodyAsync(ModalMelodyRequest request)
+    {
+        var response = await http.PostAsJsonAsync("api/modal-melodies/generate", request);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<GeneratedMelodyDto>()
+            : null;
+    }
+
+    /// <summary>Generates multi-mode variations across all scale modes for direct auditory comparison.</summary>
+    public async Task<ModalComparisonResponse?> CompareModalMelodiesAsync(ModalMelodyRequest request)
+    {
+        var response = await http.PostAsJsonAsync("api/modal-melodies/compare", request);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<ModalComparisonResponse>()
+            : null;
+    }
+
+    /// <summary>Synthesizes the melody and chords into WAV audio and queues an end-to-end analysis job in the Song Analyzer.</summary>
+    public async Task<JobStatusDto?> AnalyzeModalMelodyAsync(ModalMelodyRequest request)
+    {
+        var response = await http.PostAsJsonAsync("api/modal-melodies/analyze", request);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<JobStatusDto>()
+            : null;
+    }
 }

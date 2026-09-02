@@ -4,12 +4,12 @@ using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Batch;
 using PoMode.API.Features.ChordChart;
 using PoMode.API.Features.ChordRecognition;
-using PoMode.API.Features.Cloud;
 using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Library;
 using PoMode.API.Features.Live;
 using PoMode.API.Features.MidiExport;
 using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Session;
@@ -48,8 +48,7 @@ builder.Services.AddSingleton<ModelRegistry>();
 builder.Services.AddSingleton<HardwareProbe>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddHealthChecks()
-    .AddCheck<JobStorageHealthCheck>("job-storage")
-    .AddCheck<CloudProvidersHealthCheck>("cloud-providers");
+    .AddCheck<JobStorageHealthCheck>("job-storage");
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JobBlobStorage>();
@@ -61,8 +60,6 @@ builder.Services.AddSingleton<UrlAudioService>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
-builder.Services.AddSingleton<IStemSeparator, ReplicateStemSeparator>();
-builder.Services.AddSingleton<IStemSeparator, LalalStemSeparator>();
 builder.Services.AddSingleton<OnnxPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker>(sp => sp.GetRequiredService<OnnxPitchTracker>());
 builder.Services.AddSingleton<IPitchTracker, ClientDelegatedPitchTracker>();
@@ -72,14 +69,11 @@ builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, ViterbiChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<ArtifactModalAnalyzer>();
-// Interpreter order is ExecutionPlanner.EffectiveRank, not registration order: local LLM, then the
-// deterministic template, then paid cloud (only ever reachable by name).
+builder.Services.AddSingleton<ModalMelodyGenerator>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
-builder.Services.AddSingleton<ISongInterpreter, AzureOpenAiSongInterpreter>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
-builder.Services.AddSingleton<CloudCredentials>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton<AnalysisPipeline>();
@@ -119,6 +113,7 @@ app.MapLibrary();
 app.MapLive();
 app.MapUrlIngest();
 app.MapWebRuntime();
+app.MapModalMelodies();
 app.MapMidiExport();
 app.MapMusicXmlExport();
 app.MapChordChart();

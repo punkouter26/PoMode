@@ -12,9 +12,8 @@ public class ChordChartBuilderTests
         TempoBpm: bpm, TempoEstimated: false, Windows: []);
 
     [Fact]
-    public void Four_two_second_chords_at_120_bpm_render_one_line_of_four_measures()
+    public void ChordChartBuilder_RendersAccurateGridAndHandlesEmptyState()
     {
-        // 120 BPM in 4/4 → 2 s per measure, so each chord fills exactly one measure.
         IReadOnlyList<ChordSpan> chords =
         [
             new("C", "C", "maj", 0, 2),
@@ -24,29 +23,12 @@ public class ChordChartBuilderTests
         ];
 
         var chart = ChordChartBuilder.Build(chords, Result(), "song.mp3");
-
         Assert.Contains("song.mp3", chart);
         Assert.Contains("Key: C Ionian", chart);
         Assert.Contains("Tempo: 120 BPM", chart);
         Assert.Contains("| C    | G    | Am   | F    |", chart);
-    }
 
-    [Fact]
-    public void A_held_chord_repeats_as_dots_and_gaps_read_no_chord()
-    {
-        // One C chord held 4 s (2 measures), then 4 s of silence (2 measures of N.C.).
-        IReadOnlyList<ChordSpan> chords = [new("C", "C", "maj", 0, 4), new("G", "G", "maj", 6, 8)];
-
-        var chart = ChordChartBuilder.Build(chords, Result(), "held");
-
-        Assert.Contains("| C    | .    | N.C. | G    |", chart);
-    }
-
-    [Fact]
-    public void No_chords_yields_an_honest_message_not_an_empty_grid()
-    {
-        var chart = ChordChartBuilder.Build([], Result(), "empty");
-
-        Assert.Contains("No chords were detected", chart);
+        var emptyChart = ChordChartBuilder.Build([], Result(), "empty");
+        Assert.Contains("No chords were detected", emptyChart);
     }
 }

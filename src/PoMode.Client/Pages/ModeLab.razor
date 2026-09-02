@@ -1,0 +1,556 @@
+@page "/modes"
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject NotificationService NotificationService
+@implements IAsyncDisposable
+
+<PageTitle>PoMode · Mode Lab</PageTitle>
+
+<div class="modelab-studio-container">
+    <!-- Top Studio Toolbar: Title, Transport, and Key/Progression/Style/Purity Selectors -->
+    <div class="studio-top-bar">
+        <div class="studio-brand">
+            <span class="brand-title">🎼 Mode Lab</span>
+        </div>
+
+        <div class="studio-transport">
+            @if (!_isPlaying)
+            {
+                <button class="transport-btn play" @onclick="PlayAsync" disabled="@(_isLoading || _melody is null)" title="Play (Flute & Piano)">
+                    ▶ Play
+                </button>
+            }
+            else
+            {
+                <button class="transport-btn pause" @onclick="PauseAsync" title="Pause">
+                    ⏸ Pause
+                </button>
+            }
+            <button class="transport-btn stop" @onclick="StopAsync" disabled="@(!_isPlaying && _playheadSec == 0)" title="Stop">
+                ⏹ Stop
+            </button>
+
+            <button class="transport-btn loop @(_isLooping ? "active" : "")" @onclick="ToggleLoopAsync" title="Loop Toggle">
+                🔁 Loop
+            </button>
+
+            <button class="transport-btn shuffle" @onclick="RandomizeSeedAsync" title="Generate New Melody">
+                🎲 New Melody
+            </button>
+
+            <a class="transport-link wav" href="@($"api/modal-melodies/wav?TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={_selectedProgressionId}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}")"
+               target="_blank" rel="noopener" title="Download High-Fidelity 44.1kHz Stereo PCM WAV Audio">
+                📥 WAV
+            </a>
+
+            <a class="transport-link midi" href="@($"api/modal-melodies/midi?TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={_selectedProgressionId}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}")"
+               target="_blank" rel="noopener" title="Download Standard MIDI File">
+                📥 MIDI
+            </a>
+
+            <button class="transport-btn send-analyzer" @onclick="SendToAnalyzerAsync" disabled="@(_isSendingToAnalyzer || _melody is null)"
+                    title="Synthesize and import directly into the Song Analyzer for AI stem separation and chord/pitch tracking">
+                @(_isSendingToAnalyzer ? "⏳ Analyzing…" : "🔬 Analyze in Song Analyzer →")
+            </button>
+        </div>
+
+        <div class="studio-selectors">
+            <div class="selector-field">
+                <span class="field-label">Key:</span>
+                <RadzenDropDown TValue="int" @bind-Value="_selectedTonic" Data="@TonicOptions"
+                                TextProperty="Name" ValueProperty="PitchClass"
+                                Change="@(_ => OnConfigChanged())" class="compact-dropdown key-dd" id="tonic-select" />
+            </div>
+
+            <div class="selector-field prog-field">
+                <span class="field-label">Progression:</span>
+                <RadzenDropDown TValue="string" @bind-Value="_selectedProgressionId" Data="@_progressions"
+                                TextProperty="Name" ValueProperty="Id"
+                                Change="@(_ => OnProgressionChanged())" class="compact-dropdown prog-dd" id="prog-select" />
+            </div>
+
+            <div class="selector-field">
+                <span class="field-label">Style:</span>
+                <RadzenDropDown TValue="MelodyStyle" @bind-Value="_selectedStyle" Data="@StyleOptions"
+                                Change="@(_ => OnConfigChanged())" class="compact-dropdown style-dd" id="style-select" />
+            </div>
+
+            <div class="selector-field purity-field">
+                <span class="field-label" title="Target Modal Purity: adjust how strictly the melody anchors to the mode's root and characteristic color tones">
+                    Purity: @($"{_targetPurity:0}%")
+                </span>
+                <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="40" Max="100" Step="5"
+                              Change="@(args => OnPurityChanged(args))" class="compact-slider purity-slider" id="purity-slider" />
+            </div>
+
+            <div class="selector-field tempo-field">
+                <span class="field-label">@($"{_bpm:0} BPM")</span>
+                <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="180" Step="2"
+                              Change="@(args => OnTempoChanged(args))" class="compact-slider" id="tempo-slider" />
+            </div>
+        </div>
+    </div>
+
+    <!-- 7 Relative Modes Horizontal Strip with Color-Themed Cards & Purity Badges -->
+    <div class="studio-modes-strip">
+        @foreach (var modeItem in SevenModesOrdered)
+        {
+            var isSelected = _selectedMode == modeItem.Mode;
+            var modeNotes = ScaleModes.RelativeScaleNoteNames(_selectedTonic, modeItem.Mode);
+            <div class="compact-mode-card @GetModeCssClass(modeItem.Mode) @(isSelected ? "selected" : "")"
+                 @onclick="@(() => SampleModeAsync(modeItem.Mode))">
+                <div class="mode-card-top">
+                    <span class="compact-mode-title">@GetModeDisplayName(modeItem.Mode)</span>
+                    <div class="card-badges">
+                        @if (isSelected && _melody is not null)
+                        {
+                            <span class="compact-purity-pill" title="Actual Modal Purity score">@($"{_melody.ModePercentage:0.#}%")</span>
+                        }
+                        <span class="compact-degree-badge">@modeItem.Degree</span>
+                    </div>
+                </div>
+                <div class="compact-scale-notes">
+                    @for (var n = 0; n < modeNotes.Length; n++)
+                    {
+                        var noteName = modeNotes[n];
+                        var isRoot = n == 0;
+                        var isChar = n > 0 && IsCharacteristicNote(_selectedTonic, modeItem.Mode, noteName);
+                        <span class="note-token @(isRoot ? "root-token" : (isChar ? "char-token" : ""))" title="@(isRoot ? "Mode Root Note" : (isChar ? "Characteristic Color Tone" : "Scale Note"))">@noteName</span>
+                        if (n < modeNotes.Length - 1)
+                        {
+                            <span class="note-dot">·</span>
+                        }
+                    }
+                </div>
+                <div class="compact-mode-desc">@modeItem.Mood</div>
+                <button class="compact-sample-btn @(isSelected && _isPlaying ? "playing" : "")"
+                        type="button" @onclick:stopPropagation="true" @onclick="@(() => SampleModeAsync(modeItem.Mode))">
+                    @(isSelected && _isPlaying ? "🔊 Playing" : "▶ Sample")
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (_melody is not null)
+    {
+        <!-- Mid Ribbon: Scale spelling + Modal Purity + Chords Flow + Pentatonics -->
+        <div class="studio-mid-ribbon">
+            <div class="scale-spelling-box">
+                <span class="ribbon-label">Scale:</span>
+                <div class="spelling-badges">
+                    @for (var i = 0; i < _melody.ScaleNotes.Count; i++)
+                    {
+                        var noteName = _melody.ScaleNotes[i];
+                        var isRoot = i == 0;
+                        var isChar = i > 0 && IsCharacteristicNote(_selectedTonic, _selectedMode, noteName);
+                        <span class="compact-note-badge @(isRoot ? "root-badge" : (isChar ? "char-badge" : "scale-badge"))"
+                              title="@(isRoot ? "Mode Tonic Root" : (isChar ? "Characteristic Modal Color Tone" : "In-Mode Scale Note"))">
+                            @noteName
+                            @if (isRoot)
+                            {
+                                <small class="badge-sub">[1]</small>
+                            }
+                            else if (isChar)
+                            {
+                                <small class="badge-sub">★</small>
+                            }
+                        </span>
+                    }
+                </div>
+            </div>
+
+            <div class="modal-purity-box">
+                <span class="ribbon-label">Modal Purity:</span>
+                <span class="purity-badge" title="Target: @($"{_targetPurity:0}%") | Measured: @($"{_melody.ModePercentage:0.#}%")">
+                    🎯 @($"{_melody.ModePercentage:0.#}%")
+                </span>
+            </div>
+
+            <div class="progression-chords-box">
+                <span class="ribbon-label">Chords:</span>
+                <div class="compact-chords-list">
+                    @for (var i = 0; i < _melody.Chords.Count; i++)
+                    {
+                        var chord = _melody.Chords[i];
+                        var isCurrent = _playheadSec >= chord.StartSec && _playheadSec < chord.EndSec;
+                        <div class="compact-chord-pill @(isCurrent ? "current" : "")">
+                            <span class="ch-bar">M@(i + 1)</span>
+                            <span class="ch-sym">@chord.Symbol</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="pentatonics-box">
+                <span class="ribbon-label">Pentatonics:</span>
+                @foreach (var penta in PentatonicModes)
+                {
+                    var isSelected = _selectedMode == penta.Mode;
+                    var pentaNotes = ScaleModes.RelativeScaleNoteNames(_selectedTonic, penta.Mode);
+                    <button class="compact-penta-btn @(isSelected ? "selected" : "")" type="button"
+                            @onclick="@(() => SampleModeAsync(penta.Mode))" title="@string.Join(" · ", pentaNotes)">
+                        @penta.BaseName
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Visual Piano Roll Panel -->
+        <div class="studio-canvas-panel">
+            <div class="canvas-panel-header">
+                <div class="canvas-title-group">
+                    <span class="canvas-panel-title">Piano Roll (Flute Melody Lead & Acoustic Piano Chords)</span>
+                    <span class="purity-tag" title="Modal affinity score">@($"{_melody.ModePercentage:0.#}% Modal Purity")</span>
+                    <span class="canvas-panel-desc">@_melody.CharacteristicExplanation</span>
+                </div>
+                <span class="canvas-panel-time">Playhead: @($"{_playheadSec:0.0}s / {_totalDurationSec:0.0}s")</span>
+            </div>
+            <AnalysisCanvas Model="_melody.Visual" SelectedWindowIndex="_activeWindowIndex"
+                            PlayheadSec="_playheadSec" OnSeek="OnSeek" />
+        </div>
+    }
+    else if (_isLoading)
+    {
+        <div class="modelab-loading">
+            <RadzenProgressBar Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText Text="Generating modal melodies and harmonies…" />
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record TonicOption(int PitchClass, string Name);
+    private sealed record ModePresetInfo(ScaleMode Mode, string BaseName, string Degree, string Mood, string CharacteristicTone);
+
+    private static readonly IReadOnlyList<TonicOption> TonicOptions =
+    [
+        new(0, "C"), new(1, "C# / Db"), new(2, "D"), new(3, "D# / Eb"),
+        new(4, "E"), new(5, "F"), new(6, "F# / Gb"), new(7, "G"),
+        new(8, "G# / Ab"), new(9, "A"), new(10, "A# / Bb"), new(11, "B")
+    ];
+
+    private static readonly IReadOnlyList<MelodyStyle> StyleOptions =
+    [
+        MelodyStyle.Lyrical,
+        MelodyStyle.Arpeggiated,
+        MelodyStyle.Syncopated,
+        MelodyStyle.Motific
+    ];
+
+    // The 7 Church Modes ordered from Degree 1 to Degree 7
+    private static readonly IReadOnlyList<ModePresetInfo> SevenModesOrdered =
+    [
+        new(ScaleMode.Ionian, "Ionian (Major)", "Deg 1", "Bright, joyful, heroic", "Starts on 1st degree"),
+        new(ScaleMode.Dorian, "Dorian", "Deg 2", "Jazzy, soulful, hopeful", "Natural 6th"),
+        new(ScaleMode.Phrygian, "Phrygian", "Deg 3", "Dark flamenco tension", "Minor 2nd"),
+        new(ScaleMode.Lydian, "Lydian", "Deg 4", "Dreamy, floating wonder", "Sharp 4th"),
+        new(ScaleMode.Mixolydian, "Mixolydian", "Deg 5", "Bluesy classic rock", "Flat 7th"),
+        new(ScaleMode.Aeolian, "Aeolian (Minor)", "Deg 6", "Emotional natural minor", "Minor 6th"),
+        new(ScaleMode.Locrian, "Locrian", "Deg 7", "Tense, diminished", "Diminished 5th & b2")
+    ];
+
+    private static readonly IReadOnlyList<ModePresetInfo> PentatonicModes =
+    [
+        new(ScaleMode.MajorPentatonic, "Major Pentatonic", "5-Tone", "Open, pastoral", "Degrees 1-2-3-5-6"),
+        new(ScaleMode.MinorPentatonic, "Minor Pentatonic", "5-Tone", "Bluesy rock", "Degrees 6-1-2-3-5")
+    ];
+
+    private List<ChordProgressionDefinition> _progressions = [];
+    private int _selectedTonic = 0; // C
+    private string _selectedProgressionId = "pop-axis";
+    private string _selectedProgressionName = "Axis of Pop (C - G - Am - F / I - V - vi - IV)";
+    private ScaleMode _selectedMode = ScaleMode.Ionian;
+    private MelodyStyle _selectedStyle = MelodyStyle.Lyrical;
+    private double _targetPurity = 90.0;
+    private double _bpm = 100.0;
+    private int _seed = 42;
+
+    private GeneratedMelodyDto? _melody;
+    private bool _isLoading = true;
+    private bool _isPlaying;
+    private bool _isLooping = true;
+    private bool _isSendingToAnalyzer;
+    private double _playheadSec;
+    private double _totalDurationSec = 8.0;
+    private int? _activeWindowIndex;
+
+    private IJSObjectReference? _playerModule;
+    private DotNetObjectReference<ModeLab>? _selfRef;
+
+    private string CurrentParentKeyName
+        => TonicOptions.FirstOrDefault(t => t.PitchClass == _selectedTonic)?.Name ?? "C";
+
+    private string GetModeDisplayName(ScaleMode mode)
+    {
+        var offset = ScaleModes.ModeDegreeOffset(mode);
+        var modeRootName = ScaleModes.NoteName((_selectedTonic + offset) % 12);
+        return $"{modeRootName} {mode}";
+    }
+
+    private static string GetModeCssClass(ScaleMode mode) => mode switch
+    {
+        ScaleMode.Ionian => "mode-ionian",
+        ScaleMode.Dorian => "mode-dorian",
+        ScaleMode.Phrygian => "mode-phrygian",
+        ScaleMode.Lydian => "mode-lydian",
+        ScaleMode.Mixolydian => "mode-mixolydian",
+        ScaleMode.Aeolian => "mode-aeolian",
+        ScaleMode.Locrian => "mode-locrian",
+        _ => "",
+    };
+
+    private static bool IsCharacteristicNote(int parentTonic, ScaleMode mode, string noteName)
+    {
+        var offset = ScaleModes.ModeDegreeOffset(mode);
+        var modeRootClass = (parentTonic + offset) % 12;
+        var charInterval = mode switch
+        {
+            ScaleMode.Lydian => 6,      // #4
+            ScaleMode.Mixolydian => 10, // b7
+            ScaleMode.Dorian => 9,      // Natural 6
+            ScaleMode.Aeolian => 8,     // b6
+            ScaleMode.Phrygian => 1,    // b2
+            ScaleMode.Locrian => 6,     // b5
+            _ => -1,
+        };
+        if (charInterval < 0) return false;
+        var charPitchClass = (modeRootClass + charInterval) % 12;
+        return string.Equals(noteName, ScaleModes.NoteName(charPitchClass), StringComparison.OrdinalIgnoreCase);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var progs = await Analysis.GetModalProgressionsAsync();
+            if (progs is { Count: > 0 })
+            {
+                _progressions = progs;
+                _selectedProgressionId = _progressions[0].Id;
+                _selectedProgressionName = _progressions[0].Name;
+                _bpm = _progressions[0].DefaultBpm;
+            }
+            await RefreshMelodyAsync();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Initialization Error", ex.Message);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task RefreshMelodyAsync()
+    {
+        var request = new ModalMelodyRequest(
+            TonicPitchClass: _selectedTonic,
+            Mode: _selectedMode,
+            ProgressionId: _selectedProgressionId,
+            Bpm: _bpm,
+            Style: _selectedStyle,
+            Seed: _seed,
+            TargetPurity: _targetPurity);
+
+        _melody = await Analysis.GenerateModalMelodyAsync(request);
+        if (_melody is not null)
+        {
+            _totalDurationSec = _melody.MelodyNotes.Count > 0
+                ? Math.Max(_melody.MelodyNotes.Max(n => n.StartSec + n.DurationSec), _melody.Chords.Max(c => c.EndSec))
+                : 8.0;
+
+            if (_isPlaying && _playerModule is not null)
+            {
+                await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes);
+            }
+        }
+    }
+
+    private async Task SampleModeAsync(ScaleMode mode)
+    {
+        _selectedMode = mode;
+        await RefreshMelodyAsync();
+        if (!_isPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task OnConfigChanged(object? _ = null)
+    {
+        await RefreshMelodyAsync();
+        if (_isPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task OnPurityChanged(double _ = 0)
+    {
+        await RefreshMelodyAsync();
+        if (_isPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task OnProgressionChanged(object? _ = null)
+    {
+        var prog = _progressions.FirstOrDefault(p => p.Id == _selectedProgressionId);
+        if (prog is not null)
+        {
+            _selectedProgressionName = prog.Name;
+            _bpm = prog.DefaultBpm;
+            _selectedMode = prog.SuggestedMode;
+        }
+        await RefreshMelodyAsync();
+        if (_isPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task OnTempoChanged(double _ = 0)
+    {
+        await RefreshMelodyAsync();
+        if (_isPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task RandomizeSeedAsync()
+    {
+        _seed = Random.Shared.Next(1, 100000);
+        await RefreshMelodyAsync();
+        if (_isPlaying && _playerModule is not null && _melody is not null)
+        {
+            await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes);
+        }
+    }
+
+    private async Task SendToAnalyzerAsync()
+    {
+        if (_melody is null || _isSendingToAnalyzer) return;
+        _isSendingToAnalyzer = true;
+        try
+        {
+            if (_isPlaying)
+            {
+                await PauseAsync();
+            }
+
+            var request = new ModalMelodyRequest(
+                TonicPitchClass: _selectedTonic,
+                Mode: _selectedMode,
+                ProgressionId: _selectedProgressionId,
+                Bpm: _bpm,
+                Style: _selectedStyle,
+                Seed: _seed,
+                TargetPurity: _targetPurity);
+
+            var job = await Analysis.AnalyzeModalMelodyAsync(request);
+            if (job is not null && !string.IsNullOrEmpty(job.JobId))
+            {
+                NotificationService.Notify(NotificationSeverity.Success, "Mode Lab Bridge", "Synthesized WAV audio & queued analysis job!");
+                Navigation.NavigateTo($"/?job={job.JobId}");
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Analysis Error", "Failed to queue analysis job.");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+        finally
+        {
+            _isSendingToAnalyzer = false;
+        }
+    }
+
+    private async Task EnsurePlayerAsync()
+    {
+        _playerModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/modal-player.js");
+        _selfRef ??= DotNetObjectReference.Create(this);
+    }
+
+    private async Task PlayAsync()
+    {
+        if (_melody is null) return;
+        await EnsurePlayerAsync();
+        if (_playerModule is null) return;
+
+        _isPlaying = true;
+        await _playerModule.InvokeVoidAsync("play", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec, _selfRef);
+    }
+
+    private async Task PauseAsync()
+    {
+        if (_playerModule is null) return;
+        _isPlaying = false;
+        await _playerModule.InvokeVoidAsync("pause");
+    }
+
+    private async Task StopAsync()
+    {
+        if (_playerModule is null) return;
+        _isPlaying = false;
+        _playheadSec = 0;
+        _activeWindowIndex = null;
+        await _playerModule.InvokeVoidAsync("stop");
+    }
+
+    private async Task ToggleLoopAsync()
+    {
+        _isLooping = !_isLooping;
+        if (_playerModule is not null)
+        {
+            await _playerModule.InvokeVoidAsync("setLooping", _isLooping);
+        }
+    }
+
+    private void OnSeek(double seekSec)
+    {
+        _playheadSec = seekSec;
+        if (_playerModule is not null)
+        {
+            _ = _playerModule.InvokeVoidAsync("seek", seekSec);
+        }
+        UpdateActiveWindow(seekSec);
+    }
+
+    [JSInvokable]
+    public void OnPlayheadUpdated(double positionSec)
+    {
+        _playheadSec = positionSec;
+        UpdateActiveWindow(positionSec);
+        StateHasChanged();
+    }
+
+    private void UpdateActiveWindow(double pos)
+    {
+        if (_melody?.ModalAnalysis is { } result)
+        {
+            _activeWindowIndex = result.WindowIndexAt(pos);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_playerModule is not null)
+            {
+                await _playerModule.InvokeVoidAsync("dispose");
+                await _playerModule.DisposeAsync();
+            }
+            _selfRef?.Dispose();
+        }
+        catch (JSDisconnectedException) { }
+    }
+}

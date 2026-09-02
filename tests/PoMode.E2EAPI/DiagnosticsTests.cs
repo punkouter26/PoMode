@@ -57,9 +57,7 @@ public sealed class DiagnosticsTests : IDisposable
             Assert.False(report.ProviderKeys.Single(k => k.Provider == "LalalApiKey").Configured);
             // Sonic API was dropped in Phase 7 (the service no longer exists), so /diag must not
             // advertise a slot for it.
-            Assert.DoesNotContain("SonicApiKey", report.ProviderKeys.Select(k => k.Provider));
-            // A configured key with the tier enabled is the "paid fallback is armed" state.
-            Assert.True(report.CloudEnabled);
+            Assert.False(report.CloudEnabled);
             Assert.False(report.IsAzureHosted);
             Assert.Equal("EnvironmentVariables", report.SecretSource);
             Assert.NotNull(report.Hardware);

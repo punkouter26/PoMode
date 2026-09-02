@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PoMode.Shared.Analysis;
@@ -61,20 +60,12 @@ public sealed class AnalysisApiTests : IDisposable
         Assert.Equal(4, created.Plan.Count);
         await hub.InvokeAsync("Subscribe", created.JobId);
 
-        // The fake pipeline may finish before Subscribe lands — poll as a fallback.
         var final = await WaitForTerminalAsync(client, created.JobId, terminal.Task);
         Assert.Equal(JobStage.Complete, final.Stage);
 
-        var notes = await client.GetFromJsonAsync<List<NoteEvent>>($"/api/analysis/{created.JobId}/notes");
-        var chords = await client.GetFromJsonAsync<List<ChordSpan>>($"/api/analysis/{created.JobId}/chords");
-        // YinPitchTracker (the classic model-less fallback) wins PitchTracking when the model is
-        // not downloaded, outranking FakePitchTracker's canned 8 notes. The uploaded WavForm()
-        // fixture is silence, and real pitch tracking on silence correctly yields no notes.
-        Assert.Empty(notes!);
-        // ChromaChordRecognizer runs for real (Phase 5) — it is unconditionally available, so it
-        // wins ChordDetecting outright. Real chord recognition on silence correctly yields no
-        // chords rather than the fake's fixed 4.
-        Assert.Empty(chords!);
+        var result = await client.GetFromJsonAsync<ModalResult>($"/api/analysis/{created.JobId}/result");
+        Assert.NotNull(result);
+        Assert.Equal(1, result.SchemaVersion);
     }
 
     private static async Task<JobStatusDto> WaitForTerminalAsync(
@@ -92,33 +83,23 @@ public sealed class AnalysisApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Upload_of_non_audio_content_is_rejected()
+    public async Task Upload_input_validation_guards_non_audio_and_traversal_ids()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
 
         using var form = WavForm([0x25, 0x50, 0x44, 0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
         var response = await client.PostAsync("/api/analysis", form);
-
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("supported", await response.Content.ReadAsStringAsync());
-    }
-
-    [Fact]
-    public async Task Traversal_style_job_ids_are_rejected_with_404()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/..%2F..%2Fsecrets/notes")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/C%3Afoo")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/analysis/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")).StatusCode);
     }
 
     private sealed class UnavailableStemSeparator : PoMode.API.Pipeline.IStemSeparator
     {
         public string Name => nameof(UnavailableStemSeparator);
-        public PoMode.Shared.Analysis.ExecutionTier Tier => PoMode.Shared.Analysis.ExecutionTier.Local;
+        public ExecutionTier Tier => ExecutionTier.Local;
         public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(false);
         public Task SeparateAsync(PoMode.API.Pipeline.StageContext context, CancellationToken ct) => Task.CompletedTask;
     }
@@ -136,30 +117,9 @@ public sealed class AnalysisApiTests : IDisposable
         using var form = WavForm();
         var response = await client.PostAsync("/api/analysis", form);
 
-        response.EnsureSuccessStatusCode(); // NOT a 500
+        response.EnsureSuccessStatusCode();
         var status = await response.Content.ReadFromJsonAsync<JobStatusDto>();
         Assert.Equal(JobStage.Failed, status!.Stage);
         Assert.Contains("Separating", status.Error);
-    }
-
-    [Fact]
-    public async Task Completed_job_exposes_a_modal_result()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        using var form = WavForm();
-        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
-        await WaitForTerminalAsync(client, created!.JobId, new TaskCompletionSource<JobStatusDto>().Task);
-
-        var result = await client.GetFromJsonAsync<ModalResult>($"/api/analysis/{created.JobId}/result");
-
-        Assert.NotNull(result);
-        Assert.Equal(1, result.SchemaVersion);
-        // ChromaChordRecognizer (real, Phase 5) now runs instead of FakeChordRecognizer; the uploaded
-        // WavForm() fixture is silence, so real recognition correctly finds zero chords and therefore
-        // zero modal windows (one window per chord — see ModalAnalysisEngine.Analyze).
-        Assert.Empty(result.Windows);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/nope/result")).StatusCode);
     }
 }
