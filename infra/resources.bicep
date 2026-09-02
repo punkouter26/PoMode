@@ -1,6 +1,9 @@
 @description('Location for the resources in this resource group')
 param location string = resourceGroup().location
 
+@description('Create the storage role assignment. Needs User Access Administrator; CI passes false because Contributor cannot write role assignments.')
+param assignStorageRole bool = true
+
 @description('Location for the Web App and App Service Plan')
 param webAppLocation string = 'westus3'
 
@@ -144,8 +147,14 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// Grant Storage Blob Data Contributor on stpomode to the App Service Managed Identity
-module webAppStorageBlobRole 'storage-role.bicep' = {
+// Grant Storage Blob Data Contributor on stpomode to the App Service Managed Identity.
+//
+// Gated because this is the only resource in the template that needs
+// Microsoft.Authorization/roleAssignments/write, which Contributor does not include. Granting the
+// deploy identity User Access Administrator so CI could run it would let the pipeline hand out roles,
+// which is a large standing privilege for a one-time bootstrap. So CI passes false and an operator
+// runs it once with their own credentials. Default true keeps a cold-start provision correct.
+module webAppStorageBlobRole 'storage-role.bicep' = if (assignStorageRole) {
   name: 'storage-blob-role'
   params: {
     storageAccountId: storageAccount.id

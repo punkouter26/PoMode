@@ -8,6 +8,9 @@ param location string = 'eastus2'
 @description('Location for Web App and App Service Plan')
 param webAppLocation string = 'westus3'
 
+@description('Create the storage role assignment. CI passes false: its identity is Contributor, which cannot write role assignments.')
+param assignStorageRole bool = true
+
 var resourceGroupName = 'PoMode'
 var sharedResourceGroupName = 'PoShared'
 var storageAccountName = 'stpomode'
@@ -35,6 +38,7 @@ module resources 'resources.bicep' = {
     keyVaultName: keyVaultName
     appInsightsName: appInsightsName
     sharedResourceGroupName: sharedResourceGroupName
+    assignStorageRole: assignStorageRole
   }
 }
 

@@ -117,6 +117,7 @@ jobs:
             --location eastus2 \
             --template-file infra/main.bicep \
             --name pomode-${{ github.run_id }} \
+            --parameters assignStorageRole=false \
             -o none
 
       - name: Verify the settings the app refuses to start without
