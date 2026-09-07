@@ -281,3 +281,23 @@
         gap: 0.5rem;
     }
 }
+
+/* ── ErrorBoundary fallback (shared Po convention) ─────────────────────────── */
+.po-error-panel {
+    margin: 1rem auto;
+    max-width: 40rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--po-error-border, #b3261e);
+    border-radius: 0.5rem;
+    background: var(--po-error-bg, rgba(179, 38, 30, 0.08));
+    color: inherit;
+}
+
+.po-error-panel h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+}
+
+.po-error-panel p {
+    margin: 0;
+}

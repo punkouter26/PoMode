@@ -1,3 +1,4 @@
+using PoMode.API.Platform;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using PoMode.API.Features.Analysis;
@@ -119,7 +120,9 @@ app.MapOpenApi();
 app.MapScalarApiReference(); // serves /scalar
 app.MapHealthChecks("/health");
 // Liveness runs no checks (is the process serving requests at all); readiness runs them all.
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+// Replaced this app's bespoke liveness payload with the shared one: three apps each
+// answered /health/live in a different shape, so nothing could poll them uniformly.
+app.MapPoLiveness();
 app.MapHealthChecks("/health/ready");
 app.MapDiagnostics();
 

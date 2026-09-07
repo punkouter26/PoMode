@@ -76,7 +76,19 @@
 <RadzenNotification />
 
 <main id="main-content" class="app-main">
-    @Body
+    <ErrorBoundary>
+        <ChildContent>
+            @Body
+        </ChildContent>
+        <ErrorContent>
+            @* Without a boundary a single component exception tears down the whole render tree
+               and leaves a blank page with no way back. *@
+            <div class="po-error-panel" role="alert">
+                <h2>Something went wrong</h2>
+                <p>This page hit an unexpected error. Reload the page to try again.</p>
+            </div>
+        </ErrorContent>
+    </ErrorBoundary>
 </main>
 
 @code {
