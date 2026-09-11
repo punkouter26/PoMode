@@ -14,7 +14,6 @@ using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.Practice;
 using PoMode.API.Features.Reference;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.StemSeparation;
@@ -160,7 +159,6 @@ app.MapMidiExport();
 app.MapMusicXmlExport();
 app.MapChordChart();
 app.MapSongStats();
-app.MapPractice();
 app.MapReference();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 

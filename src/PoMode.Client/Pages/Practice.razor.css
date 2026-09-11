@@ -1,68 +1,11 @@
-/* Practice page. Colours come from the app's CSS variables so the page follows the theme toggle
-   and the OS setting like every other surface; nothing here is hard-coded to one scheme. */
-
-.practice-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
+/* Practice: sing your own melody over a chord progression, then let the analyzer read it.
+   Colours come from the app's CSS variables so the page follows the theme toggle and the OS setting
+   like every other surface; nothing here is hard-coded to one scheme. */
 
 .practice-description {
     color: var(--pm-fg-muted);
     margin: 0.25rem 0 1rem;
-}
-
-.streak {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    padding: 0.3rem 0.7rem;
-    border: 1px solid var(--pm-border);
-    border-radius: 999px;
-    background: var(--pm-surface);
-}
-
-/* Fixed box whether a glyph or the particle canvas is inside it, so the pill does not resize the
-   moment a streak reaches three. */
-.streak-flame {
-    position: relative;
-    display: inline-block;
-    width: 1.35rem;
-    height: 1.7rem;
-    font-size: 1.1rem;
-    line-height: 1;
-    align-self: center;
-}
-
-.streak-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-}
-
-.streak-canvas.hidden {
-    display: none;
-}
-
-.streak-glyph {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.streak-count {
-    font-size: 1.25rem;
-    font-weight: 700;
-}
-
-.streak-label {
-    font-size: 0.8rem;
-    color: var(--pm-fg-muted);
+    max-width: 64ch;
 }
 
 .practice-controls {
@@ -77,6 +20,12 @@
     gap: 0.3rem;
     min-width: 9rem;
     flex: 1 1 9rem;
+}
+
+/* The progression names are full phrases, so this one gets room rather than ellipsing every option. */
+.practice-field-wide {
+    min-width: 16rem;
+    flex: 2 1 16rem;
 }
 
 .practice-field > span {
@@ -103,191 +52,38 @@
     background: transparent;
 }
 
-.practice-instruction {
-    margin: 0.5rem 0 1rem;
-    line-height: 1.55;
-    max-width: 62ch;
+.practice-field select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
-/* The mode's own notes, with the degrees that name it picked out. Same colour language the canvas
-   and the share card use for a characteristic degree, so the idea reads the same everywhere. */
-.scale-notes {
+/* ---- The take ---- */
+
+.take-head {
+    margin-bottom: var(--pm-space-3);
+}
+
+/* The chords as a row of cells rather than a sentence: they are a grid in time, and a singer reads
+   them the way they read a chart. */
+.chord-row {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
-    margin-bottom: 1rem;
+    margin-top: var(--pm-space-2);
 }
 
-.scale-note {
-    min-width: 2.4rem;
+.chord-cell {
+    min-width: 3.4rem;
+    padding: 0.4rem 0.6rem;
     text-align: center;
-    padding: 0.35rem 0.5rem;
     border-radius: 6px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-surface);
-    font-variant-numeric: tabular-nums;
-}
-
-.scale-note.characteristic {
-    border-color: var(--pm-note-characteristic);
-    color: var(--pm-note-characteristic);
-    font-weight: 700;
-}
-
-.practice-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-}
-
-.practice-cue {
-    margin: 0.9rem 0 0;
+    border: 1px solid var(--pm-key-edge);
+    background: var(--pm-key-soft);
     font-weight: 600;
-}
-
-.practice-cue.counting {
-    color: var(--pm-fg-muted);
-}
-
-.practice-cue.recording {
-    color: var(--pm-playhead);
-}
-
-.practice-error {
-    margin: 0.75rem 0 0;
-    color: var(--pm-note-outside);
-}
-
-/* ---- Score ---- */
-
-.score-head {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    margin-bottom: 1.25rem;
-}
-
-.score-number {
-    display: flex;
-    align-items: baseline;
-    gap: 0.2rem;
-    padding: 0.5rem 1rem;
-    border-radius: 12px;
-    border: 2px solid currentColor;
-}
-
-.score-value {
-    font-size: 2.5rem;
-    font-weight: 800;
-    line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 
-.score-outof {
-    font-size: 0.9rem;
-    opacity: 0.7;
-}
-
-.score-number.great { color: var(--pm-note-in-mode); }
-.score-number.good { color: var(--pm-note-chord-tone); }
-.score-number.fair { color: var(--pm-note-characteristic); }
-.score-number.poor { color: var(--pm-note-outside); }
-
-.score-verdict {
-    flex: 1 1 18rem;
-}
-
-.verdict-text {
-    margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.5;
-}
-
-.advice-text {
-    margin: 0.5rem 0 0;
-    color: var(--pm-fg-muted);
-    line-height: 1.5;
-    max-width: 60ch;
-}
-
-.score-bars {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    gap: 1rem;
-    margin-bottom: 1rem;
-}
-
-.score-flags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1.25rem;
-}
-
-.flag {
-    font-size: 0.8rem;
-    padding: 0.25rem 0.6rem;
-    border-radius: 999px;
-    border: 1px solid var(--pm-border);
-}
-
-.flag.good {
-    border-color: var(--pm-note-in-mode);
-    color: var(--pm-note-in-mode);
-}
-
-.flag.missing {
-    border-color: var(--pm-note-characteristic);
-    color: var(--pm-note-characteristic);
-}
-
-.flag.extra {
-    color: var(--pm-fg-muted);
-}
-
-/* One cell per target note, target above and what was actually sung below — the comparison is the
-   whole point, so they are never shown apart. */
-.note-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-}
-
-.note-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 3rem;
-    padding: 0.35rem 0.4rem;
-    border-radius: 6px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-surface);
-    font-size: 0.8rem;
-    font-variant-numeric: tabular-nums;
-}
-
-.note-target {
-    font-weight: 700;
-}
-
-.note-sung {
-    opacity: 0.75;
-    font-size: 0.72rem;
-}
-
-.note-cell.hit { border-color: var(--pm-note-in-mode); }
-.note-cell.octave { border-color: var(--pm-note-chord-tone); }
-.note-cell.wrong { border-color: var(--pm-note-outside); }
-.note-cell.missed {
-    border-style: dashed;
-    opacity: 0.55;
-}
-
-/* The pitch/time plot. Sunk into the lane colour so the traces read as drawn on a surface rather
-   than floating over the card, and given a fixed aspect so the vertical semitone scale does not
-   change meaning between a phone and a desktop. */
-.ribbon-wrap {
+.take-plot-wrap {
     position: relative;
     margin: var(--pm-space-3) 0;
     border: 1px solid var(--pm-border);
@@ -296,46 +92,67 @@
     overflow: hidden;
 }
 
-.practice-ribbon {
-    display: block;
-    width: 100%;
-    height: clamp(110px, 22vw, 190px);
+/* Hidden rather than absent when the canvas declined, so turning effects back on picks it up on the
+   next render without remounting the page. */
+.take-plot-wrap.hidden {
+    display: none;
 }
 
-.ribbon-legend {
+.take-plot {
+    display: block;
+    width: 100%;
+    height: clamp(120px, 24vw, 210px);
+}
+
+.take-plot-legend {
     position: absolute;
     top: 0.35rem;
-    right: 0.5rem;
-    display: flex;
-    gap: 0.6rem;
-    font-size: 0.7rem;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
+    right: 0.55rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
     color: var(--pm-fg-muted);
     pointer-events: none;
 }
 
-/* Swatches rather than words doing the colour-naming, so the legend matches whatever the theme
-   resolves those tokens to. */
-.ribbon-legend span::before {
-    content: "";
-    display: inline-block;
-    width: 0.6rem;
-    height: 0.6rem;
-    margin-right: 0.28rem;
+.take-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.take-cue {
+    font-weight: 600;
+}
+
+.take-cue.counting {
+    color: var(--pm-fg-muted);
+}
+
+.take-cue.recording {
+    color: var(--pm-playhead);
+}
+
+.take-length {
+    font-variant-numeric: tabular-nums;
+    color: var(--pm-fg-muted);
+}
+
+/* The recording indicator. Pulses under full motion and sits still otherwise — the dot itself is
+   the signal, the animation only draws the eye to it. */
+.take-dot {
+    width: 0.7rem;
+    height: 0.7rem;
     border-radius: 50%;
-    vertical-align: -1px;
+    background: var(--pm-playhead);
+    animation: take-pulse 1.1s ease-in-out infinite;
 }
 
-.legend-target::before {
-    background: var(--pm-chord-block);
+@keyframes take-pulse {
+    50% { opacity: 0.3; transform: scale(0.8); }
 }
 
-.legend-sung::before {
-    background: var(--pm-note-in-mode);
-}
-
-/* With effects off the canvas never initialises and would otherwise leave an empty sunken box. */
-:root[data-fx="off"] .ribbon-wrap {
-    display: none;
+.take-error {
+    margin: 0.75rem 0 0;
+    color: var(--pm-note-outside);
 }

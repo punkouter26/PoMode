@@ -37,7 +37,7 @@ These override any default instinct. Where one contradicts a habit, the rule win
   absence of a crash in the first second. Kill any running instance before building; it locks the DLLs.
 - **Run only the tests that cover what you changed**, with `--filter`. Never the whole suite, and
   never all four suites — a full run costs minutes on every edit and tells you almost nothing about a
-  two-line change. `dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~ModeExerciseGrader"` is
+  two-line change. `dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~HumTakeSeeder"` is
   the shape. If nothing existing covers the change, say so rather than running everything to feel safe.
 - **Say what you did not verify.** A targeted test run plus a successful restart is not a full pass;
   report it as what it is.
@@ -167,39 +167,40 @@ range, rhythm, harmony, motion, phrasing, tension) and declines anything else, w
 also tells the reader a local model would get them further. The conversation is held client-side; the
 server stores no transcript, same ruling as the statistics themselves.
 
-### Practice (scored ear training)
+### Practice (sing over the chords)
 
 `/practice` is the other half of the app's purpose: the analyzer tells you a song is Dorian, this asks
-whether you can *sing* Dorian. `GET /api/practice/exercise` issues a phrase and
-`POST /api/practice/attempt` scores a take. Nothing is persisted - an attempt is a conversation, not a
-job, the same ruling `/api/live/analyze` follows.
+what happens when *you* sing. It issues a chord progression, records whatever melody you invent over
+it, and hands the take to the analyzer to say which mode that melody turned out to be in.
 
-`ModeExerciseBuilder` is deterministic in the way `ModalMelodyGenerator` is, and for the same reason a
-hum take can reference its backing instead of copying it: an attempt carries the six values (kind,
-mode, tonic, bpm, seed, octave) that regenerate the identical phrase server-side, so grading always
-runs against the notes the server issued rather than whatever the browser claims it was shown. The
-pitch pool is the mode's **own** scale on its own tonic, not the parent key's - same rule as the Mode
-Lab melody pool, and the pentatonics are where getting it wrong would show. `CharacteristicLeap` is
-the exercise the feature exists for: Dorian and Aeolian share six notes out of seven, so singing the
-scale proves almost nothing, and singing the natural 6th against the tonic is the entire difference.
+Deliberately unscored, and that is the design rather than an omission. The page issues no target
+melody, so there is nothing to be right or wrong against; and a live "that note is outside the mode"
+cue would be worse than useless here, because it would steer the singer toward the mode the chords
+were built from before the analysis has had its say. The answer is the analysis, and it arrives after
+the take. This replaced an earlier scored drill (`ModeExerciseBuilder` / `ModeExerciseGrader`, a
+`/api/practice` group and a localStorage streak); all of it was deleted rather than left switched off.
 
-`ModeExerciseGrader` reports three components rather than one number, because they fail independently
-and the page's advice is chosen from whichever failed. Purity is measured over *every* note heard, not
-only the matched ones - hitting each target while filling the gaps with parent-key notes is exactly
-the habit the feature exists to break. Matching is greedy in target order rather than globally
-optimal, so a phrase sung a bar late scores as a different performance instead of being quietly
-realigned. Nothing is reported in cents: the browser's note collector rounds to the nearest semitone
-before anything is posted, so a cents figure would be arithmetic performed on a rounding.
+There is no Practice feature on the server. The page is a second, narrower door onto the Mode Lab's
+hum path: `ModalMelodyGenerator` voices the backing, `POST /api/modal-melodies/hum` takes the
+recording, and `HumTakeSeeder` seeds the progression as the job's chord track. The backing travels as
+the `ModalMelodyRequest` that generated it rather than as a copy of its notes, which is what lets the
+server regenerate the exact progression and put the chords the singer actually heard under their
+melody. The Mode Lab is a studio where this is one strip among many; this page is the one exercise on
+its own, and both go through the same endpoint so there is no second path to keep in step.
 
-`practice-session.js` is a fourth capture path beside `audio-recorder.js`, `live-session.js` and
-`hum-recorder.js`, and timing is why. The others zero their take on "when the singer started" or on
-bar one of a loop; this one needs notes timed from a downbeat the *server* chose, which is what
-`live-pitch.js`'s `snapshotFrom` provides - as against `snapshot`, which rebases onto the first note
-and would score a singer who came in two beats late as perfectly in time. The count-in and metronome
-come from `click-track.js`, shared with the hum recorder; its clicks sit at 1050/1600 Hz, above
-`live-pitch.js`'s 1000 Hz ceiling, which is what lets the click keep sounding while the mic is open.
-The streak lives in `localStorage` - a per-viewer convenience like the theme override, and this app
-has no user store to hang one off.
+`/generate` returns a melody as well as a backing and the page ignores it: playing the server's melody
+would hand the singer the answer to the question the analyzer is about to be asked. Picking a mode
+swaps in its own signature cadence through the shared `ProgressionCatalog.SignatureFor`, matching the
+Mode Lab's "Match to mode" default — a mode is a tonal centre, and rooting the chords on the parent
+key would put the wrong note under the first thing the singer hears.
+
+Capture is `hum-recorder.js`, not a fourth path: this records while chords play out of the speakers,
+which is the one case that *wants* the browser's echo cancellation, and it already shares
+`modal-player.js`'s AudioContext so the take can be trimmed to bar one. `fx-hum-review.js` serves both
+moments — `prepareLive` draws the chord bands and fills the sung line in as it arrives, then `prepare`
+replaces it with an offline pitch track once the take is decoded, because that pass reads the whole
+take at a steadier hop than a capture callback manages. Its consonance tick is silenced while a take
+is running, for the same reason the page carries no score.
 
 ### Second opinion (MusicBrainz / AcousticBrainz)
 
@@ -267,32 +268,29 @@ WebGPU, no context, effects off — and the page it belongs to renders exactly a
 in each case the information lives in the markup beside the canvas and the effect only illustrates it.
 
 Rendering tier is chosen by what the effect actually needs, not for consistency: `fx-particles.js`
-(WebGPU compute, tens of thousands of particles) → `fx-kiln.js` / `fx-practice-ribbon.js` /
-`fx-mode-strip.js` / `fx-tuner.js` / `fx-background.js` / `fx-spectrum.js` (WebGL2 fragment shaders,
-per-pixel fields and bloom) → `fx-hum-review.js` / `fx-streak.js` / `fx-cover.js` (2D canvas — a few
-rectangles, a polyline, a hundred particles in a 30px box). A fourth GL context for a stroke would
-cost a context and a fallback path to buy nothing. `fx-mode-strip.js` is the reason that matters: nine
+(WebGPU compute, tens of thousands of particles) → `fx-kiln.js` / `fx-mode-strip.js` / `fx-tuner.js` /
+`fx-background.js` / `fx-spectrum.js` (WebGL2 fragment shaders, per-pixel fields and bloom) →
+`fx-hum-review.js` / `fx-cover.js` (2D canvas — a few dozen rectangles and a polyline). A fourth GL
+context for a stroke would cost a context and a fallback path to buy nothing. `fx-mode-strip.js` is the reason that matters: nine
 cards get one context and a uniform array of measured rectangles rather than nine contexts.
 
 The music-theory rule holds across all of it. `sfx.js` is *voiced in the detected mode* —
 `ModalResultExtensions.EarconPitches` derives the scale from the shared `ScaleModes` table and hands
 JS a list of MIDI numbers to sound; the module never derives a scale and its one chord is
 tonic-fifth-octave so it states no third. `fx-mode-strip.js` reads each card's `--mode-color` off the
-element instead of holding a colour table. `fx-practice-ribbon.js` and `practice-session.js` are given
-the mode's pitch-class set with the exercise and only test membership — `ModeExerciseGrader` remains
-the only thing that scores a take, and the ribbon draws what was heard rather than a verdict.
-`fx-hum-review.js` draws the pitches `ModalMelodyGenerator` voiced and never infers a chord from them.
+element instead of holding a colour table. `fx-hum-review.js` draws the pitches
+`ModalMelodyGenerator` voiced, never infers a chord from them, and never claims a mode for the voice —
+that is the answer the take is sent to the analyzer to get.
 `fx-cover.js` is handed a hue, a degree count and a tempo, and knows nothing about what they mean.
 
-Per-frame work never crosses into C#: `practice-session.js` and `live-session.js` push microphone
-frames straight into `fx-practice-ribbon.js` and `fx-tuner.js`, and `hum-recorder.js` hands
-`fx-hum-review.js` the buffer it already decoded for playback. Blazor only calls init/dispose and the
+Per-frame work never crosses into C#: `live-session.js` pushes microphone frames straight into
+`fx-tuner.js`, and `hum-recorder.js` both feeds `fx-hum-review.js` live pitch during a take and hands
+it the buffer it already decoded for playback afterwards. Blazor only calls init/dispose and the
 occasional discrete update, matching the `mixer.js` contract.
 
-Cents are reported in exactly one place. The Practice page reports none, because its notes come from
-the collector, which rounds to a semitone first. `fx-tuner.js` reads `detectPitch`'s fractional MIDI
-before any rounding, which is why the tuner halo may show a deviation the grader never could — and it
-is never sent anywhere or scored.
+Cents are reported in exactly one place. `fx-tuner.js` reads `detectPitch`'s fractional MIDI before
+any rounding, so the Live halo can show a deviation nothing else in the app measures — and it is never
+sent anywhere, stored, or scored.
 
 ### Client conventions
 

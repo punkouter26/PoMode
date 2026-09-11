@@ -14,6 +14,7 @@
 import { encodeWav } from './wav.js';
 import * as review from './fx-hum-review.js';
 import * as sfx from './sfx.js';
+import { detectPitch } from './live-pitch.js';
 import * as player from './modal-player.js';
 import { scheduleBeats } from './click-track.js';
 
@@ -98,6 +99,18 @@ export async function beginCapture() {
             captureStartTime = ctx.currentTime - frame.length / sampleRate;
         }
         chunks.push(new Float32Array(frame));
+
+        // The live plot, when a page has asked for one. Timed from the loop's downbeat rather than
+        // from the first captured frame, so the drawn line sits under the chord it was actually sung
+        // against — the same origin finishCapture trims the take to. Before the downbeat (the
+        // count-in) there is nothing to draw, and pushLive is a no-op if no plot is live.
+        const downbeat = player.getPlaybackStartTime();
+        if (downbeat !== null) {
+            const elapsed = ctx.currentTime - downbeat;
+            if (elapsed >= 0) {
+                review.pushLive(elapsed, detectPitch(frame, sampleRate));
+            }
+        }
     };
 
     // A muted sink: some browsers will not run a ScriptProcessor whose output reaches no

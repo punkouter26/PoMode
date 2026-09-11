@@ -2,45 +2,35 @@
 @using PoMode.Shared.Analysis
 @using PoMode.Client.Services
 @inject AnalysisClient Analysis
+@inject NotificationService NotificationService
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
 
-@* Ear training on the modes. The server issues the phrase and grades the attempt; this page only
-   collects settings, drives the microphone, and places the numbers it is handed. Every sentence
-   shown here — the instruction, the verdict, the advice — is written server-side, the same rule the
-   canvas and the mixer follow. *@
+@* Sing your own melody over someone else's chords, then let the analyzer tell you what mode you
+   actually sang.
+
+   There is deliberately no score here. The page issues no target melody, so there is nothing to be
+   right or wrong against — and a live "that note is outside the mode" nudge would be worse than
+   useless, because it would steer the singer toward the mode the chords were built from before the
+   analyzer has had its say. The answer is the analysis, and it arrives after the take, not during it.
+
+   The server side is the Mode Lab's hum path, unchanged: ModalMelodyGenerator voices the backing,
+   POST /api/modal-melodies/hum hands the recording to HumTakeSeeder, and the take becomes an ordinary
+   restart-safe job whose harmony is known and whose melody is the singer's. This page is a second,
+   narrower door onto that — the Mode Lab is a studio, and this is the one exercise. *@
 
 <RadzenCard class="practice-setup">
-    <div class="practice-head">
-        <RadzenText TextStyle="TextStyle.H5" Text="Practice" />
-        @if (_streak is { } streak && streak.Attempts > 0)
-        {
-            <div class="streak" title="Kept in this browser only">
-                @* Past a few in a row the emoji gives way to a real flame, which is the one place
-                   this page rewards rather than reports. Below that it stays a glyph: a streak of
-                   one does not need a particle system. *@
-                <span class="streak-flame">
-                    <canvas class="streak-canvas @(streak.Streak >= FlameFromStreak ? "" : "hidden")"
-                            @ref="_flameCanvas" aria-hidden="true"></canvas>
-                    @if (streak.Streak < FlameFromStreak)
-                    {
-                        <span class="streak-glyph">@(streak.Streak > 0 ? "🔥" : "·")</span>
-                    }
-                </span>
-                <span class="streak-count">@streak.Streak</span>
-                <span class="streak-label">in a row · best @streak.Best</span>
-            </div>
-        }
-    </div>
+    <RadzenText TextStyle="TextStyle.H5" Text="Practice" />
     <RadzenText class="practice-description"
-                Text="Pick a mode, hear the phrase, then sing it back against the click. The server scores your pitch, your timing, and whether you stayed inside the mode at all." />
+                Text="Pick a set of chords, sing whatever melody you like over them, and the analyzer will tell you which mode your melody turned out to be in. Nothing is scored — the reading is the point." />
 
     <div class="practice-controls">
         <label class="practice-field">
             <span>Mode</span>
-            <select @bind="_mode" @bind:after="ReloadAsync" disabled="@_busy" aria-label="Mode">
+            <select @bind="_mode" @bind:after="OnModeChangedAsync" disabled="@Busy" aria-label="Mode">
                 @foreach (var mode in ScaleModes.All)
                 {
                     <option value="@mode">@mode</option>
@@ -49,7 +39,7 @@
         </label>
         <label class="practice-field">
             <span>Tonic</span>
-            <select @bind="_tonic" @bind:after="ReloadAsync" disabled="@_busy" aria-label="Tonic">
+            <select @bind="_tonic" @bind:after="ReloadAsync" disabled="@Busy" aria-label="Tonic">
                 @for (var pitchClass = 0; pitchClass < 12; pitchClass++)
                 {
                     var value = pitchClass;
@@ -57,356 +47,399 @@
                 }
             </select>
         </label>
-        <label class="practice-field">
-            <span>Exercise</span>
-            <select @bind="_kind" @bind:after="ReloadAsync" disabled="@_busy" aria-label="Exercise">
-                <option value="@ModeExerciseKind.ScaleRun">Scale run</option>
-                <option value="@ModeExerciseKind.CharacteristicLeap">Characteristic leap</option>
-                <option value="@ModeExerciseKind.Phrase">Phrase</option>
+        <label class="practice-field practice-field-wide">
+            <span>Chords</span>
+            <select @bind="_progressionId" @bind:after="ReloadAsync" disabled="@Busy" aria-label="Chord progression">
+                @foreach (var progression in _progressions)
+                {
+                    <option value="@progression.Id">@progression.Name</option>
+                }
             </select>
         </label>
         <label class="practice-field">
             <span>Tempo @(_bpm.ToString("0")) BPM</span>
-            <input type="range" min="48" max="120" step="4" @bind="_bpm" @bind:event="oninput"
-                   @bind:after="ReloadAsync" disabled="@_busy" aria-label="Tempo" />
-        </label>
-        <label class="practice-field">
-            <span>Octave</span>
-            <select @bind="_octave" @bind:after="ReloadAsync" disabled="@_busy" aria-label="Octave">
-                <option value="3">Low (3)</option>
-                <option value="4">Middle (4)</option>
-                <option value="5">High (5)</option>
-            </select>
+            <input type="range" min="50" max="140" step="2" @bind="_bpm" @bind:event="oninput"
+                   @bind:after="ReloadAsync" disabled="@Busy" aria-label="Tempo" />
         </label>
     </div>
 </RadzenCard>
 
-@if (_exercise is { } exercise)
+@if (_melody is { } melody)
 {
-    <RadzenCard class="practice-exercise">
-        <RadzenText TextStyle="TextStyle.H6" Text="@exercise.Title" />
-        <p class="practice-instruction">@exercise.Instruction</p>
+    <RadzenCard class="practice-take" data-practice-state="@_state">
+        <div class="take-head">
+            <RadzenText TextStyle="TextStyle.H6" Text="@melody.ProgressionName" />
+            @* The chord symbols the server wrote. Naming a chord is a musical statement, so these
+               are read from the generated progression rather than spelled here. *@
+            <div class="chord-row" aria-label="The chords you will sing over">
+                @foreach (var chord in melody.Chords)
+                {
+                    <span class="chord-cell">@chord.Symbol</span>
+                }
+            </div>
+        </div>
 
-        <div class="scale-notes" aria-label="The notes of this mode">
-            @foreach (var note in exercise.ScaleNotes)
+        @* Chord tones as bands, your line drawn over them as you sing it. It reports no verdict:
+           the lit segments mean "this note is in the chord underneath", which is a set membership
+           test against notes the server voiced, not an opinion about the mode. *@
+        <div class="take-plot-wrap @(_plotOn ? "" : "hidden")">
+            <canvas class="take-plot" @ref="_plotCanvas" aria-hidden="true" data-testid="practice-plot"></canvas>
+            <span class="take-plot-legend">chord tones · your line</span>
+        </div>
+
+        <div class="take-actions">
+            @switch (_state)
             {
-                <span class="scale-note @(IsCharacteristic(exercise, note) ? "characteristic" : "")">@note</span>
+                case TakeState.Idle:
+                    <RadzenButton Text="@(_previewing ? "Stop chords" : "Hear the chords")" Icon="volume_up"
+                                  ButtonStyle="ButtonStyle.Secondary" Click="@TogglePreviewAsync"
+                                  id="practice-hear" />
+                    <RadzenButton Text="Sing over them" Icon="mic" ButtonStyle="ButtonStyle.Primary"
+                                  Click="@StartTakeAsync" id="practice-sing" />
+                    <RadzenButton Text="New chords" Icon="casino" ButtonStyle="ButtonStyle.Light"
+                                  Click="@RerollAsync" id="practice-reroll"
+                                  title="A different progression — the key and tempo are left alone" />
+                    break;
+
+                case TakeState.CountingIn:
+                    <span class="take-cue counting">Counting you in…</span>
+                    break;
+
+                case TakeState.Recording:
+                    <span class="take-dot" aria-hidden="true"></span>
+                    <RadzenButton Text="@($"Stop · {_elapsedSec:0.0}s")" ButtonStyle="ButtonStyle.Danger"
+                                  Click="@StopTakeAsync" id="practice-stop" />
+                    <span class="take-cue recording">Sing anything you like over the chords.</span>
+                    break;
+
+                case TakeState.Captured:
+                    <span class="take-length">Take: @($"{_takeSec:0.0}s")</span>
+                    <RadzenButton Text="@(_reviewing ? "Stop" : "Hear it back")" Icon="replay"
+                                  ButtonStyle="ButtonStyle.Secondary" Disabled="@_sending"
+                                  Click="@ToggleReviewAsync" id="practice-review"
+                                  title="Your take against the chords it was sung over" />
+                    <RadzenButton Text="@(_sending ? "Analyzing…" : "What mode did I sing? →")"
+                                  ButtonStyle="ButtonStyle.Primary" Disabled="@_sending"
+                                  Click="@AnalyzeTakeAsync" id="practice-analyze" />
+                    <RadzenButton Text="Redo" Icon="delete" ButtonStyle="ButtonStyle.Light"
+                                  Disabled="@_sending" Click="@DiscardTakeAsync" id="practice-redo" />
+                    break;
             }
         </div>
 
-        @* The phrase as a pitch/time plot, with the sung line written over it live. It reports
-           nothing the server has not said: the scoring below is the verdict, this is the picture. *@
-        <div class="ribbon-wrap">
-            <canvas class="practice-ribbon" @ref="_ribbonCanvas" aria-hidden="true"
-                    data-testid="practice-ribbon"></canvas>
-            <span class="ribbon-legend">
-                <span class="legend-target">phrase</span>
-                <span class="legend-sung">you</span>
-            </span>
-        </div>
-
-        <div class="practice-actions">
-            <RadzenButton Text="@(_phase == Phase.Demo ? "Playing…" : "Hear it")" Icon="volume_up"
-                          ButtonStyle="ButtonStyle.Secondary" Disabled="@_busy"
-                          Click="@HearAsync" id="practice-hear" />
-            <RadzenButton Text="@SingLabel" Icon="mic" ButtonStyle="ButtonStyle.Primary"
-                          Disabled="@_busy" Click="@SingAsync" id="practice-sing" />
-            <RadzenButton Text="New phrase" Icon="casino" ButtonStyle="ButtonStyle.Light"
-                          Disabled="@_busy" Click="@RerollAsync" id="practice-reroll"
-                          title="A different phrase in the same mode" />
-        </div>
-
-        @if (_phase == Phase.CountingIn)
-        {
-            <p class="practice-cue counting">Counting you in…</p>
-        }
-        else if (_phase == Phase.Recording)
-        {
-            <p class="practice-cue recording">Sing now — one note per click.</p>
-        }
-        else if (_phase == Phase.Grading)
-        {
-            <p class="practice-cue">Scoring…</p>
-        }
-
         @if (_error is { } error)
         {
-            <p class="practice-error">@error</p>
+            <p class="take-error">@error</p>
         }
     </RadzenCard>
-
-    @if (_score is { } score)
-    {
-        <RadzenCard class="practice-score">
-            <div class="score-head">
-                <div class="score-number @ScoreClass(score.Score)">
-                    <span class="score-value">@score.Score</span>
-                    <span class="score-outof">/ 100</span>
-                </div>
-                <div class="score-verdict">
-                    <p class="verdict-text">@score.Verdict</p>
-                    @if (score.Advice is { } advice)
-                    {
-                        <p class="advice-text">@advice</p>
-                    }
-                </div>
-            </div>
-
-            @* Three components, not one, because they fail for different reasons and the server
-               grades them separately. Collapsing them would hide which one to practise. *@
-            <div class="score-bars">
-                <ScoreBar Label="Pitch" Percent="score.PitchPercent"
-                     Hint="@($"{score.NotesHit} of {score.NotesTotal} notes exactly right")" />
-                <ScoreBar Label="Timing" Percent="score.TimingPercent"
-                     Hint="@TimingHint(score)" />
-                <ScoreBar Label="Inside the mode" Percent="score.ModePurityPercent"
-                     Hint="@PurityHint(score)" />
-            </div>
-
-            <div class="score-flags">
-                <span class="flag @(score.CharacteristicSung ? "good" : "missing")">
-                    @(score.CharacteristicSung
-                        ? $"Sang the {string.Join(" / ", exercise.CharacteristicDegrees)}"
-                        : $"Never sang the {string.Join(" / ", exercise.CharacteristicDegrees)}")
-                </span>
-                @if (score.ExtraNotes > 0)
-                {
-                    <span class="flag extra">@score.ExtraNotes extra note@(score.ExtraNotes == 1 ? "" : "s")</span>
-                }
-            </div>
-
-            <div class="note-grid" aria-label="How each note went">
-                @foreach (var note in score.Notes)
-                {
-                    <div class="note-cell @note.Verdict.ToString().ToLowerInvariant()"
-                         title="@NoteTitle(note)">
-                        <span class="note-target">@note.TargetLabel</span>
-                        <span class="note-sung">@(note.SungLabel ?? "—")</span>
-                    </div>
-                }
-            </div>
-        </RadzenCard>
-    }
+}
+else if (_loadError is { } loadError)
+{
+    <RadzenCard>
+        <p class="take-error">@loadError</p>
+    </RadzenCard>
 }
 
 @code {
-    /// <summary>Where an attempt is in its cycle. Drives every label and disabled state on the page,
-    /// so there is one answer to "what is happening" rather than four booleans that can disagree.</summary>
-    private enum Phase { Idle, Demo, CountingIn, Recording, Grading }
+    /// <summary>Where a take is in its cycle — one answer to "what is happening" rather than four
+    /// booleans that can disagree. Mirrors the Mode Lab's hum states, whose flow this reuses.</summary>
+    private enum TakeState { Idle, CountingIn, Recording, Captured }
 
-    /// <summary>Streak at which the glyph gives way to the particle flame. Three is the first number
-    /// that means "this is going well" rather than "you passed one".</summary>
-    private const int FlameFromStreak = 3;
+    /// <summary>Beats of count-in before the loop starts, so the singer has the pulse before bar one.
+    /// The recorder trims them back off the front of the take.</summary>
+    private const int CountInBeats = 4;
 
-    private IJSObjectReference? _module;
-    private IJSObjectReference? _ribbon;
-    private IJSObjectReference? _flame;
-    private IJSObjectReference? _confetti;
-    private IJSObjectReference? _sfx;
-    private ElementReference _ribbonCanvas;
-    private ElementReference _flameCanvas;
+    /// <summary>Ceiling on one take. The loop runs until Stop and the browser holds raw PCM the whole
+    /// time, so this bounds memory rather than musical patience.</summary>
+    private const double MaxTakeSeconds = 300.0;
 
-    /// <summary>True once the plot has been started on the canvas, so the first render after an
-    /// exercise arrives sets it up and later ones only reload the phrase.</summary>
-    private bool _ribbonReady;
+    private IJSObjectReference? _hum;
+    private IJSObjectReference? _player;
+    private IJSObjectReference? _plot;
+    private DotNetObjectReference<Practice>? _selfRef;
+    private ElementReference _plotCanvas;
+    private bool _plotOn;
 
-    private ModeExerciseDto? _exercise;
-    private ExerciseScoreDto? _score;
-    private StreakDto? _streak;
-    private string? _error;
-    private Phase _phase = Phase.Idle;
+    private List<ChordProgressionDefinition> _progressions = [];
+    private GeneratedMelodyDto? _melody;
 
     private ScaleMode _mode = ScaleMode.Dorian;
-    private int _tonic = 2;             // D Dorian: the mode this app is usually explaining
-    private ModeExerciseKind _kind = ModeExerciseKind.ScaleRun;
-    private double _bpm = 72;
-    private int _octave = 4;
-    private int _seed = 42;
+    private int _tonic = 2;                 // D Dorian: the mode this app is usually explaining
+    private string _progressionId = "";
+    private double _bpm = 92;
 
-    private bool _busy => _phase != Phase.Idle;
+    private TakeState _state = TakeState.Idle;
+    private byte[]? _take;
+    private ModalMelodyRequest? _backing;
+    private double _takeSec;
+    private double _elapsedSec;
+    private bool _previewing;
+    private bool _reviewing;
+    private bool _sending;
+    private string? _error;
+    private string? _loadError;
 
-    private string SingLabel => _phase switch
-    {
-        Phase.CountingIn => "Counting in…",
-        Phase.Recording => "Listening…",
-        Phase.Grading => "Scoring…",
-        _ => "Sing it",
-    };
+    /// <summary>Settings are locked while the microphone is open: changing the chords underneath a
+    /// take in progress would leave the singer's melody filed against chords they never heard.</summary>
+    private bool Busy => _state is not TakeState.Idle || _sending;
 
-    /// <summary>The streak record, as this browser has it. Never sent anywhere.</summary>
-    private sealed record StreakDto(int Streak, int Best, int Attempts);
+    /// <summary>One pass of the progression. Taken from the last chord's end rather than from a bar
+    /// count, so a progression of any length loops at the point the server actually ended it.</summary>
+    private double LoopSeconds
+        => _melody is { Chords.Count: > 0 } melody ? melody.Chords[^1].EndSec : 0;
 
     protected override async Task OnInitializedAsync()
     {
+        _progressions = await Analysis.GetModalProgressionsAsync() ?? [];
+        if (_progressions.Count == 0)
+        {
+            _loadError = "No chord progressions are available.";
+            return;
+        }
+        // Start on the mode's own signature cadence — a mode is a tonal centre, and rooting the first
+        // thing the singer hears on the parent key would put the wrong note under it.
+        _progressionId = SignatureIdFor(_mode) ?? _progressions[0].Id;
         await ReloadAsync();
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/practice-session.js");
-        _streak = await _module.InvokeAsync<StreakDto>("loadStreak");
     }
 
     /// <summary>
-    /// Fetches the phrase for the current settings. The score is dropped with it: a score belongs to
-    /// one phrase, and leaving it on screen under a different exercise would be a wrong answer.
+    /// The progression that states this mode, if the catalog has one.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ProgressionCatalog.SignatureFor"/> is the shared lookup the Mode Lab's "Match to
+    /// mode" toggle uses, so the two pages cannot disagree about which cadence states a mode — and
+    /// choosing one here by name would be the client making that call itself.
+    /// </remarks>
+    private string? SignatureIdFor(ScaleMode mode) => _progressions.SignatureFor(mode)?.Id;
+
+    /// <summary>A different mode brings its own signature cadence with it, matching the Mode Lab's
+    /// "Match to mode" default — otherwise picking Phrygian would leave Dorian's chords playing.</summary>
+    private async Task OnModeChangedAsync()
+    {
+        if (SignatureIdFor(_mode) is { } id)
+        {
+            _progressionId = id;
+        }
+        await ReloadAsync();
+    }
+
+    /// <summary>A different progression in the same key and tempo. The key is deliberately left
+    /// alone: a singer picks a key for their own range, not for variety.</summary>
+    private async Task RerollAsync()
+    {
+        if (_progressions.Count > 1)
+        {
+            var current = _progressions.FindIndex(p => p.Id == _progressionId);
+            var step = Random.Shared.Next(1, _progressions.Count);
+            _progressionId = _progressions[(Math.Max(current, 0) + step) % _progressions.Count].Id;
+        }
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Fetches the backing for the current settings. Any captured take is dropped with it — a take
+    /// belongs to the chords it was sung over, and keeping it on screen under a different progression
+    /// would offer to file it against chords nobody sang.
     /// </summary>
     private async Task ReloadAsync()
     {
         _error = null;
-        _score = null;
-        _exercise = await Analysis.GetExerciseAsync(_kind, _mode, _tonic, _bpm, _seed, _octave);
-        if (_exercise is null)
+        await StopEverythingAsync();
+        DiscardTakeState();
+
+        _melody = await Analysis.GenerateModalMelodyAsync(CurrentRequest());
+        if (_melody is null)
         {
-            _error = "Could not load an exercise.";
+            _loadError = "Could not load a chord progression.";
             return;
         }
-        await PublishExerciseAsync(_exercise);
+        _loadError = null;
+        // The generated melody is ignored on purpose. /generate returns one because the Mode Lab
+        // wants it; here the melody is the singer's job, and playing the server's would be handing
+        // them the answer to the question the analyzer is about to be asked.
     }
 
-    /// <summary>
-    /// Hands the new phrase to the plot and to the live cue.
-    /// </summary>
-    /// <remarks>
-    /// The pitch-class set goes with it because both of them need to know which notes are inside the
-    /// mode, and neither may work that out: the set comes from <see cref="ScaleModes"/> — the same
-    /// shared table the server graded against — so the browser is told, not left to decide. It is the
-    /// mode's OWN scale on its own tonic, not the parent key's, which is the same rule
-    /// ModeExerciseBuilder follows and the reason the pentatonics come out right.
-    /// </remarks>
-    private async Task PublishExerciseAsync(ModeExerciseDto exercise)
-    {
-        var pitchClasses = ScaleModes.Intervals(exercise.Mode)
-            .Select(interval => (exercise.TonicPitchClass + interval) % 12)
-            .ToArray();
-        try
-        {
-            if (_module is not null)
-            {
-                await _module.InvokeVoidAsync("setExercise", pitchClasses, exercise.TargetNotes);
-            }
-            if (_ribbon is not null && _ribbonReady)
-            {
-                await _ribbon.InvokeVoidAsync(
-                    "setTargets", exercise.TargetNotes, exercise.DurationSec, pitchClasses);
-            }
-        }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away while the phrase was loading.
-        }
-    }
+    /// <summary>The settings as the server's request shape. One copy, so the preview, the take and
+    /// the upload can never describe three different progressions.</summary>
+    private ModalMelodyRequest CurrentRequest()
+        => new(TonicPitchClass: _tonic, Mode: _mode, ProgressionId: _progressionId, Bpm: _bpm);
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        // The canvases only exist once an exercise has rendered, so this cannot move into
-        // OnInitializedAsync — and it must survive the exercise being reloaded, hence the flag.
-        if (_exercise is not null && !_ribbonReady)
-        {
-            _ribbon ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-practice-ribbon.js");
-            // False when the effects are off or the canvas has no usable context; the page is
-            // complete without it either way.
-            _ribbonReady = await _ribbon.InvokeAsync<bool>("init", _ribbonCanvas);
-            if (_ribbonReady)
-            {
-                await PublishExerciseAsync(_exercise);
-            }
-        }
-        if (_streak is { Streak: >= FlameFromStreak } && _flame is null)
-        {
-            _flame = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-streak.js");
-        }
-        // Guarded on the streak pill being rendered at all: with no attempts yet there is no canvas,
-        // and handing JS an unset element reference throws.
-        if (_flame is not null && _streak is { Attempts: > 0 })
-        {
-            // Told the streak every render: the module decides whether that means burning hotter,
-            // starting, or stopping, so this page never has to track which of those it last did.
-            await _flame.InvokeVoidAsync("setStreak", _flameCanvas, _streak.Streak);
-        }
-    }
+    // ---- Preview ----
 
-    /// <summary>A different phrase in the same mode. Only the seeded walk actually varies — the scale
-    /// run and the leap drill are the same phrase by definition, so the button rerolls the seed and
-    /// they come back identical, which is correct.</summary>
-    private async Task RerollAsync()
+    private async Task TogglePreviewAsync()
     {
-        _seed = Random.Shared.Next(1, 100_000);
-        await ReloadAsync();
-    }
-
-    private async Task HearAsync()
-    {
-        if (_module is null || _exercise is null)
+        if (_previewing)
+        {
+            await StopEverythingAsync();
+            return;
+        }
+        if (_melody is null)
         {
             return;
         }
-        try
-        {
-            _phase = Phase.Demo;
-            await _module.InvokeVoidAsync("playPhrase", _exercise.TargetNotes, _exercise.DurationSec);
-            // The player has no completion callback here, so the page simply waits out the phrase.
-            // A stop button would be noise for something that lasts a few seconds.
-            await Task.Delay(TimeSpan.FromSeconds(_exercise.DurationSec + 0.3));
-        }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away mid-phrase.
-        }
-        finally
-        {
-            _phase = Phase.Idle;
-        }
-    }
-
-    /// <summary>
-    /// One attempt: count in, record the phrase, send the notes for grading.
-    ///
-    /// <para>The notes go to the server rather than being scored here for the usual reason — deciding
-    /// whether a sung note was the right one is a musical judgment, and those are made server-side.
-    /// </para>
-    /// </summary>
-    private async Task SingAsync()
-    {
-        if (_module is null || _exercise is null || _busy)
+        await EnsurePlayerAsync();
+        if (_player is null)
         {
             return;
         }
+        await _player.InvokeVoidAsync("setLooping", true);
+        // Chords only — an empty melody list, the same call the Mode Lab makes while a take runs.
+        await _player.InvokeVoidAsync(
+            "play", Array.Empty<NoteEvent>(), _melody.BackingNotes, LoopSeconds, _selfRef);
+        _previewing = true;
+    }
 
+    // ---- Take ----
+
+    private async Task StartTakeAsync()
+    {
+        if (_melody is null || _state is not TakeState.Idle)
+        {
+            return;
+        }
+        _state = TakeState.CountingIn;
         _error = null;
-        _score = null;
         try
         {
-            _phase = Phase.CountingIn;
-            StateHasChanged();
-
-            if (!await _module.InvokeAsync<bool>("start", _exercise.Bpm, _exercise.DurationSec))
+            await EnsurePlayerAsync();
+            await EnsureHumAsync();
+            if (_hum is null || _player is null)
             {
-                _error = "Microphone access was denied or is unavailable.";
-                _phase = Phase.Idle;
+                _state = TakeState.Idle;
                 return;
             }
 
-            _phase = Phase.Recording;
-            await PlayHapticAsync("tap");
-            StateHasChanged();
-            await _module.InvokeAsync<bool>("waitForPhrase", _exercise.DurationSec);
+            await StopEverythingAsync();
+            _backing = CurrentRequest();
+            _take = null;
+            _elapsedSec = 0;
+            await _player.InvokeVoidAsync("setLooping", true);
 
-            _phase = Phase.Grading;
-            StateHasChanged();
-            var sung = await _module.InvokeAsync<List<NoteEvent>>("finish");
-
-            _score = await Analysis.GradeAttemptAsync(_exercise, sung);
-            if (_score is null)
+            // Microphone before the clicks: the first take of a session raises the permission
+            // prompt, and counting down to a dialog box helps nobody.
+            if (!await _hum.InvokeAsync<bool>("beginCapture"))
             {
-                _error = "The server would not score that attempt.";
+                _state = TakeState.Idle;
+                _error = "The microphone could not be opened.";
+                return;
+            }
+
+            await _hum.InvokeVoidAsync("countIn", _bpm, CountInBeats);
+
+            _state = TakeState.Recording;
+            if (_plotOn && _plot is not null)
+            {
+                // Chord bands now, the sung line as it arrives. The recorder pushes pitch straight
+                // into the module, so nothing per-frame crosses back into here.
+                await _plot.InvokeVoidAsync("prepareLive", _melody.BackingNotes, LoopSeconds, MaxTakeSeconds);
+            }
+            await _player.InvokeVoidAsync(
+                "play", Array.Empty<NoteEvent>(), _melody.BackingNotes, LoopSeconds, _selfRef);
+        }
+        catch (Exception ex)
+        {
+            _state = TakeState.Idle;
+            await CancelCaptureAsync();
+            _error = ex.Message;
+        }
+    }
+
+    private async Task StopTakeAsync()
+    {
+        if (_state is not TakeState.Recording)
+        {
+            return;
+        }
+        // Claim the transition before the first await, so a take that hits the length cap on one
+        // playhead tick cannot also be stopped by the next one.
+        _state = TakeState.Captured;
+        _takeSec = _elapsedSec;
+
+        try
+        {
+            // finishCapture reads the player's downbeat to trim the take to bar one, so it has to run
+            // while the transport is still going.
+            var take = _hum is null ? [] : await _hum.InvokeAsync<byte[]>("finishCapture");
+            await StopEverythingAsync();
+
+            // Empty covers both "the microphone gave us nothing" and "the take was all count-in" —
+            // the recorder refuses to encode either, so neither reaches the analyzer.
+            if (take.Length == 0)
+            {
+                _state = TakeState.Idle;
+                _error = "Nothing was recorded. Try again a little louder.";
+                return;
+            }
+            _take = take;
+        }
+        catch (Exception ex)
+        {
+            _state = TakeState.Idle;
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ToggleReviewAsync()
+    {
+        if (_hum is null || _melody is null)
+        {
+            return;
+        }
+        if (_reviewing)
+        {
+            _reviewing = false;
+            await _hum.InvokeVoidAsync("stopReview");
+            return;
+        }
+        _reviewing = true;
+        // Hearing the voice alone says nothing about whether the phrase landed; the question is how
+        // it sits against the harmony, so the take and the chords are scheduled from one instant.
+        var seconds = await _hum.InvokeAsync<double>(
+            "reviewTake", _melody.BackingNotes, LoopSeconds, _selfRef);
+        if (seconds <= 0)
+        {
+            _reviewing = false;
+        }
+    }
+
+    /// <summary>
+    /// Hands the take to the analyzer and goes to the result.
+    /// </summary>
+    /// <remarks>
+    /// The backing rides along as the request that generated it rather than as a copy of the notes,
+    /// which is what lets <c>HumTakeSeeder</c> regenerate the exact progression server-side and seed
+    /// it as the job's chord track. So the melody analyzed is the singer's and the harmony under it is
+    /// real — and the mode the job reports is a reading of the voice, not an echo of the chords it was
+    /// sung over.
+    /// </remarks>
+    private async Task AnalyzeTakeAsync()
+    {
+        if (_take is null || _backing is null || _sending)
+        {
+            return;
+        }
+        _sending = true;
+        _error = null;
+        try
+        {
+            await StopEverythingAsync();
+            var job = await Analysis.UploadHumTakeAsync(_take, _backing);
+            if (job is not null && !string.IsNullOrEmpty(job.JobId))
+            {
+                DiscardTakeState();
+                NotificationService.Notify(
+                    NotificationSeverity.Success, "Practice",
+                    "Take saved — reading the mode of your melody.");
+                Navigation.NavigateTo($"/?job={job.JobId}");
             }
             else
             {
-                var previousBest = _streak?.Best ?? 0;
-                _streak = await _module.InvokeAsync<StreakDto>("recordResult", _score.Score);
-                await CelebrateAsync(_score.Score, previousBest);
+                _error = "The analyzer would not accept the take.";
             }
         }
         catch (JSDisconnectedException)
         {
-            // Navigated away mid-attempt; the module dies with the page.
+            // Navigated away mid-send.
         }
         catch (Exception ex)
         {
@@ -414,118 +447,158 @@
         }
         finally
         {
-            _phase = Phase.Idle;
+            _sending = false;
         }
     }
 
-    /// <summary>The degrees that name the mode, highlighted in the scale strip. The server supplies
-    /// which ones they are; this only matches the note name back to them.</summary>
-    private static bool IsCharacteristic(ModeExerciseDto exercise, string noteName)
+    private async Task DiscardTakeAsync()
     {
-        var intervals = ScaleModes.CharacteristicIntervals(exercise.Mode);
-        return intervals.Any(interval =>
-            ScaleModes.NoteName(exercise.TonicPitchClass + interval) == noteName);
-    }
-
-    private static string ScoreClass(int score) => score switch
-    {
-        >= 85 => "great",
-        >= 65 => "good",
-        >= 40 => "fair",
-        _ => "poor",
-    };
-
-    private static string TimingHint(ExerciseScoreDto score)
-    {
-        if (score.MedianTimingOffsetSec == 0)
+        await StopEverythingAsync();
+        if (_hum is not null)
         {
-            return "no timing measured";
+            await _hum.InvokeVoidAsync("clearTake");
         }
-        var offset = Math.Abs(score.MedianTimingOffsetSec).ToString("0.00");
-        return score.Rushing ? $"{offset}s ahead of the click" : $"{offset}s behind the click";
+        DiscardTakeState();
     }
 
-    private static string PurityHint(ExerciseScoreDto score)
-        => score.OutsideNotes.Count == 0
-            ? "every note was inside the mode"
-            : $"outside the mode: {string.Join(", ", score.OutsideNotes)}";
-
-    private static string NoteTitle(NoteGradeDto note) => note.Verdict switch
+    private void DiscardTakeState()
     {
-        NoteVerdict.Hit => $"{note.TargetLabel} — sung correctly",
-        NoteVerdict.Octave => $"{note.TargetLabel} — right note, wrong octave ({note.SungLabel})",
-        NoteVerdict.Wrong => $"{note.TargetLabel} — sang {note.SungLabel} instead",
-        _ => $"{note.TargetLabel} — nothing sung here",
-    };
+        _state = TakeState.Idle;
+        _take = null;
+        _backing = null;
+        _takeSec = 0;
+        _elapsedSec = 0;
+        _reviewing = false;
+    }
 
-    /// <summary>A haptic tick, if the device has one and the effects allow it. Never awaited for
-    /// anything: a phone that cannot buzz must not delay a downbeat.</summary>
-    private async Task PlayHapticAsync(string name)
+    // ---- Transport plumbing ----
+
+    private async Task StopEverythingAsync()
     {
         try
         {
-            _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
-            await _sfx.InvokeVoidAsync(name);
+            if (_reviewing && _hum is not null)
+            {
+                await _hum.InvokeVoidAsync("stopReview");
+            }
+            if (_player is not null)
+            {
+                await _player.InvokeVoidAsync("stop");
+            }
         }
-        catch (JSException)
+        catch (JSDisconnectedException)
         {
-            // Haptics are garnish, never an error.
+            // Torn down; nothing is playing either way.
+        }
+        _previewing = false;
+        _reviewing = false;
+    }
+
+    private async Task CancelCaptureAsync()
+    {
+        try
+        {
+            if (_hum is not null)
+            {
+                await _hum.InvokeVoidAsync("cancelCapture");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Already gone.
         }
     }
 
-    /// <summary>
-    /// The reward, and only for a real one: confetti and the rising arpeggio fire when this attempt
-    /// beat the best score this browser has seen, not merely when it passed. A celebration that goes
-    /// off every time stops reading as a celebration by the third phrase.
-    /// </summary>
-    private async Task CelebrateAsync(int score, int previousBest)
+    private async Task EnsurePlayerAsync()
     {
-        _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
-        if (score > previousBest && previousBest > 0)
+        _selfRef ??= DotNetObjectReference.Create(this);
+        _player ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/modal-player.js");
+    }
+
+    private async Task EnsureHumAsync()
+        => _hum ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/hum-recorder.js");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The canvas only exists once a progression has rendered, so this cannot move into
+        // OnInitializedAsync — and it must survive a reload, hence the flag.
+        if (_melody is null || _plotOn)
         {
-            _confetti ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-confetti.js");
-            await _confetti.InvokeVoidAsync("burst");
-            await _sfx.InvokeVoidAsync("cheer");
-            await _sfx.InvokeVoidAsync("doubleTap");
+            return;
         }
-        else
+        try
         {
-            // Still worth a nudge: the score card can land below the fold on a phone.
-            await _sfx.InvokeVoidAsync("thud");
+            _plot ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-hum-review.js");
+            _plotOn = await _plot.InvokeAsync<bool>("init", _plotCanvas);
+            if (_plotOn)
+            {
+                StateHasChanged();
+            }
         }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-render.
+        }
+    }
+
+    /// <summary>Called from modal-player.js once per animation frame while the loop runs. The take's
+    /// own length is tracked here rather than in JS so the cap lives beside the state machine.</summary>
+    [JSInvokable]
+    public async Task OnPlayheadUpdated(double positionSec)
+    {
+        _ = positionSec;
+        if (_state is not TakeState.Recording || _hum is null)
+        {
+            return;
+        }
+        _elapsedSec = await _hum.InvokeAsync<double>("capturedSeconds");
+        if (_elapsedSec >= MaxTakeSeconds)
+        {
+            await StopTakeAsync();
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPlaybackEnded()
+    {
+        _previewing = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnHumReviewEnded()
+    {
+        _reviewing = false;
+        StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()
     {
         try
         {
-            if (_module is not null)
+            // Before the player, so a take still running when the page is left releases the
+            // microphone — otherwise the browser's recording indicator stays lit for the session.
+            if (_hum is not null)
             {
-                await _module.InvokeVoidAsync("dispose");
-                await _module.DisposeAsync();
+                await _hum.InvokeVoidAsync("dispose");
+                await _hum.DisposeAsync();
             }
-            if (_ribbon is not null)
+            if (_player is not null)
             {
-                await _ribbon.InvokeVoidAsync("dispose");
-                await _ribbon.DisposeAsync();
+                await _player.InvokeVoidAsync("dispose");
+                await _player.DisposeAsync();
             }
-            if (_flame is not null)
+            if (_plot is not null)
             {
-                await _flame.InvokeVoidAsync("dispose", _flameCanvas);
-                await _flame.DisposeAsync();
-            }
-            if (_confetti is not null)
-            {
-                await _confetti.DisposeAsync();
-            }
-            if (_sfx is not null)
-            {
-                await _sfx.DisposeAsync();
+                await _plot.InvokeVoidAsync("dispose");
+                await _plot.DisposeAsync();
             }
         }
         catch (JSDisconnectedException)
         {
             // The circuit is already gone during teardown.
         }
+        _selfRef?.Dispose();
     }
 }

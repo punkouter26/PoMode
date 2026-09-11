@@ -91,30 +91,6 @@ public sealed class AnalysisClient(HttpClient http)
             : null;
     }
 
-    /// <summary>One ear-training phrase. The same six values always return the same phrase.</summary>
-    public Task<ModeExerciseDto?> GetExerciseAsync(
-        ModeExerciseKind kind, ScaleMode mode, int tonicPitchClass, double bpm, int seed, int octave)
-        => http.GetFromJsonAsync<ModeExerciseDto>(
-            $"api/practice/exercise?kind={kind}&mode={mode}"
-            + $"&tonicPitchClass={tonicPitchClass}"
-            + $"&bpm={bpm.ToString(CultureInfo.InvariantCulture)}"
-            + $"&seed={seed}&octave={octave}");
-
-    /// <summary>
-    /// Scores a sung attempt. The exercise is identified by the values that regenerate it rather than
-    /// by echoing its notes back, so the grading always runs against the phrase the server issued.
-    /// </summary>
-    public async Task<ExerciseScoreDto?> GradeAttemptAsync(
-        ModeExerciseDto exercise, IReadOnlyList<NoteEvent> sungNotes)
-    {
-        var response = await http.PostAsJsonAsync("api/practice/attempt", new ExerciseAttemptRequest(
-            exercise.Kind, exercise.Mode, exercise.TonicPitchClass,
-            exercise.Bpm, exercise.Seed, exercise.Octave, sungNotes));
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<ExerciseScoreDto>()
-            : null;
-    }
-
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 

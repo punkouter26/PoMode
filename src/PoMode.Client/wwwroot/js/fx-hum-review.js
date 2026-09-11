@@ -1,4 +1,4 @@
-// "Does it sit?" — the hum take drawn against the chords it was sung over.
+// "Does it sit?" — a sung take drawn against the chords it was sung over, live and then in full.
 //
 // The Mode Lab already makes the argument that hearing a take against its harmony is the only way to
 // judge it, and reviewTake plays them together for exactly that reason. But the review was audio
@@ -115,6 +115,34 @@ function yFor(s, midi) {
     return s.canvas.height - (((midi - s.minMidi) / span) * s.canvas.height);
 }
 
+/// Normalises the server's backing notes and tiles them across `totalSeconds`.
+///
+/// Tiled because the progression loops under the take and HumTakeSeeder does exactly the same thing
+/// server-side. Drawing one pass of the chords under a three-pass take would show the last two thirds
+/// of the singing floating over nothing.
+function tileBacking(s, backingNotes, loopDuration) {
+    const backing = (backingNotes || [])
+        .map((note) => ({
+            midiPitch: note.midiPitch ?? note.MidiPitch,
+            startSec: note.startSec ?? note.StartSec ?? 0,
+            durationSec: note.durationSec ?? note.DurationSec ?? 0,
+        }))
+        .filter((note) => Number.isFinite(note.midiPitch));
+
+    const loop = loopDuration > 0 ? loopDuration : s.duration;
+    const tiled = [];
+    for (let pass = 0; pass * loop < s.duration; pass++) {
+        const offset = pass * loop;
+        for (const note of backing) {
+            if (offset + note.startSec >= s.duration) {
+                continue;
+            }
+            tiled.push({ ...note, startSec: note.startSec + offset });
+        }
+    }
+    s.backing = tiled;
+}
+
 /// The backing pitches sounding at `seconds`. Linear over the note list, which is fine: a Mode Lab
 /// progression is a few dozen notes and this runs once per drawn frame.
 function backingAt(s, seconds) {
@@ -188,7 +216,12 @@ function render(s, now) {
         ctx.moveTo(x, 0);
         ctx.lineTo(x, height);
         ctx.stroke();
-        soundAgreement(s, playhead);
+        // Silent during the take itself. A tick on every chord tone as it is sung would be a live
+        // judgment, and this page deliberately passes no judgment until the analyzer has: nudging a
+        // singer toward the chords mid-phrase shapes the very melody the analysis is about to read.
+        if (!s.live) {
+            soundAgreement(s, playhead);
+        }
     }
 }
 
@@ -209,6 +242,85 @@ function soundAgreement(s, playhead) {
     }
 }
 
+/// Lays out the chord bands for a take that is about to be sung, so the singer sees the harmony
+/// before they sing over it and their line fills in from the left as they do.
+///
+/// The difference from `prepare` is where the line comes from: there it is analysed out of a finished
+/// recording, here it arrives a frame at a time from the microphone. Both draw the same picture, and
+/// the live one is replaced by the analysed one as soon as the take is decoded — which is worth doing
+/// rather than keeping the live trace, because the offline pass sees the whole take at a steadier hop
+/// than the capture callback can manage.
+///
+/// `maxSeconds` bounds the time axis: a take runs until Stop, so unlike a review there is no known
+/// duration to scale to.
+export function prepareLive(backingNotes, loopDuration, maxSeconds) {
+    if (!state) {
+        return false;
+    }
+    state.duration = Math.max(maxSeconds > 0 ? maxSeconds : 60, 1);
+    state.readings = [];
+    state.live = true;
+    state.lastSounded = -1;
+    tileBacking(state, backingNotes, loopDuration);
+
+    // Only the chords are known yet, so the drawn range is theirs; pushLive widens it if the singer
+    // goes outside it, which is the one case where the plot must not clip the voice.
+    let min = Infinity;
+    let max = -Infinity;
+    for (const note of state.backing) {
+        min = Math.min(min, note.midiPitch);
+        max = Math.max(max, note.midiPitch);
+    }
+    if (!Number.isFinite(min)) {
+        min = 55;
+        max = 79;
+    }
+    state.minMidi = min - PITCH_PADDING;
+    state.maxMidi = max + PITCH_PADDING;
+
+    // The playhead follows the microphone rather than an audio offset: during a take the take IS the
+    // clock, and there is no decoded buffer to schedule against yet.
+    state.clock = () => state.liveSeconds;
+    state.liveSeconds = 0;
+    if (state.raf === null) {
+        state.raf = requestAnimationFrame((now) => render(state, now));
+    }
+    state.canvas.dataset.humReview = 'live';
+    return true;
+}
+
+/// One heard pitch during a take, timed from the loop's downbeat. Called from hum-recorder.js's
+/// capture callback, so it stays allocation-free in the common case and does no work beyond
+/// appending a reading and deciding whether it agrees with the chord under it.
+export function pushLive(seconds, midi) {
+    if (!state || !state.live || seconds < 0) {
+        return;
+    }
+    state.liveSeconds = seconds;
+    if (seconds > state.duration) {
+        return;
+    }
+    if (midi === null || !Number.isFinite(midi)) {
+        // A gap is recorded rather than skipped, so the line breaks where the singer stopped instead
+        // of drawing a straight segment across a rest.
+        state.readings.push({ timeSec: seconds, midi: null, inChord: false });
+        return;
+    }
+    // A voice outside the chords' own range must not be clipped off the plot — the take is the
+    // subject here, the bands are the context.
+    if (midi < state.minMidi + 1) {
+        state.minMidi = midi - PITCH_PADDING;
+    }
+    if (midi > state.maxMidi - 1) {
+        state.maxMidi = midi + PITCH_PADDING;
+    }
+    state.readings.push({
+        timeSec: seconds,
+        midi,
+        inChord: backingAt(state, seconds).some((b) => pitchClass(b) === pitchClass(midi)),
+    });
+}
+
 /// Starts the panel on `canvas`. Returns false with effects off or without a 2D context, in which
 /// case the review is audio-only exactly as it was.
 export function init(canvas) {
@@ -227,6 +339,10 @@ export function init(canvas) {
         readings: [],
         backing: [],
         duration: 1,
+        // True while a take is being sung: the playhead follows the microphone and readings arrive
+        // one at a time, rather than the whole track being known up front.
+        live: false,
+        liveSeconds: 0,
         minMidi: 55,
         maxMidi: 79,
         clock: null,
@@ -259,32 +375,13 @@ export function prepare(audioBuffer, backingNotes, loopDuration) {
     if (!state || !audioBuffer) {
         return false;
     }
-    const backing = (backingNotes || [])
-        .map((note) => ({
-            midiPitch: note.midiPitch ?? note.MidiPitch,
-            startSec: note.startSec ?? note.StartSec ?? 0,
-            durationSec: note.durationSec ?? note.DurationSec ?? 0,
-        }))
-        .filter((note) => Number.isFinite(note.midiPitch));
-
     state.duration = Math.max(audioBuffer.duration, 0.001);
     state.lastSounded = -1;
-
-    // Tiled across the take, because the progression loops under it and the seeder does exactly the
-    // same thing server-side. Drawing one pass of the chords under a three-pass take would show the
-    // last two thirds of the phrase floating over nothing.
-    const loop = loopDuration > 0 ? loopDuration : state.duration;
-    const tiled = [];
-    for (let pass = 0; pass * loop < state.duration; pass++) {
-        const offset = pass * loop;
-        for (const note of backing) {
-            if (offset + note.startSec >= state.duration) {
-                continue;
-            }
-            tiled.push({ ...note, startSec: note.startSec + offset });
-        }
-    }
-    state.backing = tiled;
+    // The live trace, if there was one, is replaced wholesale: the offline pass sees the take at a
+    // steadier hop than a capture callback can manage, so keeping both would show two readings of
+    // one performance.
+    state.live = false;
+    tileBacking(state, backingNotes, loopDuration);
 
     state.readings = pitchTrack(toMono(audioBuffer));
 
@@ -362,6 +459,8 @@ export function clear() {
         return;
     }
     stop();
+    state.live = false;
+    state.liveSeconds = 0;
     state.readings = [];
     state.backing = [];
     state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
