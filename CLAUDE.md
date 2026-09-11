@@ -74,7 +74,7 @@ One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the RE
 
 Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Separating → PitchTracking → ChordDetecting → ModalAnalysis**. Every stage has multiple executors registered in `Program.cs` behind seams (`IStemSeparator`, `IPitchTracker`, `IChordRecognizer`), each tagged with an `ExecutionTier` (Local ONNX model, Cloud API, ClientDelegated browser inference, Fake). `ExecutionPlanner.EffectiveRank` fixes the selection order: local model → browser → classic model-less DSP (`IsClassicFallback`: `YinPitchTracker`, `ViterbiChordRecognizer`) → Fake placeholder → paid Cloud; within a rank, DI registration order breaks ties, so register new executors *after* the one that should stay the default. `AnalysisPipeline.RunWithFallbackAsync` falls through the same order when an executor fails and records who actually ran in `StageHistory`. If any Fake executor ran, the client shows the "USING MOCK DATA" banner.
 
-Users can pin an executor per stage: `GET /api/analysis/executors` feeds the home page's radio groups (Cloud and Fake are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available and not Cloud.
+Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dropdown per stage on the home page (Cloud and Fake are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available and not Cloud. A stage with one real option renders as plain text rather than a disabled control, which would read as broken rather than as "no choice needed".
 
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
@@ -291,6 +291,44 @@ occasional discrete update, matching the `mixer.js` contract.
 Cents are reported in exactly one place. `fx-tuner.js` reads `detectPitch`'s fractional MIDI before
 any rounding, so the Live halo can show a deviation nothing else in the app measures — and it is never
 sent anywhere, stored, or scored.
+
+### Look and layout
+
+`app.css` holds every colour, size and spacing value the app is allowed to use, defined three times
+over — light on bare `:root`, dark under `prefers-color-scheme`, dark again under
+`[data-theme="dark"]` so the header toggle wins in both directions. A page stylesheet states a raw
+hex only for a chart or canvas *fill*, never for text or a border. The reason is not tidiness: the
+Mode Lab was written against a dark ground and shipped light-theme text at 1.2:1, invisible in the
+theme that is the OS default on most machines. Status colours come in triples
+(`--pm-ok` / `--pm-ok-bg` / `--pm-ok-edge`, and the same for `danger`, `caution`, `info`, `hot`,
+`violet`), and each foreground is picked to clear 4.5:1 against its own tinted ground *in that
+theme* — which is exactly what one hardcoded hex cannot do. The seven modes get
+`--pm-mode-{name}` for the same reason: those are card titles, not decoration.
+
+- **`--pm-text-xs` (12px) is the floor.** Nothing renders text smaller. A label that does not fit
+  gets shortened, wrapped or dropped — not shrunk. The header's nav does this literally: every
+  destination carries a long and a short label (`.nav-wide` / `.nav-narrow`), one of which is
+  `display: none` at any width, so six destinations fit a 320px phone on one line without a
+  horizontal scroll strip hiding the last of them.
+- **Never clip to make something fit.** `overflow: hidden` on a layout container, `white-space:
+  nowrap` on a phrase, and a viewport-height box are all ways of hiding content while appearing to
+  lay it out; the Mode Lab did all three and hid 885px of its own controls on a phone. Wrap, reflow,
+  or let the page be taller.
+- **One breakpoint, 640px** for page chrome (720px where the Mode Lab's four-region layout needs the
+  extra room). Every page has one. Fixed pixel widths and `flex-wrap: nowrap` do not survive it, and
+  a flex or grid item that holds a control needs `min-width: 0` — the default minimum is the item's
+  content, and a dropdown's content is its longest option.
+- **`.pm-panel`** is the surface for something that must read as a Radzen card but is not one — the
+  Mode Lab's strips. Same ground, border and corner as `.rz-card`, no specular or noise layer.
+- Chooser controls are Radzen (`RadzenDropDown`, `RadzenSlider`); a native `<select>` beside one
+  reads as a different application. `role="tablist"` is only for a real tablist: a pair of buttons
+  that swaps a rendering is `role="group"` with `aria-pressed`.
+- Popovers close on Escape and on a click outside, and take focus when they open, which is what
+  makes the Escape handler reachable at all.
+
+Two documents are deliberately taller than a phone: the finished analysis page and the Mode Lab.
+Both are content that exists to be read and compared, and the alternative to scrolling them is
+hiding part of them. Every other route fits 390×844 and 1440×900 with no scrolling in either axis.
 
 ### Client conventions
 

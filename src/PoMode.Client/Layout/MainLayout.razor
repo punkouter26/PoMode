@@ -12,25 +12,44 @@
 
 <header class="app-header">
     <div class="brand">PoMode</div>
+    @* Two labels per destination, one of which is display:none at any given width. A phone cannot
+       fit "Diagnostics" beside five siblings, and the previous answer — a horizontally scrollable
+       strip — hid the last item behind a gesture nobody discovers. Shortening the word is honest;
+       hiding it was not. Only one span is ever rendered visible, so assistive tech reads one name. *@
     <nav class="actions" aria-label="Main navigation">
-        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Analyze</NavLink>
-        <NavLink class="nav-link" href="modes">Mode Lab</NavLink>
-        <NavLink class="nav-link" href="library">Library</NavLink>
-        <NavLink class="nav-link" href="live">Live</NavLink>
-        <NavLink class="nav-link" href="practice">Practice</NavLink>
-        <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
+        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+            <span class="nav-wide">Analyze</span><span class="nav-narrow">Analyze</span>
+        </NavLink>
+        <NavLink class="nav-link" href="modes">
+            <span class="nav-wide">Mode Lab</span><span class="nav-narrow">Modes</span>
+        </NavLink>
+        <NavLink class="nav-link" href="library">
+            <span class="nav-wide">Library</span><span class="nav-narrow">Songs</span>
+        </NavLink>
+        <NavLink class="nav-link" href="live">
+            <span class="nav-wide">Live</span><span class="nav-narrow">Live</span>
+        </NavLink>
+        <NavLink class="nav-link" href="practice">
+            <span class="nav-wide">Practice</span><span class="nav-narrow">Sing</span>
+        </NavLink>
+        <NavLink class="nav-link" href="diagnostics">
+            <span class="nav-wide">Diagnostics</span><span class="nav-narrow">Diag</span>
+        </NavLink>
     </nav>
     <div class="session">
         @* Only the Analyze page reads AnalysisViewState, so the switcher is hidden elsewhere rather
-           than sitting in the header doing nothing on four routes out of five. *@
-        <div class="nav-scene-switcher @(IsAnalyzePage ? "" : "hidden")" role="tablist" aria-label="Analysis view mode">
-            <button class="nav-scene-btn @(ViewState.IsBasic ? "active" : "")" type="button" role="tab"
-                    aria-selected="@ViewState.IsBasic" @onclick="@(() => ViewState.SetViewMode("basic"))"
+           than sitting in the header doing nothing on four routes out of five.
+           A group of two pressed-states rather than a tablist: there is no tabpanel here — the
+           buttons change what the page below renders, and claiming a tab relationship that has no
+           panel on the other end is worse for a screen reader than claiming nothing. *@
+        <div class="nav-scene-switcher @(IsAnalyzePage ? "" : "hidden")" role="group" aria-label="Analysis view mode">
+            <button class="nav-scene-btn @(ViewState.IsBasic ? "active" : "")" type="button"
+                    aria-pressed="@ViewState.IsBasic" @onclick="@(() => ViewState.SetViewMode("basic"))"
                     title="Switch to Basic View">
                 🎯 Basic
             </button>
-            <button class="nav-scene-btn @(ViewState.IsAdvanced ? "active" : "")" type="button" role="tab"
-                    aria-selected="@ViewState.IsAdvanced" @onclick="@(() => ViewState.SetViewMode("advanced"))"
+            <button class="nav-scene-btn @(ViewState.IsAdvanced ? "active" : "")" type="button"
+                    aria-pressed="@ViewState.IsAdvanced" @onclick="@(() => ViewState.SetViewMode("advanced"))"
                     title="Switch to Advanced View">
                 🔬 Advanced
             </button>
@@ -45,7 +64,12 @@
         </button>
         @if (_overflowOpen)
         {
-            <div class="overflow-menu" role="menu">
+            @* A transparent scrim rather than a document-level JS listener: clicking anywhere else
+               has to close the menu, and a scrim gets that from the same render tree the menu lives
+               in, with no listener to leak when the layout is torn down. *@
+            <div class="overflow-scrim" @onclick="CloseOverflow" aria-hidden="true"></div>
+            <div class="overflow-menu" role="menu" tabindex="-1" @ref="_overflowMenu"
+                 @onkeydown="OnOverflowKeyDown">
                 <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
                     Keyboard shortcuts
                 </button>
@@ -87,11 +111,16 @@
 
 @if (_shortcutsOpen)
 {
-    <div class="modal-backdrop" @onclick="CloseShortcutsAsync">
-        <div class="modal-card shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" @onclick:stopPropagation>
+    <div class="modal-backdrop" @onclick="CloseShortcuts">
+        @* tabindex + a focus call on open is what makes Escape work at all: a keydown handler on a
+           div never fires unless something inside it holds focus, and a dialog that traps the eye
+           but not the keyboard is the worse of the two failures. *@
+        <div class="modal-card shortcuts-modal" role="dialog" aria-modal="true" tabindex="-1"
+             aria-labelledby="shortcuts-title" @ref="_shortcutsCard" @onkeydown="OnShortcutsKeyDown"
+             @onclick:stopPropagation>
             <div class="shortcuts-head">
                 <h2 id="shortcuts-title">Keyboard shortcuts</h2>
-                <button class="icon-button" type="button" @onclick="CloseShortcutsAsync" aria-label="Close">✕</button>
+                <button class="icon-button" type="button" @onclick="CloseShortcuts" aria-label="Close">✕</button>
             </div>
             <dl class="shortcuts-list">
                 <dt><kbd>Space</kbd></dt><dd>Play / pause the stems</dd>
@@ -157,6 +186,14 @@
     private bool _overflowOpen;
     private bool _shortcutsOpen;
 
+    private ElementReference _overflowMenu;
+    private ElementReference _shortcutsCard;
+
+    /// <summary>Set when a popover has just opened, so the render after that can move focus into it
+    /// exactly once rather than stealing focus back on every subsequent render.</summary>
+    private bool _focusOverflow;
+    private bool _focusShortcuts;
+
     private string ThemeLabel => _themeMode switch
     {
         "light" => "Light",
@@ -171,15 +208,38 @@
         _ => "◐",
     };
 
-    private void ToggleOverflowAsync() => _overflowOpen = !_overflowOpen;
+    private void ToggleOverflowAsync()
+    {
+        _overflowOpen = !_overflowOpen;
+        _focusOverflow = _overflowOpen;
+    }
+
+    private void CloseOverflow() => _overflowOpen = false;
 
     private void ToggleShortcutsAsync()
     {
         _overflowOpen = false;
         _shortcutsOpen = !_shortcutsOpen;
+        _focusShortcuts = _shortcutsOpen;
     }
 
-    private void CloseShortcutsAsync() => _shortcutsOpen = false;
+    private void CloseShortcuts() => _shortcutsOpen = false;
+
+    private void OnOverflowKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _overflowOpen = false;
+        }
+    }
+
+    private void OnShortcutsKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _shortcutsOpen = false;
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -200,6 +260,16 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusShortcuts)
+        {
+            _focusShortcuts = false;
+            await _shortcutsCard.FocusAsync();
+        }
+        else if (_focusOverflow)
+        {
+            _focusOverflow = false;
+            await _overflowMenu.FocusAsync();
+        }
         if (!firstRender)
         {
             return;

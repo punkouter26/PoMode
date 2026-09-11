@@ -272,15 +272,18 @@
             <div class="interpretation-head">
                 <span class="stat-title">What this means</span>
                 <div class="interpretation-controls">
-                    @if (_interpreters is { Count: > 0 })
+                    @* Radzen rather than a bare <select>: every other chooser in the app is a
+                       RadzenDropDown, and an OS-chrome select sitting beside one reads as a
+                       different application. Disabled options survive the swap — an interpreter
+                       that is not installed has to stay visible and unpickable, because its absence
+                       is the answer to "why is this write-up so plain". *@
+                    @if (InterpreterChoices is { Count: > 0 } choices)
                     {
-                        <select class="interpreter-select" @bind="_chosen" disabled="@_busy"
-                                aria-label="Which interpreter writes the explanation">
-                            @foreach (var option in _interpreters)
-                            {
-                                <option value="@option.Name" disabled="@(!option.Available)">@Label(option)</option>
-                            }
-                        </select>
+                        <RadzenDropDown TValue="string" Data="@choices" @bind-Value="_chosen"
+                                        TextProperty="Text" ValueProperty="Value"
+                                        DisabledProperty="Unavailable"
+                                        Disabled="@_busy" class="interpreter-select"
+                                        aria-label="Which interpreter writes the explanation" />
                     }
                     <RadzenButton Text="@(_busy ? "Writing…" : "Interpret")" Size="ButtonSize.Small"
                                   ButtonStyle="ButtonStyle.Primary" Disabled="@_busy"
@@ -539,6 +542,18 @@
             : "local model";
         return option.Available ? $"{option.Name} ({kind})" : $"{option.Name} — unavailable";
     }
+
+    /// <summary>
+    /// One row per interpreter, shaped the way <see cref="RadzenDropDown{TValue}"/> binds: a value,
+    /// a rendered label and a disabled flag. The flag is the inverse of the DTO's
+    /// <c>Available</c>, and it is a projection rather than a property on the DTO because
+    /// PoMode.Shared holds contracts, not presentation.
+    /// </summary>
+    private sealed record InterpreterChoice(string Value, string Text, bool Unavailable);
+
+    private List<InterpreterChoice>? InterpreterChoices => _interpreters?
+        .Select(option => new InterpreterChoice(option.Name, Label(option), !option.Available))
+        .ToList();
 
     private static string Clock(double seconds) => $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
 

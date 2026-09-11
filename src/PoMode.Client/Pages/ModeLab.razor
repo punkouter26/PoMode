@@ -23,7 +23,7 @@
     }
 
     <!-- Top Studio Toolbar: Title, Transport, and Key/Progression/Style/Purity Selectors -->
-    <div class="studio-top-bar">
+    <div class="studio-top-bar pm-panel">
         <div class="studio-brand">
             <span class="brand-title">🎼 Mode Lab</span>
         </div>
@@ -120,7 +120,7 @@
     @* Hum Along. The progression plays on its own, the microphone records over it, and the take goes
        to the analyzer carrying the chords it was actually sung over — so the analysis reads the
        user's melody against real harmony instead of harmony guessed out of a solo voice. *@
-    <div class="hum-strip @(IsHumBusy ? "busy" : "")" data-hum-state="@_humState">
+    <div class="hum-strip pm-panel @(IsHumBusy ? "busy" : "")" data-hum-state="@_humState">
         <div class="hum-lead">
             <span class="hum-icon">🎤</span>
             <div class="hum-copy">
@@ -227,7 +227,7 @@
     @if (_melody is not null)
     {
         <!-- Mid Ribbon: Scale spelling + Modal Purity + Chords Flow + Pentatonics -->
-        <div class="studio-mid-ribbon">
+        <div class="studio-mid-ribbon pm-panel">
             <div class="scale-spelling-box">
                 <span class="ribbon-label">Scale:</span>
                 <div class="spelling-badges">
@@ -296,7 +296,7 @@
         </div>
 
         <!-- Visual Piano Roll Panel -->
-        <div class="studio-canvas-panel">
+        <div class="studio-canvas-panel pm-panel">
             <div class="canvas-panel-header">
                 <div class="canvas-title-group">
                     <span class="canvas-panel-title">Piano Roll (Flute Melody Lead & Acoustic Piano Chords)</span>

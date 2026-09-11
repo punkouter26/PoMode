@@ -18,43 +18,35 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    min-width: 9rem;
+    /* min-width: 0 rather than 9rem. A flex item's default minimum is its content, and a dropdown's
+       content is its longest option — which is what let this row push past a phone's width. The
+       flex-basis still asks for 9rem when there is room. */
+    min-width: 0;
     flex: 1 1 9rem;
 }
 
 /* The progression names are full phrases, so this one gets room rather than ellipsing every option. */
 .practice-field-wide {
-    min-width: 16rem;
     flex: 2 1 16rem;
 }
 
-.practice-field > span {
-    font-size: 0.78rem;
+.practice-field-label {
+    font-size: var(--pm-text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--pm-fg-muted);
 }
 
-.practice-field select,
-.practice-field input[type="range"] {
+/* The Radzen controls size themselves to the column rather than to their widest option. */
+.practice-field ::deep .rz-dropdown,
+.practice-field ::deep .rz-slider {
     width: 100%;
-    padding: 0.4rem;
-    border-radius: 6px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-surface);
-    color: inherit;
-    font: inherit;
+    max-width: 100%;
+    min-width: 0;
 }
 
-.practice-field input[type="range"] {
-    padding: 0;
-    border: none;
-    background: transparent;
-}
-
-.practice-field select:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+.practice-field ::deep .rz-slider {
+    margin: 0.55rem 0;
 }
 
 /* ---- The take ---- */
@@ -108,7 +100,7 @@
     position: absolute;
     top: 0.35rem;
     right: 0.55rem;
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     letter-spacing: 0.02em;
     color: var(--pm-fg-muted);
     pointer-events: none;
@@ -155,4 +147,35 @@
 .take-error {
     margin: 0.75rem 0 0;
     color: var(--pm-note-outside);
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────────────────────────────────
+   This file had no width breakpoint. Nothing overflowed, but four full-width control rows stacked
+   above a chord row, a plot and three buttons spent more height than a phone has. */
+@media (max-width: 640px) {
+    /* Mode and Tonic are one word and one note name; they share a row. Chords and Tempo keep the
+       full width — one holds a sentence, the other a slider that needs the travel. */
+    .practice-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6rem;
+    }
+
+    .practice-field-wide,
+    .practice-field:last-child {
+        grid-column: 1 / -1;
+    }
+
+    .practice-description {
+        margin-bottom: 0.75rem;
+    }
+
+    .take-plot {
+        height: 110px;
+    }
+
+    /* One tap target per row rather than three squeezed onto one. */
+    .take-actions ::deep .rz-button {
+        flex: 1 1 8rem;
+    }
 }

@@ -85,13 +85,13 @@
 }
 
 .badge-warning {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    background: var(--pm-caution-bg);
+    color: var(--pm-caution);
 }
 
 .badge-success {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    background: var(--pm-ok-bg);
+    color: var(--pm-ok);
 }
 
 .stat-details {
@@ -139,19 +139,24 @@
     flex-wrap: wrap;
 }
 
+/* The interpreter name plus the button is wider than a phone, and this row was the one element on
+   the analysis page that pushed the whole document sideways — measured 407px inside a 390px
+   viewport. It wraps and its parts shrink now; min-width: 0 is the part that actually does the
+   work, because a flex item defaults to min-content and a Radzen dropdown's min-content is its
+   longest option. */
 .interpretation-controls {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
+    min-width: 0;
+    max-width: 100%;
 }
 
-.interpreter-select {
-    font-size: 0.85rem;
-    padding: 0.3rem 0.5rem;
-    border-radius: 6px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-lane-bg);
-    color: var(--pm-fg);
+.interpretation-controls ::deep .interpreter-select {
+    flex: 1 1 12rem;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .interpretation-source {
@@ -165,7 +170,7 @@
 }
 
 .interpretation-tag {
-    font-size: 0.7rem;
+    font-size: var(--pm-text-xs);
     padding: 0.15rem 0.45rem;
     border-radius: 10px;
     background: var(--pm-lane-bg);
@@ -175,15 +180,15 @@
 }
 
 .tag-local {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    background: var(--pm-ok-bg);
+    color: var(--pm-ok);
     border-color: transparent;
 }
 
 /* Amber, matching badge-warning: this one costs money. */
 .tag-cloud {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    background: var(--pm-caution-bg);
+    color: var(--pm-caution);
     border-color: transparent;
 }
 
@@ -203,7 +208,7 @@
 .interpretation-error {
     margin: 0;
     font-size: 0.85rem;
-    color: #f87171;
+    color: var(--pm-danger);
 }
 
 /* ---- Charts ----
@@ -212,9 +217,14 @@
    colour vocabulary for no gain. The swatch/fill colours match AnalysisCanvas and
    AdvancedStatsPanel exactly, so a colour means the same thing everywhere in the app. */
 
+/* align-items: start rather than the default stretch. The three blocks hold a two-bar vote, a
+   four-bar tempo plot and a twelve-row scale chart, so stretching them to a common height left a
+   void under the short one roughly as tall as the tall one — a third of the panel reading as
+   missing content. Each block is now as tall as what it has to say. */
 .charts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    align-items: start;
     gap: 1.25rem;
     border-top: 1px solid var(--pm-border);
     padding-top: 1rem;
@@ -223,6 +233,7 @@
 .chart-block {
     display: flex;
     flex-direction: column;
+    min-width: 0;
     gap: 0.6rem;
 }
 
@@ -278,7 +289,7 @@
 }
 
 .chart-crown {
-    color: #fbbf24;
+    color: var(--pm-caution);
 }
 
 .swatch {
@@ -336,7 +347,7 @@
 }
 
 .summary-label {
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 700;
@@ -383,7 +394,7 @@
 .tempo-scale {
     display: flex;
     justify-content: space-between;
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
     font-variant-numeric: tabular-nums;
 }

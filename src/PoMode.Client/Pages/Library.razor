@@ -46,11 +46,13 @@
             <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
             @* The grid is the view for comparing figures; the wall is the view for finding a song
                you half remember. Both read the same filtered list. *@
-            <div class="library-views" role="tablist" aria-label="Library view">
-                <button class="library-view @(_wall ? "" : "active")" type="button" role="tab"
-                        aria-selected="@(!_wall)" @onclick="@(() => SetViewAsync(false))">Table</button>
-                <button class="library-view @(_wall ? "active" : "")" type="button" role="tab"
-                        aria-selected="@_wall" @onclick="@(() => SetViewAsync(true))">Wall</button>
+            @* A group of pressed-states, not a tablist: these buttons swap the rendering of one
+               list, and there is no tabpanel for a tab relationship to point at. *@
+            <div class="library-views" role="group" aria-label="Library view">
+                <button class="library-view @(_wall ? "" : "active")" type="button"
+                        aria-pressed="@(!_wall)" @onclick="@(() => SetViewAsync(false))">Table</button>
+                <button class="library-view @(_wall ? "active" : "")" type="button"
+                        aria-pressed="@_wall" @onclick="@(() => SetViewAsync(true))">Wall</button>
             </div>
         </div>
         @if (_wall)
@@ -226,26 +228,46 @@
         .Select(e => e.PrimaryMode).Where(m => !string.IsNullOrEmpty(m)).Cast<string>()
         .Distinct().OrderBy(m => m).ToList() ?? [];
 
-    /// <summary>The grid's view: search on file name, exact key/mode match. Empty filters pass all,
-    /// so "songs in the same key" is just picking that key in the dropdown.</summary>
+    /// <summary>
+    /// The grid's view: search on file name, exact key/mode match. Empty filters pass all, so
+    /// "songs in the same key" is just picking that key in the dropdown.
+    /// </summary>
+    /// <remarks>
+    /// Memoised on the four inputs that decide it, because this used to be a plain property: it ran
+    /// a GroupBy, three Wheres and a ToList on every read, the markup reads it twice per render, and
+    /// the search box renders on every keystroke. The list identity matters as much as the cost —
+    /// <see cref="RadzenDataGrid{T}"/> compares its Data by reference to decide whether to rebuild,
+    /// so handing it a freshly allocated list each render forced a full rebuild of a grid whose
+    /// contents had not changed.
+    /// </remarks>
     private List<LibraryEntryDto> Filtered
     {
         get
         {
+            var key = (_entries, _latestOnly, _search, _keyFilter, _modeFilter);
+            if (_filteredCache is not null && _filteredKey == key)
+            {
+                return _filteredCache;
+            }
             IEnumerable<LibraryEntryDto> view = _entries ?? [];
             if (_latestOnly)
             {
                 // Entries arrive newest-first, so the first of each file name is the latest run.
                 view = view.GroupBy(e => e.FileName).Select(g => g.First());
             }
-            return view
+            _filteredCache = view
                 .Where(e => string.IsNullOrWhiteSpace(_search)
                     || e.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase))
                 .Where(e => _keyFilter is null || e.TonicName == _keyFilter)
                 .Where(e => _modeFilter is null || e.PrimaryMode == _modeFilter)
                 .ToList();
+            _filteredKey = key;
+            return _filteredCache;
         }
     }
+
+    private List<LibraryEntryDto>? _filteredCache;
+    private (List<LibraryEntryDto>? Entries, bool LatestOnly, string Search, string? Key, string? Mode) _filteredKey;
 
     /// <summary>
     /// The tonic's place on the colour wheel. Twelve pitch classes over 360 degrees, the same

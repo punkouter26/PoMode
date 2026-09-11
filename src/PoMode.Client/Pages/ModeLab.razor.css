@@ -5,16 +5,16 @@
     gap: 0.5rem 0.75rem;
     margin-bottom: 0.6rem;
     padding: 0.6rem 0.9rem;
-    border: 2px solid #ef4444;
+    border: 2px solid var(--pm-danger-edge);
     border-left-width: 6px;
-    border-radius: 8px;
-    background: rgba(239, 68, 68, 0.12);
+    border-radius: 0.75rem;
+    background: var(--pm-danger-bg);
 }
 
 .better-fit-lead {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #ef4444;
+    color: var(--pm-danger);
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -23,7 +23,7 @@
     font-size: 1.9rem;
     font-weight: 900;
     line-height: 1.1;
-    color: #ef4444;
+    color: var(--pm-danger);
     letter-spacing: -0.01em;
 }
 
@@ -33,17 +33,19 @@
     color: var(--pm-fg-muted);
 }
 
+/* This used to be `height: calc(100vh - 4.2rem)` with `overflow: hidden`, which is a promise the
+   page cannot keep: the contents are a transport bar, a seven-card strip, a ribbon and a piano roll,
+   and on a phone they measured 1259px wide inside a 374px box — 885px of controls clipped away with
+   no scroll to reach them. Height is now whatever the content needs. The piano roll still gets the
+   leftover space (see .studio-canvas-panel), but nothing above it is allowed to be cut off to
+   protect a viewport lock. */
 .modelab-studio-container {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: var(--pm-space-2);
     width: 100%;
     max-width: 100%;
-    height: calc(100vh - 4.2rem);
-    max-height: calc(100vh - 4.2rem);
-    padding: 0.1rem 0.5rem 0.3rem;
     box-sizing: border-box;
-    overflow: hidden;
 }
 
 /* --- Top Studio Bar --- */
@@ -52,11 +54,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 6px;
-    padding: 0.35rem 0.6rem;
-    flex-wrap: nowrap;
+    padding: 0.45rem 0.7rem;
+    /* Wrapping rather than nowrap: eleven controls do not fit one line below about 1500px, and the
+       ones that fell off the end were New Chords, WAV, MIDI and Send-to-analyzer. */
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
     min-height: 42px;
 }
 
@@ -91,7 +93,7 @@
     padding: 0.25rem 0.55rem;
     border-radius: 4px;
     border: 1px solid var(--pm-border);
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.05));
+    background: var(--pm-surface-alt);
     color: var(--pm-fg);
     cursor: pointer;
     text-decoration: none;
@@ -106,50 +108,49 @@
 }
 
 .transport-btn.play {
-    background: rgba(34, 197, 94, 0.18);
-    border-color: #22c55e;
-    color: #4ade80;
+    background: var(--pm-ok-bg);
+    border-color: var(--pm-ok-edge);
+    color: var(--pm-ok);
 }
 
 .transport-btn.play:hover:not(:disabled) {
-    background: #22c55e;
-    color: #000;
+    background: var(--pm-ok-edge);
+    color: #fff;
 }
 
 .transport-btn.pause {
-    background: rgba(234, 179, 8, 0.18);
-    border-color: #eab308;
-    color: #facc15;
+    background: var(--pm-caution-bg);
+    border-color: var(--pm-caution-edge);
+    color: var(--pm-caution);
 }
 
 .transport-btn.stop:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: #ef4444;
+    background: var(--pm-danger-bg);
+    border-color: var(--pm-danger-edge);
 }
 
 .transport-btn.loop.active {
-    background: rgba(56, 189, 248, 0.2);
-    border-color: #38bdf8;
-    color: #38bdf8;
+    background: var(--pm-info-bg);
+    border-color: var(--pm-info-edge);
+    color: var(--pm-info);
 }
 
 .transport-btn.send-analyzer {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25));
-    border-color: #818cf8;
-    color: #c7d2fe;
+    background: var(--pm-violet-bg);
+    border-color: var(--pm-violet-edge);
+    color: var(--pm-violet);
     font-weight: 700;
 }
 
 .transport-btn.send-analyzer:hover:not(:disabled) {
-    background: linear-gradient(135deg, #6366f1, #a855f7);
+    background: var(--pm-violet-edge);
     color: #fff;
-    box-shadow: 0 0 10px rgba(129, 140, 248, 0.4);
 }
 
 .transport-btn:hover:not(:disabled),
 .transport-link:hover {
-    background: var(--pm-accent-soft, rgba(56, 189, 248, 0.15));
-    border-color: var(--pm-accent, #38bdf8);
+    background: var(--pm-accent-soft);
+    border-color: var(--pm-accent);
 }
 
 .studio-selectors {
@@ -171,7 +172,7 @@
 }
 
 .field-label {
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
     color: var(--pm-fg-muted);
     text-transform: uppercase;
@@ -183,7 +184,7 @@
     height: 28px;
     min-width: 46px;
     padding: 0 0.6rem;
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     font-weight: 700;
     letter-spacing: 0.03em;
     border-radius: 6px;
@@ -195,13 +196,13 @@
 }
 
 .match-toggle.on {
-    background: var(--pm-accent-soft, rgba(56, 189, 248, 0.16));
-    border-color: var(--pm-accent, #38bdf8);
-    color: var(--pm-accent, #38bdf8);
+    background: var(--pm-accent-soft);
+    border-color: var(--pm-accent);
+    color: var(--pm-accent);
 }
 
 .match-toggle:hover {
-    border-color: var(--pm-accent, #38bdf8);
+    border-color: var(--pm-accent);
 }
 
 ::deep .compact-dropdown.rz-dropdown {
@@ -238,11 +239,26 @@
     width: 110px !important;
 }
 
-/* --- 7 Relative Modes Color-Themed Strip --- */
+/* --- 7 Relative Modes Color-Themed Strip ---
+   Seven across is the point of the strip on a wide screen: the modes are one scale read seven ways
+   and seeing them side by side is the lesson. On a phone seven columns is 48px each, which clipped
+   both the mode name and its own note spelling, so the strip reflows instead of shrinking. */
 .studio-modes-strip {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0.4rem;
+}
+
+@media (max-width: 1100px) {
+    .studio-modes-strip {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .studio-modes-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .compact-mode-card {
@@ -260,24 +276,24 @@
 }
 
 /* Individual Mode Color Palettes */
-.compact-mode-card.mode-ionian { --mode-color: #f59e0b; }
-.compact-mode-card.mode-dorian { --mode-color: #10b981; }
-.compact-mode-card.mode-phrygian { --mode-color: #ef4444; }
-.compact-mode-card.mode-lydian { --mode-color: #06b6d4; }
-.compact-mode-card.mode-mixolydian { --mode-color: #f97316; }
-.compact-mode-card.mode-aeolian { --mode-color: #6366f1; }
-.compact-mode-card.mode-locrian { --mode-color: #a855f7; }
+.compact-mode-card.mode-ionian { --mode-color: var(--pm-mode-ionian); }
+.compact-mode-card.mode-dorian { --mode-color: var(--pm-mode-dorian); }
+.compact-mode-card.mode-phrygian { --mode-color: var(--pm-mode-phrygian); }
+.compact-mode-card.mode-lydian { --mode-color: var(--pm-mode-lydian); }
+.compact-mode-card.mode-mixolydian { --mode-color: var(--pm-mode-mixolydian); }
+.compact-mode-card.mode-aeolian { --mode-color: var(--pm-mode-aeolian); }
+.compact-mode-card.mode-locrian { --mode-color: var(--pm-mode-locrian); }
 
 .compact-mode-card:hover {
-    border-color: var(--mode-color, #38bdf8);
-    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--mode-color, var(--pm-accent));
+    background: var(--pm-surface-alt);
     transform: translateY(-1px);
 }
 
 .compact-mode-card.selected {
-    border-color: var(--mode-color, #38bdf8);
-    background: rgba(255, 255, 255, 0.06);
-    box-shadow: 0 0 12px rgba(0, 0, 0, 0.3), inset 0 0 0 1px var(--mode-color, #38bdf8);
+    border-color: var(--mode-color, var(--pm-accent));
+    background: var(--pm-accent-soft);
+    box-shadow: var(--pm-shadow), inset 0 0 0 1px var(--mode-color, var(--pm-accent));
 }
 
 .mode-card-top {
@@ -303,20 +319,21 @@
 }
 
 .compact-purity-pill {
-    font-size: 0.58rem;
+    font-size: var(--pm-text-xs);
     font-weight: 800;
-    padding: 0.06rem 0.24rem;
-    background: #22c55e;
-    color: #000;
-    border-radius: 2px;
+    padding: 0.06rem 0.3rem;
+    background: var(--pm-ok-bg);
+    border: 1px solid var(--pm-ok-edge);
+    color: var(--pm-ok);
+    border-radius: 3px;
     white-space: nowrap;
 }
 
 .compact-degree-badge {
-    font-size: 0.6rem;
+    font-size: var(--pm-text-xs);
     font-weight: 700;
     padding: 0.08rem 0.28rem;
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.06));
+    background: var(--pm-surface-alt);
     border: 1px solid var(--mode-color, var(--pm-border));
     border-radius: 3px;
     color: var(--mode-color, var(--pm-fg-muted));
@@ -324,62 +341,58 @@
 }
 
 .compact-scale-notes {
-    font-size: 0.68rem;
-    font-family: var(--pm-font-mono, monospace);
+    font-size: var(--pm-text-xs);
+    font-family: var(--pm-font-mono);
     font-weight: 600;
-    background: rgba(0, 0, 0, 0.25);
+    background: var(--pm-surface-alt);
     padding: 0.15rem 0.3rem;
     border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Wrap rather than clip. This band is the mode's own spelling — a card that shows "C D E F G"
+       and hides "A B" is teaching the wrong scale, which is worse than being two lines tall. */
+    flex-wrap: wrap;
     gap: 0.15rem;
-    white-space: nowrap;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--pm-border);
 }
 
 .note-token {
-    color: #e2e8f0;
+    color: var(--pm-fg);
 }
 
 .note-token.root-token {
-    color: #fff;
     font-weight: 800;
-    background: var(--mode-color, #38bdf8);
-    color: #000;
+    background: var(--mode-color, var(--pm-accent));
+    color: var(--pm-bg);
     padding: 0 0.22rem;
     border-radius: 2px;
 }
 
 .note-token.char-token {
-    color: #fbbf24;
+    color: var(--pm-caution);
     font-weight: 800;
-    text-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
 }
 
 .note-dot {
     color: var(--pm-fg-muted);
-    font-size: 0.6rem;
+    font-size: var(--pm-text-xs);
     opacity: 0.6;
 }
 
 .compact-mode-desc {
-    font-size: 0.65rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.2;
+    line-height: 1.25;
 }
 
 .compact-sample-btn {
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
     padding: 0.18rem 0.3rem;
     border-radius: 3px;
     border: 1px solid var(--mode-color, var(--pm-border));
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.05));
+    background: var(--pm-surface-alt);
     color: var(--pm-fg);
     cursor: pointer;
     text-align: center;
@@ -388,23 +401,22 @@
 }
 
 .compact-sample-btn.playing {
-    background: var(--mode-color, #38bdf8);
-    color: #000;
+    background: var(--mode-color, var(--pm-accent));
+    color: var(--pm-bg);
     font-weight: 800;
-    border-color: var(--mode-color, #38bdf8);
+    border-color: var(--mode-color, var(--pm-accent));
 }
 
 /* --- Mid Studio Ribbon --- */
 .studio-mid-ribbon {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 6px;
-    padding: 0.3rem 0.6rem;
-    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 0.5rem 1rem;
+    padding: 0.4rem 0.7rem;
+    /* Four independent readouts — spelling, purity, chords, pentatonics. Under nowrap the last two
+       left the screen entirely on a phone; wrapped, each keeps its own line when it has to. */
+    flex-wrap: wrap;
     min-height: 34px;
 }
 
@@ -418,38 +430,38 @@
 }
 
 .ribbon-label {
-    font-size: 0.7rem;
+    font-size: var(--pm-text-xs);
     font-weight: 700;
     color: var(--pm-fg-muted);
     text-transform: uppercase;
 }
 
 .purity-measured {
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
     color: var(--pm-fg-muted);
     white-space: nowrap;
 }
 
 .purity-badge {
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     font-weight: 800;
-    font-family: var(--pm-font-mono, monospace);
+    font-family: var(--pm-font-mono);
     padding: 0.1rem 0.4rem;
-    background: rgba(34, 197, 94, 0.18);
-    border: 1px solid #22c55e;
-    color: #4ade80;
+    background: var(--pm-ok-bg);
+    border: 1px solid var(--pm-ok-edge);
+    color: var(--pm-ok);
     border-radius: 3px;
 }
 
 .purity-tag {
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     font-weight: 800;
-    font-family: var(--pm-font-mono, monospace);
+    font-family: var(--pm-font-mono);
     padding: 0.08rem 0.35rem;
-    background: rgba(34, 197, 94, 0.18);
-    border: 1px solid #22c55e;
-    color: #4ade80;
+    background: var(--pm-ok-bg);
+    border: 1px solid var(--pm-ok-edge);
+    color: var(--pm-ok);
     border-radius: 3px;
     white-space: nowrap;
 }
@@ -461,8 +473,8 @@
 }
 
 .compact-note-badge {
-    font-size: 0.72rem;
-    font-family: var(--pm-font-mono, monospace);
+    font-size: var(--pm-text-xs);
+    font-family: var(--pm-font-mono);
     font-weight: 700;
     padding: 0.1rem 0.38rem;
     border-radius: 3px;
@@ -472,27 +484,26 @@
 }
 
 .compact-note-badge.scale-badge {
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid #10b981;
-    color: #34d399;
+    background: var(--pm-ok-bg);
+    border: 1px solid var(--pm-ok-edge);
+    color: var(--pm-ok);
 }
 
 .compact-note-badge.root-badge {
-    background: #0ea5e9;
-    border: 1px solid #38bdf8;
-    color: #000;
+    background: var(--pm-accent);
+    border: 1px solid var(--pm-accent);
+    color: var(--pm-bg);
     font-weight: 800;
 }
 
 .compact-note-badge.char-badge {
-    background: rgba(245, 158, 11, 0.2);
-    border: 1px solid #f59e0b;
-    color: #fbbf24;
-    text-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
+    background: var(--pm-caution-bg);
+    border: 1px solid var(--pm-caution-edge);
+    color: var(--pm-caution);
 }
 
 .badge-sub {
-    font-size: 0.58rem;
+    font-size: var(--pm-text-xs);
     font-weight: 800;
     opacity: 0.9;
 }
@@ -508,22 +519,21 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.12rem 0.45rem;
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.05));
+    background: var(--pm-surface-alt);
     border: 1px solid var(--pm-border);
     border-radius: 3px;
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     transition: all 0.15s ease;
 }
 
 .compact-chord-pill.current {
-    background: rgba(56, 189, 248, 0.25);
-    border-color: #38bdf8;
-    color: #fff;
-    box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+    background: var(--pm-info-bg);
+    border-color: var(--pm-info-edge);
+    color: var(--pm-info);
 }
 
 .compact-chord-pill .ch-bar {
-    font-size: 0.6rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
     font-weight: 600;
 }
@@ -533,11 +543,11 @@
 }
 
 .compact-penta-btn {
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
     padding: 0.15rem 0.45rem;
     border-radius: 3px;
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.05));
+    background: var(--pm-surface-alt);
     border: 1px solid var(--pm-border);
     color: var(--pm-fg);
     cursor: pointer;
@@ -545,57 +555,53 @@
 }
 
 .compact-penta-btn.selected {
-    background: var(--pm-accent, #38bdf8);
-    color: #000;
-    border-color: var(--pm-accent, #38bdf8);
+    background: var(--pm-accent);
+    color: var(--pm-bg);
+    border-color: var(--pm-accent);
 }
 
 /* --- Visual Piano Roll Panel --- */
 .studio-canvas-panel {
-    flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 6px;
-    padding: 0.4rem 0.6rem 0.2rem;
-    overflow: hidden;
+    padding: 0.5rem 0.7rem 0.3rem;
 }
 
 .canvas-panel-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.2rem;
-    gap: 0.5rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 0.3rem;
+    gap: 0.3rem 0.5rem;
 }
 
+/* The sentence explaining what makes this mode itself is the most useful line on the panel, and
+   under `overflow: hidden` in a nowrap row it was measuring zero pixels wide on a phone — present
+   in the DOM, invisible on screen. It wraps now, and the header wraps around it. */
 .canvas-title-group {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    overflow: hidden;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.6rem;
+    min-width: 0;
 }
 
 .canvas-panel-title {
-    font-size: 0.76rem;
+    font-size: var(--pm-text-sm);
     font-weight: 700;
     color: var(--pm-fg);
-    white-space: nowrap;
 }
 
 .canvas-panel-desc {
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .canvas-panel-time {
-    font-size: 0.72rem;
-    font-family: var(--pm-font-mono, monospace);
+    font-size: var(--pm-text-xs);
+    font-family: var(--pm-font-mono);
     color: var(--pm-fg-muted);
     white-space: nowrap;
 }
@@ -608,16 +614,23 @@
     min-height: 0;
 }
 
+/* `flex: 1` here was a height ratchet, not a stretch. A flex item's automatic minimum size is its
+   content, a <canvas>'s content size is its width/height *attributes*, and canvas.js sets those
+   from the element's own clientHeight every resize — so each pass made the box taller than the
+   last. The old fixed-height container hid it behind a max-height; without one the roll grew to
+   612px on a 900px screen. `flex: none` hands authority back to the declared height.
+
+   dvh, not vh: on a phone `100vh` is the height with the browser chrome retracted, so a roll sized
+   against it hangs below the fold until the user scrolls. */
 ::deep .analysis-canvas {
-    height: 100% !important;
-    max-height: calc(100vh - 280px) !important;
-    min-height: 170px !important;
-    flex: 1;
+    flex: none;
+    height: clamp(170px, 34dvh, 340px) !important;
+    min-height: 0;
 }
 
 ::deep .canvas-legend {
     margin: 0.2rem 0 0 !important;
-    font-size: 0.7rem !important;
+    font-size: var(--pm-text-xs) !important;
 }
 
 .modelab-loading {
@@ -641,16 +654,16 @@
     margin: 0.5rem 0;
     padding: 0.55rem 0.8rem;
     border: 1px solid var(--pm-border);
-    border-left: 3px solid #f472b6;
-    border-radius: 6px;
-    background: linear-gradient(90deg, rgba(244, 114, 182, 0.10), transparent 65%);
+    border-left: 3px solid var(--pm-hot-edge);
+    border-radius: 0.75rem;
+    background: linear-gradient(90deg, var(--pm-hot-bg), transparent 65%);
 }
 
 /* Recording is a state the whole page is in, not just this strip — the surrounding controls go
    disabled at the same moment, so the strip says loudly why. */
 .hum-strip.busy {
-    border-left-color: #ef4444;
-    background: linear-gradient(90deg, rgba(239, 68, 68, 0.16), transparent 65%);
+    border-left-color: var(--pm-danger-edge);
+    background: linear-gradient(90deg, var(--pm-danger-bg), transparent 65%);
 }
 
 .hum-lead {
@@ -678,7 +691,7 @@
 }
 
 .hum-sub {
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
 }
 
@@ -698,7 +711,7 @@
     padding: 0.3rem 0.7rem;
     border-radius: 4px;
     border: 1px solid var(--pm-border);
-    background: var(--pm-surface-alt, rgba(255, 255, 255, 0.05));
+    background: var(--pm-surface-alt);
     color: var(--pm-fg);
     cursor: pointer;
     transition: all 0.15s ease;
@@ -710,44 +723,43 @@
 }
 
 .hum-btn.record {
-    background: rgba(244, 114, 182, 0.18);
-    border-color: #f472b6;
-    color: #f9a8d4;
+    background: var(--pm-hot-bg);
+    border-color: var(--pm-hot-edge);
+    color: var(--pm-hot);
 }
 
 .hum-btn.record:hover:not(:disabled) {
-    background: #f472b6;
-    color: #000;
+    background: var(--pm-hot-edge);
+    color: #fff;
 }
 
 .hum-btn.stop {
-    background: rgba(239, 68, 68, 0.22);
-    border-color: #ef4444;
-    color: #fca5a5;
+    background: var(--pm-danger-bg);
+    border-color: var(--pm-danger-edge);
+    color: var(--pm-danger);
     font-variant-numeric: tabular-nums;
 }
 
 .hum-btn.stop:hover:not(:disabled) {
-    background: #ef4444;
+    background: var(--pm-danger-edge);
     color: #fff;
 }
 
 .hum-btn.analyze {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25));
-    border-color: #818cf8;
-    color: #c7d2fe;
+    background: var(--pm-violet-bg);
+    border-color: var(--pm-violet-edge);
+    color: var(--pm-violet);
     font-weight: 700;
 }
 
 .hum-btn.analyze:hover:not(:disabled) {
-    background: linear-gradient(135deg, #6366f1, #a855f7);
+    background: var(--pm-violet-edge);
     color: #fff;
-    box-shadow: 0 0 10px rgba(129, 140, 248, 0.4);
 }
 
 .hum-btn.redo:hover:not(:disabled) {
-    background: var(--pm-accent-soft, rgba(56, 189, 248, 0.15));
-    border-color: var(--pm-accent, #38bdf8);
+    background: var(--pm-accent-soft);
+    border-color: var(--pm-accent);
 }
 
 .hum-countdown,
@@ -762,7 +774,7 @@
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--pm-danger-edge);
     animation: hum-pulse 1.1s ease-in-out infinite;
 }
 
@@ -779,14 +791,14 @@
 }
 
 .hum-btn.review {
-    background: rgba(56, 189, 248, 0.16);
-    border-color: #38bdf8;
-    color: #7dd3fc;
+    background: var(--pm-info-bg);
+    border-color: var(--pm-info-edge);
+    color: var(--pm-info);
 }
 
 .hum-btn.review:hover:not(:disabled) {
-    background: #38bdf8;
-    color: #000;
+    background: var(--pm-info-edge);
+    color: #fff;
 }
 
 /* Glow layer for the mode strip. Positioned over the strip's own box and painted under the cards,
@@ -834,8 +846,130 @@
     position: absolute;
     top: 0.3rem;
     left: 0.55rem;
-    font-size: 0.68rem;
+    font-size: var(--pm-text-xs);
     letter-spacing: 0.02em;
     color: var(--pm-fg-muted);
     pointer-events: none;
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────────────────────────────────
+   This file had no width breakpoint at all, which is how a page built from four nowrap rows ended
+   up hiding most of itself on a phone. Below 720px every row becomes a column and every control
+   that was sized in fixed pixels is allowed to take the width it is given. */
+@media (max-width: 720px) {
+    .studio-top-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .studio-brand {
+        justify-content: center;
+    }
+
+    /* Transport buttons become a keypad rather than a queue that happens to be cut off after the
+       third item. Four columns keeps the eight controls to two rows. */
+    .studio-transport {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.3rem;
+    }
+
+    .transport-btn,
+    .transport-link {
+        min-height: 2rem;
+        padding: 0.2rem 0.3rem;
+        min-width: 0;
+    }
+
+    /* The one control that names what it does at length, and the only destructive-ish step here. */
+    .transport-btn.send-analyzer {
+        grid-column: 1 / -1;
+    }
+
+    /* Two columns rather than five stacked rows: the labels are one word each and the controls are
+       narrow, so a single column spent about 80px of a phone's height on whitespace. The chord
+       progression takes the full width because its names are sentences. */
+    .studio-selectors {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: center;
+        gap: 0.35rem 0.5rem;
+    }
+
+    .selector-field {
+        justify-content: space-between;
+        min-width: 0;
+    }
+
+    .prog-field,
+    .tempo-field {
+        grid-column: 1 / -1;
+    }
+
+    /* The dropdowns carried hard pixel widths tuned for the desktop bar; on a phone they simply
+       take the column. */
+    ::deep .compact-dropdown.key-dd,
+    ::deep .compact-dropdown.prog-dd,
+    ::deep .compact-dropdown.style-dd {
+        width: auto;
+        max-width: none;
+        flex: 1 1 auto;
+        margin-left: 0.5rem;
+    }
+
+    ::deep .compact-slider.rz-slider,
+    ::deep .compact-slider.purity-slider.rz-slider {
+        width: 100% !important;
+        flex: 1;
+    }
+
+    .tempo-field {
+        min-width: 0;
+    }
+
+    .hum-strip {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .hum-actions {
+        justify-content: stretch;
+    }
+
+    .hum-btn {
+        flex: 1 1 auto;
+        min-height: 2rem;
+    }
+
+    .studio-mid-ribbon {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+
+    /* Tighter cards: eight of them stack four rows deep on a phone, so every row of padding is paid
+       for four times. The text inside is untouched — this is spacing, not truncation. */
+    .compact-mode-card {
+        padding: 0.3rem 0.35rem;
+        gap: 0.15rem;
+    }
+
+    .scale-spelling-box,
+    .modal-purity-box,
+    .progression-chords-box,
+    .pentatonics-box {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .compact-chords-list,
+    .spelling-badges {
+        flex-wrap: wrap;
+    }
+
+    /* A phone is showing the roll alongside four rows of mode cards, so it gets the smaller share of
+       a budget that is already oversubscribed. Still tall enough to read an octave and a half. */
+    ::deep .analysis-canvas {
+        height: 180px !important;
+    }
 }

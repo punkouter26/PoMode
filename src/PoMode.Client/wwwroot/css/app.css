@@ -41,6 +41,56 @@
     --pm-space-3: 1rem;
     --pm-space-4: 1.5rem;
 
+    /* Type scale. --pm-text-xs is the floor: 12px is the smallest size this app will render text
+       at, because below it the note letters and badge captions stop being readable on a phone and
+       start being decoration. Anything that wants to be smaller shortens its label instead. */
+    --pm-text-xs: 0.75rem;
+    --pm-text-sm: 0.8125rem;
+    --pm-text-md: 0.875rem;
+
+    /* A second surface level, for a control sitting on top of --pm-surface. Previously every use
+       site wrote `var(--pm-surface-alt, rgba(255,255,255,0.05))` against a token that was never
+       defined, so the fallback always won — and a white veil is invisible on a light ground. */
+    --pm-surface-alt: #ececf1;
+    --pm-accent-soft: rgb(103 80 164 / 0.12);
+    --pm-font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    /* Status palette. Each pair is a foreground and the tinted ground it is meant to sit on, chosen
+       so the pair clears 4.5:1 in this theme — a single hardcoded hex cannot, which is how the
+       Mode Lab ended up with 1.8:1 green-on-white transport buttons. */
+    --pm-ok: #14532d;
+    --pm-ok-bg: rgb(34 197 94 / 0.14);
+    --pm-ok-edge: #16a34a;
+    --pm-danger: #7f1d1d;
+    --pm-danger-bg: rgb(239 68 68 / 0.12);
+    --pm-danger-edge: #dc2626;
+    --pm-caution: #713f12;
+    --pm-caution-bg: rgb(234 179 8 / 0.16);
+    --pm-caution-edge: #ca8a04;
+    --pm-info: #0c4a6e;
+    --pm-info-bg: rgb(14 165 233 / 0.14);
+    --pm-info-edge: #0284c7;
+    --pm-hot: #831843;
+    --pm-hot-bg: rgb(236 72 153 / 0.12);
+    --pm-hot-edge: #db2777;
+    --pm-violet: #4c1d95;
+    --pm-violet-bg: rgb(124 58 237 / 0.12);
+    --pm-violet-edge: #7c3aed;
+
+    /* The seven church modes get one colour each, and it has to change with the theme for the same
+       reason the status palette does: these are used as *text* on the mode cards. */
+    --pm-mode-ionian: #92400e;
+    --pm-mode-dorian: #065f46;
+    --pm-mode-phrygian: #991b1b;
+    --pm-mode-lydian: #155e75;
+    --pm-mode-mixolydian: #9a3412;
+    --pm-mode-aeolian: #3730a3;
+    --pm-mode-locrian: #6b21a8;
+
+    /* ErrorBoundary fallback (shared Po convention). */
+    --po-error-border: #b3261e;
+    --po-error-bg: rgb(179 38 30 / 0.08);
+
     /* Canvas palette. The JS module reads these with getComputedStyle, so the canvas follows
        light/dark exactly like the rest of the UI and no colour is hard-coded in JS. */
     --pm-lane-bg: #fbfbfd;
@@ -85,6 +135,39 @@
         --pm-key-glow: hsl(var(--pm-key-hue) 80% 66% / 0.32);
         --pm-glass-specular: rgb(255 255 255 / 0.14);
         --pm-glass-noise: 0.04;
+
+        --pm-surface-alt: rgb(255 255 255 / 0.07);
+        --pm-accent-soft: rgb(207 188 255 / 0.16);
+
+        --pm-ok: #4ade80;
+        --pm-ok-bg: rgb(34 197 94 / 0.18);
+        --pm-ok-edge: #22c55e;
+        --pm-danger: #fca5a5;
+        --pm-danger-bg: rgb(239 68 68 / 0.18);
+        --pm-danger-edge: #ef4444;
+        --pm-caution: #fde047;
+        --pm-caution-bg: rgb(234 179 8 / 0.18);
+        --pm-caution-edge: #eab308;
+        --pm-info: #7dd3fc;
+        --pm-info-bg: rgb(56 189 248 / 0.18);
+        --pm-info-edge: #38bdf8;
+        --pm-hot: #f9a8d4;
+        --pm-hot-bg: rgb(244 114 182 / 0.16);
+        --pm-hot-edge: #f472b6;
+        --pm-violet: #c7d2fe;
+        --pm-violet-bg: rgb(129 140 248 / 0.18);
+        --pm-violet-edge: #818cf8;
+
+        --pm-mode-ionian: #f59e0b;
+        --pm-mode-dorian: #10b981;
+        --pm-mode-phrygian: #f87171;
+        --pm-mode-lydian: #22d3ee;
+        --pm-mode-mixolydian: #fb923c;
+        --pm-mode-aeolian: #818cf8;
+        --pm-mode-locrian: #c084fc;
+
+        --po-error-border: #f2b8b5;
+        --po-error-bg: rgb(242 184 181 / 0.10);
     }
 }
 
@@ -118,6 +201,39 @@
     --pm-key-glow: hsl(var(--pm-key-hue) 80% 66% / 0.32);
     --pm-glass-specular: rgb(255 255 255 / 0.14);
     --pm-glass-noise: 0.04;
+
+    --pm-surface-alt: rgb(255 255 255 / 0.07);
+    --pm-accent-soft: rgb(207 188 255 / 0.16);
+
+    --pm-ok: #4ade80;
+    --pm-ok-bg: rgb(34 197 94 / 0.18);
+    --pm-ok-edge: #22c55e;
+    --pm-danger: #fca5a5;
+    --pm-danger-bg: rgb(239 68 68 / 0.18);
+    --pm-danger-edge: #ef4444;
+    --pm-caution: #fde047;
+    --pm-caution-bg: rgb(234 179 8 / 0.18);
+    --pm-caution-edge: #eab308;
+    --pm-info: #7dd3fc;
+    --pm-info-bg: rgb(56 189 248 / 0.18);
+    --pm-info-edge: #38bdf8;
+    --pm-hot: #f9a8d4;
+    --pm-hot-bg: rgb(244 114 182 / 0.16);
+    --pm-hot-edge: #f472b6;
+    --pm-violet: #c7d2fe;
+    --pm-violet-bg: rgb(129 140 248 / 0.18);
+    --pm-violet-edge: #818cf8;
+
+    --pm-mode-ionian: #f59e0b;
+    --pm-mode-dorian: #10b981;
+    --pm-mode-phrygian: #f87171;
+    --pm-mode-lydian: #22d3ee;
+    --pm-mode-mixolydian: #fb923c;
+    --pm-mode-aeolian: #818cf8;
+    --pm-mode-locrian: #c084fc;
+
+    --po-error-border: #f2b8b5;
+    --po-error-bg: rgb(242 184 181 / 0.10);
 }
 
 /* Typography: a gently fluid base size, calm heading rhythm, and lining tabular figures so
@@ -141,7 +257,14 @@ h1, h2, h3, h4, h5, h6,
 }
 
 code, pre, kbd {
-    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-family: var(--pm-font-mono);
+}
+
+/* Nothing replaceable is allowed to be wider than the column it sits in. Canvases are the ones that
+   matter here: every visualization in the app is a <canvas> sized in JS from its container, and one
+   that measures itself a frame early used to be the widest box on a phone. */
+img, svg, video, canvas {
+    max-width: 100%;
 }
 
 /* Accessible focus: one visible ring for every interactive element, keyboard-only. */
@@ -196,9 +319,30 @@ code, pre, kbd {
 }
 
 @supports not (backdrop-filter: blur(1px)) {
-    .rz-card {
+    .rz-card,
+    .pm-panel {
         background: var(--pm-surface);
     }
+}
+
+/* A surface that is not a Radzen card but has to read as one. The Mode Lab is built from strips
+   rather than cards — a transport bar, a mode strip, a ribbon — and before this they were flat
+   6px-radius boxes sitting inside an app whose every other surface was a 12px glass card, which is
+   why that page looked like a different product. Same ground, same border, same corner; no
+   specular or noise pseudo-layer, because these strips stack four deep and the cost is per-element. */
+.pm-panel {
+    background: var(--pm-surface-glass);
+    -webkit-backdrop-filter: blur(var(--pm-glass-blur)) saturate(var(--pm-glass-sat));
+    backdrop-filter: blur(var(--pm-glass-blur)) saturate(var(--pm-glass-sat));
+    border: 1px solid var(--pm-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--pm-shadow);
+}
+
+:root[data-fx="off"] .pm-panel {
+    background: var(--pm-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 /* Effect level. 'subtle' keeps the glass but stops paying for a wide blur and a noise pass on every

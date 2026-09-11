@@ -27,40 +27,37 @@
     <RadzenText class="practice-description"
                 Text="Pick a set of chords, sing whatever melody you like over them, and the analyzer will tell you which mode your melody turned out to be in. Nothing is scored — the reading is the point." />
 
+    @* Radzen controls rather than native <select>/<input type=range>. The Mode Lab and the Analyze
+       page next door are built from RadzenDropDown and RadzenSlider, and an OS-chrome dropdown beside
+       them reads as a different application — which is the whole of the complaint about this app
+       having two visual vocabularies. *@
     <div class="practice-controls">
-        <label class="practice-field">
-            <span>Mode</span>
-            <select @bind="_mode" @bind:after="OnModeChangedAsync" disabled="@Busy" aria-label="Mode">
-                @foreach (var mode in ScaleModes.All)
-                {
-                    <option value="@mode">@mode</option>
-                }
-            </select>
-        </label>
-        <label class="practice-field">
-            <span>Tonic</span>
-            <select @bind="_tonic" @bind:after="ReloadAsync" disabled="@Busy" aria-label="Tonic">
-                @for (var pitchClass = 0; pitchClass < 12; pitchClass++)
-                {
-                    var value = pitchClass;
-                    <option value="@value">@ScaleModes.NoteName(value)</option>
-                }
-            </select>
-        </label>
-        <label class="practice-field practice-field-wide">
-            <span>Chords</span>
-            <select @bind="_progressionId" @bind:after="ReloadAsync" disabled="@Busy" aria-label="Chord progression">
-                @foreach (var progression in _progressions)
-                {
-                    <option value="@progression.Id">@progression.Name</option>
-                }
-            </select>
-        </label>
-        <label class="practice-field">
-            <span>Tempo @(_bpm.ToString("0")) BPM</span>
-            <input type="range" min="50" max="140" step="2" @bind="_bpm" @bind:event="oninput"
-                   @bind:after="ReloadAsync" disabled="@Busy" aria-label="Tempo" />
-        </label>
+        <div class="practice-field">
+            <span class="practice-field-label" id="practice-mode-label">Mode</span>
+            <RadzenDropDown TValue="ScaleMode" Data="@ScaleModes.All" Value="@_mode"
+                            Change="@(async value => { _mode = (ScaleMode)value; await OnModeChangedAsync(); })"
+                            Disabled="@Busy" aria-labelledby="practice-mode-label" />
+        </div>
+        <div class="practice-field">
+            <span class="practice-field-label" id="practice-tonic-label">Tonic</span>
+            <RadzenDropDown TValue="int" Data="@TonicOptions" TextProperty="Name" ValueProperty="PitchClass"
+                            Value="@_tonic"
+                            Change="@(async value => { _tonic = (int)value; await ReloadAsync(); })"
+                            Disabled="@Busy" aria-labelledby="practice-tonic-label" />
+        </div>
+        <div class="practice-field practice-field-wide">
+            <span class="practice-field-label" id="practice-chords-label">Chords</span>
+            <RadzenDropDown TValue="string" Data="@_progressions" TextProperty="Name" ValueProperty="Id"
+                            Value="@_progressionId"
+                            Change="@(async value => { _progressionId = (string)value; await ReloadAsync(); })"
+                            Disabled="@Busy" aria-labelledby="practice-chords-label" />
+        </div>
+        <div class="practice-field">
+            <span class="practice-field-label" id="practice-tempo-label">Tempo @(_bpm.ToString("0")) BPM</span>
+            <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="140" Step="2"
+                          Change="@(_ => ReloadAsync())" Disabled="@Busy"
+                          aria-labelledby="practice-tempo-label" />
+        </div>
     </div>
 </RadzenCard>
 
@@ -159,6 +156,13 @@ else if (_loadError is { } loadError)
     private DotNetObjectReference<Practice>? _selfRef;
     private ElementReference _plotCanvas;
     private bool _plotOn;
+
+    /// <summary>The twelve tonics as a bindable list. A dropdown needs rows with a label and a
+    /// value; the pitch class on its own is a number the control cannot name.</summary>
+    private sealed record TonicOption(int PitchClass, string Name);
+
+    private static readonly IReadOnlyList<TonicOption> TonicOptions =
+        [.. Enumerable.Range(0, 12).Select(pc => new TonicOption(pc, ScaleModes.NoteName(pc)))];
 
     private List<ChordProgressionDefinition> _progressions = [];
     private GeneratedMelodyDto? _melody;

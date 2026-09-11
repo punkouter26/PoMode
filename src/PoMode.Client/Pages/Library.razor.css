@@ -44,6 +44,75 @@
     margin-top: 0.75rem;
 }
 
+/* Radzen switches the grid to a fixed table layout as soon as any column declares a Width, and the
+   widths declared here total 680px. On a phone the card is ~364px wide, so the deficit lands on the
+   one auto-sized column — the song name — which measured a clientWidth of exactly 0: the single
+   most important field on the row, rendered but invisible, with the table still overflowing to the
+   right. Below the breakpoint the grid stops being a table and each row becomes a card.
+
+   The cells do not need "Song:" / "Key:" labels the way a generic responsive table would, because
+   every one of them already says what it is: a file name, a date, "E Dorian", "99 BPM". */
+@media (max-width: 640px) {
+    .library-grid ::deep .rz-grid-table,
+    .library-grid ::deep .rz-grid-table tbody,
+    .library-grid ::deep .rz-grid-table tr,
+    .library-grid ::deep .rz-grid-table td {
+        display: block;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+
+    /* The colgroup is what carries the pixel widths, and the header is meaningless above a stack. */
+    .library-grid ::deep .rz-grid-table colgroup,
+    .library-grid ::deep .rz-grid-table thead {
+        display: none;
+    }
+
+    .library-grid ::deep .rz-grid-table tr {
+        border: 1px solid var(--pm-border);
+        border-radius: 0.5rem;
+        margin-bottom: var(--pm-space-2);
+        padding: 0.5rem 0.65rem;
+        background: var(--pm-surface);
+    }
+
+    .library-grid ::deep .rz-grid-table td {
+        border: 0 !important;
+        padding: 0.1rem 0 !important;
+    }
+
+    /* Radzen truncates cell text with an ellipsis to protect the fixed layout; with no fixed layout
+       left to protect, truncation is just lost information. */
+    .library-grid ::deep .rz-grid-table td,
+    .library-grid ::deep .rz-cell-data {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
+
+    /* Name on its own line and leading; the middle facts share a wrapped line under it; the actions
+       get their own row at the bottom. */
+    .library-grid ::deep .rz-grid-table td:first-child {
+        font-weight: 600;
+        margin-bottom: 0.15rem;
+    }
+
+    .library-grid ::deep .rz-grid-table td:not(:first-child):not(:last-child) {
+        display: inline-block;
+        margin-right: 0.8rem;
+        color: var(--pm-fg-muted);
+        font-size: var(--pm-text-sm);
+    }
+
+    .library-grid ::deep .rz-grid-table td:last-child {
+        margin-top: 0.4rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+}
+
 .library-key-missing {
     color: var(--pm-fg-muted);
     font-style: italic;
@@ -182,7 +251,7 @@
     border-radius: 999px;
     background: hsl(var(--pm-key-hue) 60% 55% / 0.15);
     color: var(--pm-accent);
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
 }
 
@@ -193,10 +262,10 @@
     margin-left: 0.35rem;
     padding: 0.05rem 0.35rem;
     border-radius: 999px;
-    border: 1px solid #f472b6;
-    background: rgba(244, 114, 182, 0.15);
-    color: #f9a8d4;
-    font-size: 0.68rem;
+    border: 1px solid var(--pm-hot-edge);
+    background: var(--pm-hot-bg);
+    color: var(--pm-hot);
+    font-size: var(--pm-text-xs);
     font-weight: 700;
     white-space: nowrap;
     cursor: help;
@@ -311,6 +380,6 @@
 
 .tile-tempo,
 .tile-origin {
-    font-size: 0.72rem;
+    font-size: var(--pm-text-xs);
     color: var(--pm-fg-muted);
 }

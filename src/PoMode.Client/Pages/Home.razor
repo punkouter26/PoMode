@@ -28,29 +28,36 @@
                           Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
             @if (_executorStages is not null)
             {
-                @* One radio group per pipeline stage. "Auto" keeps the server's ranked default; a
-                   pick rides along on the upload URL and the planner honours it when available. *@
+                @* One chooser per pipeline stage. "Auto" keeps the server's ranked default; a pick
+                   rides along on the upload URL and the planner honours it when available.
+
+                   A dropdown rather than the radio list this used to be. Four stacked vertical
+                   radio groups measured 488px on a phone — more than half the height of an intake
+                   page whose primary action is "drop a file here", for a setting most uploads never
+                   touch. Four dropdowns say the same thing in a quarter of the space, and the
+                   current pick stays visible, which is the one thing a collapsed section would
+                   have cost. *@
                 <div class="executor-pickers" role="group" aria-label="Analysis models per stage">
                     @foreach (var (stageName, choices) in _executorStages)
                     {
                         <div class="executor-picker">
-                            <span class="executor-picker-label">@StageLabel(stageName)</span>
+                            <span class="executor-picker-label" id="@($"stage-{stageName}")">@StageLabel(stageName)</span>
                             @if (choices.Count <= 2)
                             {
-                                @* One real option: nothing to pick, so say it plainly — disabled
-                                   radios read as "broken", not as "no choice needed". *@
+                                @* One real option: nothing to pick, so say it plainly — a disabled
+                                   control reads as "broken", not as "no choice needed". *@
                                 <span class="executor-picker-single">
                                     @(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")
                                 </span>
                             }
                             else
                             {
-                                <RadzenRadioButtonList TValue="string" Data="@choices"
-                                                       TextProperty="Label" ValueProperty="Value"
-                                                       Value="@ExecutorChoiceOf(stageName)"
-                                                       Change="@(value => OnExecutorPicked(stageName, value))"
-                                                       Orientation="Orientation.Vertical"
-                                                       class="executor-radios" />
+                                <RadzenDropDown TValue="string" Data="@choices"
+                                                TextProperty="Label" ValueProperty="Value"
+                                                Value="@ExecutorChoiceOf(stageName)"
+                                                Change="@(value => OnExecutorPicked(stageName, value as string))"
+                                                class="executor-select"
+                                                aria-labelledby="@($"stage-{stageName}")" />
                             }
                         </div>
                     }
@@ -383,9 +390,13 @@ else if (ViewState.IsAdvanced)
     {
         // "Auto" stays unnamed on purpose: what the server actually picks can depend on this
         // browser's capability, so naming one executor here could advertise the wrong one.
+        // Just "Auto" in the list. "Auto (server picks best)" was written for a radio label with a
+        // whole row to itself; in a dropdown a quarter of a phone wide it ellipsed to "Auto (ser…",
+        // which is a worse label than the single word it started as. The parenthetical still shows
+        // on the stages that have nothing to pick, where there is room for it.
         var choices = new List<ExecutorChoice>(stage.Executors.Count + 1)
         {
-            new("", "Auto (server picks best)"),
+            new("", "Auto"),
         };
         foreach (var option in stage.Executors)
         {

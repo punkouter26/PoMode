@@ -45,7 +45,7 @@
 }
 
 .basic-badge-label {
-    font-size: 0.7rem;
+    font-size: var(--pm-text-xs);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--pm-fg-muted);
@@ -151,7 +151,7 @@
     }
 
     .basic-badge-label {
-        font-size: 0.6rem;
+        font-size: var(--pm-text-xs);
         line-height: 1;
     }
 
@@ -161,7 +161,7 @@
     }
 
     .basic-badge-sub {
-        font-size: 0.62rem;
+        font-size: var(--pm-text-xs);
         line-height: 1;
     }
 
@@ -174,7 +174,7 @@
         flex: 1;
         justify-content: center;
         padding: 0.2rem 0.3rem;
-        font-size: 0.72rem;
+        font-size: var(--pm-text-xs);
         text-align: center;
     }
 
@@ -188,7 +188,7 @@
 
     .basic-canvas-section ::deep .canvas-legend {
         margin-top: 0.15rem;
-        font-size: 0.68rem;
+        font-size: var(--pm-text-xs);
         gap: 0.2rem;
         justify-content: center;
     }
@@ -229,7 +229,7 @@
 
     .basic-player-section ::deep .rz-button {
         padding: 0.15rem 0.3rem !important;
-        font-size: 0.7rem !important;
+        font-size: var(--pm-text-xs) !important;
         min-height: 25px !important;
         height: 25px !important;
         width: 100%;
@@ -243,7 +243,7 @@
     }
 
     .basic-player-section ::deep .mixer-note {
-        font-size: 0.68rem;
+        font-size: var(--pm-text-xs);
         margin-top: 0.1rem;
         text-align: center;
     }
