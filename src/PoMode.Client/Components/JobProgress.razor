@@ -1,5 +1,6 @@
 @using PoMode.Shared.Analysis
-@implements IDisposable
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <RadzenCard class="job-progress">
     @* Once complete, the checklist folds to one calm line; the toggle brings the detail back. *@
@@ -28,6 +29,12 @@
         }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
+    @* An illustration of the stage in progress, not a preview of its result — nothing of the
+       song exists to draw yet while a stage is still running, which is why the checklist below
+       keeps carrying every actual fact. Hidden entirely when the shader declines to start. *@
+    <div class="kiln-wrap @(_kilnOn ? "" : "hidden")">
+        <canvas class="kiln" @ref="_kilnCanvas" aria-hidden="true" data-testid="job-kiln"></canvas>
+    </div>
     @if (CurrentStepText is { } step)
     {
         <div class="current-step-wrap">
@@ -88,9 +95,87 @@
     [Parameter] public EventCallback OnCancel { get; set; }
 
     private Timer? _elapsedTimer;
+    private IJSObjectReference? _kiln;
+    private IJSObjectReference? _sfx;
+    private ElementReference _kilnCanvas;
+    private bool _kilnOn;
+
+    /// <summary>How many stages had finished the last time this component looked, so a stage
+    /// completing sounds once. Starts at -1 rather than 0 so a job resumed from disk with stages
+    /// already behind it does not fire a burst of earcons for work the user never watched.</summary>
+    private int _soundedStages = -1;
 
     /// <summary>Completed jobs fold to one line by default; the toggle reopens the checklist.</summary>
     private bool _completedCollapsed = true;
+
+    /// <summary>The shader's name for the running stage. AwaitingClient is pitch tracking parked in
+    /// the browser, so it draws as pitch tracking — which is what it is.</summary>
+    private string StageKey => Status.Stage switch
+    {
+        JobStage.Separating => "separating",
+        JobStage.PitchTracking or JobStage.AwaitingClient => "pitch",
+        JobStage.ChordDetecting => "chords",
+        JobStage.ModalAnalysis => "modal",
+        _ => "idle",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                _kiln = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-kiln.js");
+                // False without WebGL2, or when the user has asked for less than full effects.
+                _kilnOn = await _kiln.InvokeAsync<bool>("init", _kilnCanvas);
+                if (_kilnOn)
+                {
+                    StateHasChanged();
+                }
+            }
+            if (_kilnOn && _kiln is not null)
+            {
+                await _kiln.InvokeVoidAsync("setStage", _kilnCanvas, StageKey, Status.Progress, IsRunning);
+            }
+            await SoundStageChangeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Torn down mid-update.
+        }
+    }
+
+    /// <summary>
+    /// One quiet earcon per stage that finishes, climbing the detected mode's degrees so a four-stage
+    /// run resolves upward. Fires only on a genuine increase, because this component re-renders once
+    /// a second to tick the elapsed timer and a sound on every render would be unbearable.
+    /// </summary>
+    private async Task SoundStageChangeAsync()
+    {
+        var completed = Status.CompletedStages?.Count ?? 0;
+        if (_soundedStages < 0)
+        {
+            _soundedStages = completed;
+            return;
+        }
+        if (completed <= _soundedStages)
+        {
+            return;
+        }
+        var previous = _soundedStages;
+        _soundedStages = completed;
+        // The final stage's completion is the job's completion, and Home plays the key's fanfare for
+        // that; stepping over it here would land two sounds on top of each other.
+        if (Status.Stage is JobStage.Complete)
+        {
+            return;
+        }
+        _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
+        for (var index = previous; index < completed; index++)
+        {
+            await _sfx.InvokeVoidAsync("stageStep", index);
+        }
+    }
 
     private bool IsRunning => !Status.Stage.IsTerminal();
 
@@ -120,7 +205,26 @@
             }
         }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
-    public void Dispose() => _elapsedTimer?.Dispose();
+    public async ValueTask DisposeAsync()
+    {
+        _elapsedTimer?.Dispose();
+        try
+        {
+            if (_kiln is not null)
+            {
+                await _kiln.InvokeVoidAsync("dispose", _kilnCanvas);
+                await _kiln.DisposeAsync();
+            }
+            if (_sfx is not null)
+            {
+                await _sfx.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone during teardown.
+        }
+    }
 
     private static string FriendlyName(string stage) => stage switch
     {

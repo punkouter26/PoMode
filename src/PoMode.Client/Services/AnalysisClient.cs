@@ -59,6 +59,62 @@ public sealed class AnalysisClient(HttpClient http)
             : null;
     }
 
+    /// <summary>
+    /// Asks a follow-up about the same measurements. <paramref name="history"/> is the conversation
+    /// so far — the server keeps none, so the client is what makes it a conversation at all.
+    ///
+    /// <para>Returns null when the server refused (no analysis yet, or the per-minute limit on model
+    /// calls was reached), so a caller degrades to a message rather than an exception.</para>
+    /// </summary>
+    public async Task<SongAnswerDto?> AskAboutSongAsync(
+        string jobId, string question, IReadOnlyList<InterpretationTurn> history, string? interpreter = null)
+    {
+        var response = await http.PostAsJsonAsync(
+            $"api/analysis/{jobId}/interpretation/ask",
+            new SongQuestionRequest(question, history, interpreter));
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<SongAnswerDto>()
+            : null;
+    }
+
+    /// <summary>
+    /// What MusicBrainz and AcousticBrainz say about this job's recording, beside what was measured.
+    /// <paramref name="query"/> overrides the guess made from the file name.
+    /// </summary>
+    public async Task<ReferenceLookupDto?> GetReferenceAsync(string jobId, string? query = null)
+    {
+        var url = $"api/analysis/{jobId}/reference"
+            + (string.IsNullOrWhiteSpace(query) ? "" : $"?query={Uri.EscapeDataString(query)}");
+        var response = await http.GetAsync(url);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<ReferenceLookupDto>()
+            : null;
+    }
+
+    /// <summary>One ear-training phrase. The same six values always return the same phrase.</summary>
+    public Task<ModeExerciseDto?> GetExerciseAsync(
+        ModeExerciseKind kind, ScaleMode mode, int tonicPitchClass, double bpm, int seed, int octave)
+        => http.GetFromJsonAsync<ModeExerciseDto>(
+            $"api/practice/exercise?kind={kind}&mode={mode}"
+            + $"&tonicPitchClass={tonicPitchClass}"
+            + $"&bpm={bpm.ToString(CultureInfo.InvariantCulture)}"
+            + $"&seed={seed}&octave={octave}");
+
+    /// <summary>
+    /// Scores a sung attempt. The exercise is identified by the values that regenerate it rather than
+    /// by echoing its notes back, so the grading always runs against the phrase the server issued.
+    /// </summary>
+    public async Task<ExerciseScoreDto?> GradeAttemptAsync(
+        ModeExerciseDto exercise, IReadOnlyList<NoteEvent> sungNotes)
+    {
+        var response = await http.PostAsJsonAsync("api/practice/attempt", new ExerciseAttemptRequest(
+            exercise.Kind, exercise.Mode, exercise.TonicPitchClass,
+            exercise.Bpm, exercise.Seed, exercise.Octave, sungNotes));
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<ExerciseScoreDto>()
+            : null;
+    }
+
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 

@@ -5,6 +5,11 @@
 
 let audioCtx = null;
 let masterGain = null;
+/// Analyser hung off the master bus so the Mode Lab's decorative layers can react to what is
+/// actually sounding rather than to a timer. Created with the graph, tapped only when something
+/// asks — an unread analyser costs a copy the audio thread was making anyway.
+let analyser = null;
+let levelData = null;
 let isPlaying = false;
 let isLooping = true;
 let loopDuration = 0;
@@ -50,7 +55,13 @@ function ensureContext() {
         audioCtx = new Ctor();
         masterGain = audioCtx.createGain();
         masterGain.gain.value = 1.0;
-        masterGain.connect(audioCtx.destination);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        levelData = new Uint8Array(analyser.fftSize);
+        // In series, not a side branch: the analyser passes audio through untouched, and putting it
+        // on the path means it sees exactly what reaches the speakers.
+        masterGain.connect(analyser);
+        analyser.connect(audioCtx.destination);
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => { });
@@ -75,6 +86,21 @@ export function getSharedContext() {
 /// playing and there is therefore no downbeat to align to.
 export function getPlaybackStartTime() {
     return isPlaying && audioCtx ? playbackStartTime : null;
+}
+
+/// 0..1 RMS of what the player is currently sounding, or 0 when it is silent. The Mode Lab's mode
+/// chips breathe on this, the same way fx-background.js breathes on the mixer's own master level.
+export function playbackLevel() {
+    if (!analyser || !levelData || !isPlaying) {
+        return 0;
+    }
+    analyser.getByteTimeDomainData(levelData);
+    let sum = 0;
+    for (let i = 0; i < levelData.length; i++) {
+        const v = (levelData[i] - 128) / 128;
+        sum += v * v;
+    }
+    return Math.sqrt(sum / levelData.length);
 }
 
 /// Concert Flute Synthesizer: simulates a wooden/silver concert flute

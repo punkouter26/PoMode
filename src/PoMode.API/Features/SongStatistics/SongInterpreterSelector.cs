@@ -108,6 +108,65 @@ public sealed class SongInterpreterSelector(
     }
 
     /// <summary>
+    /// Answers a follow-up question, falling through on failure exactly as
+    /// <see cref="InterpretAsync"/> does.
+    ///
+    /// <para>The fall-through matters more for a question than for a summary. A summary is requested
+    /// once and a failure can be retried; a question arrives mid-conversation, and an error toast
+    /// where an answer was expected reads as the app breaking rather than as a model being
+    /// unavailable. The template always answers — with a refusal when it must — so this path always
+    /// produces something.</para>
+    /// </summary>
+    public async Task<SongAnswerDto> AnswerAsync(
+        SongStats stats,
+        string question,
+        IReadOnlyList<InterpretationTurn>? history,
+        string? requested,
+        CancellationToken ct)
+    {
+        foreach (var interpreter in Candidates(requested))
+        {
+            if (!await SafeIsAvailableAsync(interpreter, ct))
+            {
+                continue;
+            }
+
+            try
+            {
+                var raw = await interpreter.AnswerAsync(stats, history, question, ct);
+                var (answer, grounded) = QuestionPrompt.Split(raw);
+                if (answer.Length == 0)
+                {
+                    // An empty answer is a failure that did not throw. Treating it as success would
+                    // show the reader a blank bubble and end the conversation there.
+                    throw new InvalidOperationException(
+                        $"{interpreter.Name} returned an empty answer.");
+                }
+
+                return new SongAnswerDto(
+                    Question: question,
+                    Answer: answer,
+                    Interpreter: interpreter.Name,
+                    Tier: interpreter.Tier,
+                    UsedLlm: !interpreter.IsClassicFallback,
+                    Grounded: grounded);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "Interpreter {Interpreter} could not answer; falling through to the next one.",
+                    interpreter.Name);
+            }
+        }
+
+        throw new InvalidOperationException("No song interpreter was able to answer.");
+    }
+
+    /// <summary>
     /// The try order: the named interpreter first if it exists, then everything else in rank order.
     /// Naming one is how a caller reaches an interpreter that does not rank first.
     /// </summary>

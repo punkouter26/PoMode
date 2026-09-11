@@ -61,4 +61,26 @@ public static class ModalResultExtensions
     /// mode was named. Pure lookup over <see cref="ScaleModes"/>; both views render it.</summary>
     public static string[]? PrimaryScaleNoteNames(this ModalResult result)
         => result.PrimaryMode is { } mode ? ScaleModes.NoteNames(result.TonicPitchClass, mode) : null;
+
+    /// <summary>
+    /// The primary mode's scale as MIDI pitches, tonic first, in the octave starting at
+    /// <paramref name="baseMidi"/> — or null when no mode was named.
+    /// </summary>
+    /// <remarks>
+    /// Feeds the client's synthesized interface sounds, which are voiced in the song's own mode so a
+    /// click in a Phrygian song is a Phrygian click. It exists here rather than in the browser for
+    /// the same reason note colours do: deriving a scale is a musical decision, and the JS modules
+    /// are handed numbers to sound, never a mode to interpret. Pure lookup, no I/O, no state.
+    /// </remarks>
+    public static int[]? EarconPitches(this ModalResult result, int baseMidi = 60)
+    {
+        if (result.PrimaryMode is not { } mode)
+        {
+            return null;
+        }
+        // The tonic is placed at or above baseMidi so the set never descends below the octave the
+        // caller asked for, whatever pitch class the key turned out to be.
+        var tonic = baseMidi + (((result.TonicPitchClass - baseMidi) % 12) + 12) % 12;
+        return [.. ScaleModes.Intervals(mode).Select(interval => tonic + interval)];
+    }
 }

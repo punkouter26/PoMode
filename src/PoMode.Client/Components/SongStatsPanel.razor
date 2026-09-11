@@ -340,6 +340,53 @@
                 </p>
             }
         </div>
+
+        @* ---- Follow-up questions ----
+           Grounded in the same measurements the summary is written from, and nowhere else: the
+           interpreter is never given the audio, the title or the artist, so it cannot report what it
+           was not told. An answer it could not find in the data is labelled as such rather than
+           hidden, because a writer declining to speculate is behaving correctly. *@
+        <div class="ask">
+            <div class="ask-head">
+                <span class="stat-title">Ask about this song</span>
+            </div>
+
+            @foreach (var turn in _conversation)
+            {
+                <div class="ask-turn">
+                    <p class="ask-question">@turn.Question</p>
+                    <p class="ask-answer @(_ungrounded.Contains(turn.Question) ? "ungrounded" : "")">
+                        @turn.Answer
+                    </p>
+                </div>
+            }
+
+            @if (_conversation.Count == 0)
+            {
+                <div class="ask-starters">
+                    @foreach (var starter in Starters)
+                    {
+                        <button type="button" class="ask-starter" disabled="@_asking"
+                                @onclick="@(() => AskAsync(starter))">@starter</button>
+                    }
+                </div>
+            }
+
+            <div class="ask-row">
+                <input class="ask-input" type="text" placeholder="Why this mode and not its relative minor?"
+                       @bind="_question" @bind:event="oninput" @onkeydown="OnAskKeyDown"
+                       disabled="@_asking" aria-label="Ask a question about this song" />
+                <RadzenButton Text="@(_asking ? "Thinking…" : "Ask")" Size="ButtonSize.Small"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Disabled="@(_asking || string.IsNullOrWhiteSpace(_question))"
+                              Click="@(() => AskAsync(_question!))" id="ask-send" />
+            </div>
+
+            @if (_askError is { } askError)
+            {
+                <p class="interpretation-error">@askError</p>
+            }
+        </div>
     </RadzenCard>
 }
 
@@ -370,6 +417,12 @@
         _stats = null;
         _interpretation = null;
         _error = null;
+        // A different song is a different conversation; carrying the transcript over would put
+        // answers about one recording under another.
+        _conversation.Clear();
+        _ungrounded.Clear();
+        _question = null;
+        _askError = null;
 
         _stats = await Client.GetStatsAsync(JobId);
 
@@ -402,6 +455,80 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// The conversation, held here and nowhere else. The server keeps no transcript — the whole
+    /// answer is derivable from artifacts that already exist, and a stored one would be the only part
+    /// of this feature able to go stale — so the client is what makes it a conversation at all.
+    /// </summary>
+    private readonly List<InterpretationTurn> _conversation = [];
+
+    /// <summary>Questions the data could not answer, so those turns can be marked in the transcript.
+    /// Keyed by question text, which is unique enough for a handful of turns.</summary>
+    private readonly HashSet<string> _ungrounded = [];
+
+    private string? _question;
+    private string? _askError;
+    private bool _asking;
+
+    /// <summary>
+    /// Openers, offered only before the first question. Each one is answerable from the measurements
+    /// on purpose — an empty text box beside a wall of statistics invites questions about lyrics and
+    /// artists, which is the one thing this interpreter is built never to answer.
+    /// </summary>
+    private static readonly string[] Starters =
+    [
+        "Why this mode and not its relative minor?",
+        "What makes this hard to sing?",
+        "How does the melody sit against the chords?",
+    ];
+
+    private async Task AskAsync(string question)
+    {
+        var asked = question.Trim();
+        if (_asking || asked.Length == 0)
+        {
+            return;
+        }
+
+        _asking = true;
+        _askError = null;
+        _question = null;
+        try
+        {
+            // The history goes with the question because the server holds none; it is trimmed there,
+            // so a long conversation costs the prompt rather than the measurements.
+            var answer = await Client.AskAboutSongAsync(JobId, asked, _conversation, _chosen);
+            if (answer is null)
+            {
+                _askError = "No answer came back. If you have asked a lot of questions in the last "
+                    + "minute, wait a moment and try again.";
+                return;
+            }
+
+            _conversation.Add(new InterpretationTurn(asked, answer.Answer));
+            if (!answer.Grounded)
+            {
+                _ungrounded.Add(asked);
+            }
+        }
+        catch (Exception ex)
+        {
+            _askError = $"Could not answer that: {ex.Message}";
+        }
+        finally
+        {
+            _asking = false;
+        }
+    }
+
+    private async Task OnAskKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_question))
+        {
+            await AskAsync(_question);
         }
     }
 

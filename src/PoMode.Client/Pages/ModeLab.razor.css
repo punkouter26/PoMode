@@ -788,3 +788,54 @@
     background: #38bdf8;
     color: #000;
 }
+
+/* Glow layer for the mode strip. Positioned over the strip's own box and painted under the cards,
+   which sit in their own stacking context so nothing here can swallow a click. */
+.modes-strip-wrap {
+    position: relative;
+}
+
+.mode-strip-fx {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.modes-strip-wrap .studio-modes-strip {
+    position: relative;
+    z-index: 1;
+}
+
+/* Hum take review: the sung line over the chord bands. Sits under the hum controls so the take,
+   the transport and the picture of it are one block. */
+.hum-review-wrap {
+    position: relative;
+    margin-top: var(--pm-space-2);
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+    background: var(--pm-lane-bg);
+    overflow: hidden;
+}
+
+.hum-review-wrap.hidden {
+    display: none;
+}
+
+.hum-review {
+    display: block;
+    width: 100%;
+    height: clamp(96px, 16vw, 150px);
+}
+
+.hum-review-legend {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.55rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    color: var(--pm-fg-muted);
+    pointer-events: none;
+}

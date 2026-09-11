@@ -3,6 +3,7 @@
 
 import { detectPitch, openMicrophone, createNoteCollector } from './live-pitch.js';
 import { encodeWav } from './wav.js';
+import * as tuner from './fx-tuner.js';
 
 const sessions = new Map();
 
@@ -27,7 +28,12 @@ export async function start(root) {
             session.startTime ??= contextTime;
             const t = contextTime - session.startTime;
             session.lastTime = t;
-            session.collector.push(detectPitch(samples, sampleRate), t);
+            const midi = detectPitch(samples, sampleRate);
+            session.collector.push(midi, t);
+            // The tuner halo gets the UNROUNDED pitch, which is the only place in the app that
+            // matters: the collector rounds to a semitone on its way to the server, and the whole
+            // point of the halo is the fraction that rounding throws away.
+            tuner.push(midi);
 
             // Copy: the callback is handed the live buffer, which is reused on the next frame.
             session.sampleRate = sampleRate;
@@ -61,6 +67,7 @@ export function stop(root) {
         return;
     }
     session.mic?.stop();
+    tuner.idle();
     if (session.frames > 0) {
         takes.set(root, { pcm: session.pcm, sampleRate: session.sampleRate, frames: session.frames });
     }

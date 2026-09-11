@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Hosting;
 
 namespace PoMode.E2EAPI;
 
@@ -6,6 +8,19 @@ namespace PoMode.E2EAPI;
 /// defaults — the write endpoints (cancel, client-result, from-url) require them.</summary>
 public sealed class AuthedFactory : WebApplicationFactory<Program>
 {
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        // Every test in this assembly shares one in-process server and one partition key, and they
+        // drive the endpoints at machine speed — so the per-minute limits would be measuring the
+        // test runner rather than the app. Switched off rather than raised, because a limit set high
+        // enough for a test suite protects nothing in production.
+        builder.UseSetting("RateLimits:Enabled", "false");
+        // No test may reach MusicBrainz or AcousticBrainz. A suite that calls out to a third party
+        // is a suite that fails when someone else's server is down.
+        builder.UseSetting("Reference:Enabled", "false");
+    }
+
     protected override void ConfigureClient(HttpClient client)
     {
         base.ConfigureClient(client);

@@ -205,3 +205,40 @@ public sealed record InterpreterOptionDto(
     bool Available,
     bool IsDefault,
     bool UsesLlm);
+
+/// <summary>
+/// One exchange in a follow-up conversation about a song's statistics. Sent back with the next
+/// question so the interpreter can resolve "and what about the chorus?" — the server keeps no
+/// conversation state, for the same reason it stores no statistics: everything here is derivable
+/// from artifacts that already exist, and a persisted transcript would be the only part of this
+/// feature that could go stale.
+/// </summary>
+public sealed record InterpretationTurn(string Question, string Answer);
+
+/// <summary>
+/// A follow-up question about one analysed song.
+///
+/// <para><paramref name="History"/> is the conversation so far, oldest first, and is trimmed
+/// server-side — a local model has a finite context and the measurements matter more than the
+/// eighth exchange.</para>
+/// </summary>
+public sealed record SongQuestionRequest(
+    string Question,
+    IReadOnlyList<InterpretationTurn>? History = null,
+    string? Interpreter = null);
+
+/// <summary>
+/// One answer, grounded in the same measurements the interpretation is written from.
+///
+/// <para><paramref name="Grounded"/> is false when the answer had to say the data does not cover the
+/// question. Surfacing that rather than burying it is the point: a model that declines to speculate
+/// is behaving correctly, and the client labels it so the reader does not read a refusal as a
+/// failure.</para>
+/// </summary>
+public sealed record SongAnswerDto(
+    string Question,
+    string Answer,
+    string Interpreter,
+    ExecutionTier Tier,
+    bool UsedLlm,
+    bool Grounded);

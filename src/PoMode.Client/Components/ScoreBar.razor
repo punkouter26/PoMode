@@ -1,0 +1,41 @@
+@using System.Globalization
+
+@* One labelled percentage bar from the practice score. A component rather than three copies of the
+   markup because the three components of a score have to look identical — the whole point of showing
+   them side by side is that they are comparable. *@
+
+<div class="score-bar">
+    <div class="score-bar-head">
+        <span class="score-bar-label">@Label</span>
+        <span class="score-bar-value">@Percent%</span>
+    </div>
+    <div class="score-bar-track" role="img" aria-label="@($"{Label}: {Percent} percent")">
+        <div class="score-bar-fill @Band" style="width: @Width"></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <span class="score-bar-hint">@Hint</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required string Label { get; set; }
+
+    [Parameter, EditorRequired] public required int Percent { get; set; }
+
+    /// <summary>The measurement behind the percentage, in words. Optional — omitted rather than
+    /// padded when there is nothing measured to say.</summary>
+    [Parameter] public string? Hint { get; set; }
+
+    private string Width
+        => $"{Math.Clamp(Percent, 0, 100).ToString(CultureInfo.InvariantCulture)}%";
+
+    /// <summary>Shares the score headline's colour bands so a bar and the number agree at a glance.</summary>
+    private string Band => Percent switch
+    {
+        >= 85 => "great",
+        >= 65 => "good",
+        >= 40 => "fair",
+        _ => "poor",
+    };
+}

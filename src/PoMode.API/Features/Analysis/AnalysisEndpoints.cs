@@ -4,6 +4,7 @@ using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Visualization;
 using PoMode.API.Pipeline;
+using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -64,7 +65,13 @@ public static class AnalysisEndpoints
             var state = await intake.StartAsync(
                 file.FileName, fresh, clientCanInfer, ct, PreferredExecutors(request));
             return TypedResults.Ok(state.ToDto());
-        }).DisableAntiforgery();
+        })
+        .DisableAntiforgery()
+        // The two guards answer different questions: the rate limit bounds how fast one client may
+        // ask, the capacity filter bounds how much this server has already agreed to do. Neither
+        // substitutes for the other — see QueueCapacityFilter.
+        .RequireRateLimiting(PoRateLimits.UploadPolicy)
+        .AddEndpointFilter<QueueCapacityFilter>();
 
         // The selectable executors per stage — the planner owns the whole answer (structure,
         // ordering, eligibility, defaults); this endpoint only serializes it.

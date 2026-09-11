@@ -17,6 +17,7 @@
         <NavLink class="nav-link" href="modes">Mode Lab</NavLink>
         <NavLink class="nav-link" href="library">Library</NavLink>
         <NavLink class="nav-link" href="live">Live</NavLink>
+        <NavLink class="nav-link" href="practice">Practice</NavLink>
         <NavLink class="nav-link" href="diagnostics">Diagnostics</NavLink>
     </nav>
     <div class="session">
@@ -48,6 +49,37 @@
                 <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
                     Keyboard shortcuts
                 </button>
+                @* Effects are a real setting rather than only an OS preference, because the two
+                   questions the OS conflates are separate here: how much motion you want to see,
+                   and whether an app may make noise at you. *@
+                <div class="overflow-group" role="group" aria-label="Visual effects">
+                    <span class="overflow-label">Effects</span>
+                    <div class="fx-levels">
+                        @foreach (var (value, label) in FxLevels)
+                        {
+                            <button class="fx-level @(_fxLevel == value ? "active" : "")" type="button"
+                                    aria-pressed="@(_fxLevel == value)" data-fx-level="@value"
+                                    @onclick="@(() => SetFxLevelAsync(value))">@label</button>
+                        }
+                    </div>
+                    @if (_fxFollowsSystem)
+                    {
+                        <span class="overflow-hint">Following your system motion setting</span>
+                    }
+                </div>
+                <button class="overflow-item" type="button" role="menuitemcheckbox"
+                        aria-checked="@(!_fxMuted)" @onclick="ToggleFxMutedAsync" id="fx-sound-toggle">
+                    @(_fxMuted ? "☓" : "♪") Interface sounds
+                </button>
+                @* Offered only when the browser has actually handed us an install prompt, so the
+                   item is never a button that does nothing. *@
+                @if (_canInstall)
+                {
+                    <button class="overflow-item" type="button" role="menuitem" @onclick="InstallAsync"
+                            id="install-app">
+                        Install PoMode
+                    </button>
+                }
             </div>
         }
     </div>
@@ -98,6 +130,29 @@
 
     private IJSObjectReference? _fx;
     private IJSObjectReference? _theme;
+    private IJSObjectReference? _pwa;
+    private IJSObjectReference? _prefs;
+    private IJSObjectReference? _transition;
+    private DotNetObjectReference<MainLayout>? _self;
+
+    /// <summary>The effect levels offered, in the order they read as a scale.</summary>
+    private static readonly (string Value, string Label)[] FxLevels =
+    [
+        ("full", "Full"),
+        ("subtle", "Subtle"),
+        ("off", "Off"),
+    ];
+
+    private string _fxLevel = "full";
+    private bool _fxMuted;
+
+    /// <summary>True while no explicit level has been chosen, so the menu can say the level is
+    /// inherited rather than claiming a choice the user never made.</summary>
+    private bool _fxFollowsSystem = true;
+
+    /// <summary>True once the browser has offered an install prompt for this app to capture. It
+    /// never fires on a desktop browser that already has the app, or on iOS at all.</summary>
+    private bool _canInstall;
     private string _themeMode = "system";
     private bool _overflowOpen;
     private bool _shortcutsOpen;
@@ -151,9 +206,44 @@
         }
         _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
         _themeMode = await _theme.InvokeAsync<string>("init");
+        // Before any effect module: init stamps data-fx on <html>, and every module below reads it
+        // on the way up. Read back as three primitives rather than one object so this does not
+        // depend on how JS interop is configured to deserialize.
+        _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-prefs.js");
+        await _prefs.InvokeVoidAsync("init");
+        await ReadFxStateAsync();
         _fx = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-background.js");
         await _fx.InvokeVoidAsync("init", _background);
+        _self = DotNetObjectReference.Create(this);
+        // Returns false on a browser without the View Transitions API, in which case it installs
+        // nothing at all and routing behaves exactly as it did before.
+        _transition = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-transition.js");
+        await _transition.InvokeAsync<bool>("init", _self);
+        // The install prompt fires once, on the browser's own schedule; pwa.js captures it so the
+        // app can offer it from the menu rather than leaving it to Chrome's infobar.
+        _pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pwa.js");
+        await _pwa.InvokeVoidAsync("watchInstall", _self);
+        _canInstall = await _pwa.InvokeAsync<bool>("canInstall");
         StateHasChanged();
+    }
+
+    /// <summary>Called from pwa.js when the browser offers an install prompt.</summary>
+    [JSInvokable]
+    public Task OnInstallAvailable()
+    {
+        _canInstall = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task InstallAsync()
+    {
+        _overflowOpen = false;
+        if (_pwa is not null)
+        {
+            await _pwa.InvokeAsync<bool>("promptInstall");
+            // A prompt is single-use whether or not it was accepted, so the item goes either way.
+            _canInstall = false;
+        }
     }
 
     private async Task CycleThemeAsync()
@@ -162,6 +252,45 @@
         {
             _themeMode = await _theme.InvokeAsync<string>("cycle");
         }
+    }
+
+    /// <summary>Called from js/fx-transition.js inside a view transition, so the router runs while
+    /// the browser holds the old frame.</summary>
+    [JSInvokable]
+    public void NavigateTo(string href)
+    {
+        Navigation.NavigateTo(href);
+    }
+
+    private async Task ReadFxStateAsync()
+    {
+        if (_prefs is null)
+        {
+            return;
+        }
+        _fxLevel = await _prefs.InvokeAsync<string>("level");
+        _fxMuted = await _prefs.InvokeAsync<bool>("muted");
+        _fxFollowsSystem = !await _prefs.InvokeAsync<bool>("isExplicit");
+    }
+
+    private async Task SetFxLevelAsync(string value)
+    {
+        if (_prefs is null)
+        {
+            return;
+        }
+        await _prefs.InvokeVoidAsync("setLevel", value);
+        await ReadFxStateAsync();
+    }
+
+    private async Task ToggleFxMutedAsync()
+    {
+        if (_prefs is null)
+        {
+            return;
+        }
+        await _prefs.InvokeVoidAsync("setMuted", !_fxMuted);
+        await ReadFxStateAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -174,6 +303,19 @@
                 await _fx.InvokeVoidAsync("dispose", _background);
                 await _fx.DisposeAsync();
             }
+            if (_transition is not null)
+            {
+                await _transition.InvokeVoidAsync("dispose");
+                await _transition.DisposeAsync();
+            }
+            if (_pwa is not null)
+            {
+                await _pwa.DisposeAsync();
+            }
+            if (_prefs is not null)
+            {
+                await _prefs.DisposeAsync();
+            }
             if (_theme is not null)
             {
                 await _theme.DisposeAsync();
@@ -183,5 +325,8 @@
         {
             // The circuit is already gone during teardown.
         }
+        // After the JS side has stopped calling in, so a transition in flight cannot invoke a
+        // disposed reference.
+        _self?.Dispose();
     }
 }

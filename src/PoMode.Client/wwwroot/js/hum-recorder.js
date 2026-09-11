@@ -12,7 +12,10 @@
 // slide every phrase the user sang onto the wrong chord.
 
 import { encodeWav } from './wav.js';
+import * as review from './fx-hum-review.js';
+import * as sfx from './sfx.js';
 import * as player from './modal-player.js';
+import { scheduleBeats } from './click-track.js';
 
 const FRAME_SIZE = 4096;
 
@@ -113,34 +116,13 @@ export async function beginCapture() {
 /// Four clicks at the given tempo, resolving when the last one has sounded. Gives the singer the
 /// pulse before the loop starts; it lands before bar one, so the trim takes it back off the take.
 export function countIn(bpm, beats) {
+    sfx.tap();
     const ctx = player.getSharedContext();
     if (!ctx) return Promise.resolve();
 
-    const secondsPerBeat = 60.0 / (bpm > 0 ? bpm : 100.0);
     const count = beats > 0 ? beats : 4;
-    const start = ctx.currentTime + 0.12;
-    for (let i = 0; i < count; i++) {
-        click(ctx, start + i * secondsPerBeat, i === 0);
-    }
-    const endsIn = (start + count * secondsPerBeat) - ctx.currentTime;
-    return new Promise((resolve) => setTimeout(resolve, Math.max(0, endsIn * 1000)));
-}
-
-function click(ctx, when, isDownbeat) {
-    const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(isDownbeat ? 1600 : 1050, when);
-
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, when);
-    env.gain.exponentialRampToValueAtTime(isDownbeat ? 0.22 : 0.13, when + 0.004);
-    env.gain.exponentialRampToValueAtTime(0.0001, when + 0.07);
-
-    osc.connect(env);
-    env.connect(ctx.destination);
-    osc.start(when);
-    osc.stop(when + 0.09);
-    osc.onended = () => { try { env.disconnect(); } catch { } };
+    const endsAt = scheduleBeats(ctx, ctx.currentTime + 0.12, bpm, count);
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, (endsAt - ctx.currentTime) * 1000)));
 }
 
 /// Shorter than this after trimming and there is no take, only the tail of a count-in. Encoding it
@@ -151,6 +133,9 @@ const MIN_TAKE_SECONDS = 0.5;
 /// is the loop's downbeat. Returns an empty array — never null, which does not survive the byte-array
 /// marshalling — when nothing usable was captured.
 export function finishCapture() {
+    // Felt rather than seen: by the end of a take the singer is usually looking anywhere but at
+    // the Stop button, and a phone in the hand can say "got it" without a sound over the recording.
+    sfx.thud();
     // Read the downbeat before anything is torn down — the caller stops the player afterwards, and
     // a stopped player no longer knows when its pass through the loop began.
     const playbackStart = player.getPlaybackStartTime();
@@ -204,11 +189,19 @@ export async function reviewTake(backingNotes, loopDuration, dotNetHelper) {
     // future when the audio thread next looks.
     const startAt = ctx.currentTime + 0.2;
 
+    // The panel analyses the buffer that was just decoded rather than decoding its own: one decode
+    // per take, and the two readings of the take are guaranteed to be of the same audio.
+    review.prepare(lastTakeBuffer, backingNotes, loopDuration);
+    // The playhead reads the same clock the audio is scheduled on, so it cannot drift from what is
+    // being heard — the same reason the recorder shares the player's AudioContext in the first place.
+    review.play(() => ctx.currentTime - startAt);
+
     reviewSource = ctx.createBufferSource();
     reviewSource.buffer = lastTakeBuffer;
     reviewSource.connect(ctx.destination);
     reviewSource.onended = () => {
         reviewSource = null;
+        review.stop();
         // The chords loop indefinitely; the take does not, so the recording's end is what ends the
         // review. Without this the backing would keep playing over silence.
         try { player.stop(); } catch { }
@@ -235,6 +228,7 @@ export function stopReview() {
         try { reviewSource.disconnect(); } catch { }
         reviewSource = null;
     }
+    review.stop();
     try { player.stop(); } catch { }
     publishState();
 }
@@ -242,6 +236,7 @@ export function stopReview() {
 /// Forgets the take — a redo, or a take that has been saved.
 export function clearTake() {
     stopReview();
+    review.clear();
     lastTake = null;
     lastTakeBuffer = null;
     publishState();

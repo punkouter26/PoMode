@@ -143,6 +143,28 @@ export function createNoteCollector() {
             }
             open = { midiPitch: rounded, startSec: timeSec, lastSeen: timeSec };
         },
+        /// All finished notes plus the currently open one, timed from `originSec` and with anything
+        /// before it dropped.
+        ///
+        /// Unlike `snapshot`, this does NOT rebase onto the first note. The Live page wants the
+        /// rebase — a take starts when the singer starts, and leading silence is not musical
+        /// information. A graded exercise wants the opposite: the phrase has a downbeat the server
+        /// chose, and rebasing onto the first sung note would score a singer who came in two beats
+        /// late as perfectly in time.
+        snapshotFrom(originSec, nowSec) {
+            const all = [...notes];
+            if (open && (Math.max(nowSec, open.lastSeen) - open.startSec) >= MIN_NOTE_SEC) {
+                all.push({
+                    midiPitch: open.midiPitch,
+                    startSec: open.startSec,
+                    durationSec: Math.max(nowSec, open.lastSeen) - open.startSec,
+                    velocity: 90,
+                });
+            }
+            return all
+                .map(note => ({ ...note, startSec: note.startSec - originSec }))
+                .filter(note => note.startSec + note.durationSec > 0);
+        },
         /// All finished notes plus the currently open one, times rebased to start at zero.
         snapshot(nowSec) {
             const all = [...notes];

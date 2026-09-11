@@ -10,6 +10,12 @@
 <RadzenCard>
     <RadzenText TextStyle="TextStyle.H5" Text="Live analysis" />
     <RadzenText class="live-description" Text="Sing or play into your microphone. Every few seconds the server re-analyzes what it heard: key, modes, and a growing note roll." />
+    @* Between the server's answers there used to be no feedback at all, which is the wrong way
+       round for the one page you use with your voice. The ring's radius is the pitch and its
+       steadiness is the tuning; it claims nothing about mode, which is the server's answer below. *@
+    <div class="tuner-wrap @(_tunerOn ? "" : "hidden")">
+        <canvas class="live-tuner" @ref="_tunerCanvas" aria-hidden="true" data-testid="live-tuner"></canvas>
+    </div>
     <div class="live-controls" @ref="_root">
         @if (!_running)
         {
@@ -48,7 +54,10 @@
     private const int AnalyzeEverySeconds = 5;
 
     private ElementReference _root;
+    private ElementReference _tunerCanvas;
     private IJSObjectReference? _module;
+    private IJSObjectReference? _tuner;
+    private bool _tunerOn;
     private bool _running;
     private string? _error;
     private int _noteCount;
@@ -58,6 +67,28 @@
     private Timer? _timer;
     private bool _hasTake;
     private bool _sending;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+        try
+        {
+            _tuner = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-tuner.js");
+            // False with effects off or no usable canvas context; the page is unchanged without it.
+            _tunerOn = await _tuner.InvokeAsync<bool>("init", _tunerCanvas);
+            if (_tunerOn)
+            {
+                StateHasChanged();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away before the first render finished.
+        }
+    }
 
     private async Task StartAsync()
     {
@@ -174,17 +205,22 @@
     public async ValueTask DisposeAsync()
     {
         _timer?.Dispose();
-        if (_module is not null)
+        try
         {
-            try
+            if (_module is not null)
             {
                 await _module.InvokeVoidAsync("stop", _root);
                 await _module.DisposeAsync();
             }
-            catch (JSDisconnectedException)
+            if (_tuner is not null)
             {
-                // The circuit is already gone during teardown.
+                await _tuner.InvokeVoidAsync("dispose");
+                await _tuner.DisposeAsync();
             }
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone during teardown.
         }
     }
 }

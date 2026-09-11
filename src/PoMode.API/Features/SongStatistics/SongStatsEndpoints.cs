@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Visualization;
+using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.SongStatistics;
@@ -44,6 +45,35 @@ public static class SongStatsEndpoints
                 ? TypedResults.NotFound()
                 : TypedResults.Ok(await selector.InterpretAsync(stats, interpreter, ct));
         }).AddEndpointFilter<JobIdEndpointFilter>();
+
+        // POST, unlike the summary above, for three reasons: the question is the request rather than
+        // an address, the conversation so far rides with it, and asking the same question twice is a
+        // deliberate act rather than a browser reload to be served from cache.
+        //
+        // Rate-limited because this is the one endpoint on the server that can be made to run a
+        // language model on demand, over and over, from a text box.
+        group.MapPost("/{jobId}/interpretation/ask",
+            async Task<Results<Ok<SongAnswerDto>, NotFound, BadRequest<string>>> (
+                string jobId,
+                SongQuestionRequest request,
+                JobStore store,
+                SongInterpreterSelector selector,
+                CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Question))
+            {
+                return TypedResults.BadRequest("Ask a question first.");
+            }
+
+            var stats = await BuildAsync(jobId, store, ct);
+            return stats is null
+                ? TypedResults.NotFound()
+                : TypedResults.Ok(await selector.AnswerAsync(
+                    stats, request.Question.Trim(), request.History, request.Interpreter, ct));
+        })
+        .AddEndpointFilter<JobIdEndpointFilter>()
+        .RequireRateLimiting(PoRateLimits.InterpretPolicy)
+        .RequireAuthorization();
 
         return app;
     }

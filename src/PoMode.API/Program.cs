@@ -1,6 +1,7 @@
 using PoMode.API.Platform;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Batch;
 using PoMode.API.Features.ChordChart;
@@ -13,6 +14,8 @@ using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
+using PoMode.API.Features.Practice;
+using PoMode.API.Features.Reference;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.StemSeparation;
 using PoMode.API.Features.UrlIngest;
@@ -44,6 +47,13 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
+// Traces and metrics for the pipeline. Creates the instruments unconditionally but exports nothing
+// unless OTEL_EXPORTER_OTLP_ENDPOINT is set — a local-first music tool must not start shipping
+// telemetry off the machine because a package was added.
+builder.Services.AddPoTelemetry(builder.Configuration);
+// Admission control for the three costly things here: queueing an analysis, running a language
+// model, and calling a public catalogue. Deliberately not global — see PoRateLimits.
+builder.Services.AddPoRateLimiting(builder.Configuration);
 builder.Services.AddSingleton<ModelRegistry>();
 builder.Services.AddSingleton<HardwareProbe>();
 builder.Services.AddSingleton<DiagnosticsService>();
@@ -74,6 +84,7 @@ builder.Services.AddSingleton<HumTakeSeeder>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
+builder.Services.AddSingleton<MusicBrainzCatalog>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
@@ -82,6 +93,7 @@ builder.Services.AddHostedService<AnalysisWorker>();
 builder.Services.AddHostedService<JobRecoveryService>();
 builder.Services.AddHostedService<JobCleanupService>();
 builder.Services.AddHostedService<ModelWarmupService>();
+builder.Services.AddHostedService<JobQueueMetrics>();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(
     options => options.MultipartBodyLengthLimit = AudioFormatValidator.MaxBytes);
@@ -94,8 +106,15 @@ if (secretSource.FellBack)
 }
 
 app.UseBlazorFrameworkFiles();
+// .webmanifest is not in every ASP.NET Core content-type table, and a manifest served as
+// application/octet-stream is ignored by the browser without an error anyone would notice — the app
+// simply stops being installable. Mapped explicitly rather than left to the default provider.
+var contentTypes = new FileExtensionContentTypeProvider();
+contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+
 app.UseStaticFiles(new StaticFileOptions
 {
+    ContentTypeProvider = contentTypes,
     OnPrepareResponse = served =>
     {
         // The app's own scripts and styles carry no fingerprint in their URL, so a browser left to its
@@ -116,6 +135,9 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
+// After authentication on purpose: the limiter partitions by signed-in user where there is one, and
+// before that runs every authenticated caller would share their address's bucket.
+app.UseRateLimiter();
 
 app.MapOpenApi();
 app.MapScalarApiReference(); // serves /scalar
@@ -138,7 +160,17 @@ app.MapMidiExport();
 app.MapMusicXmlExport();
 app.MapChordChart();
 app.MapSongStats();
+app.MapPractice();
+app.MapReference();
 app.MapHub<AnalysisHub>("/hubs/analysis");
+
+// The share target's fallback. Normally the service worker answers this POST and never lets it
+// reach the server; this exists for the case where it is not controlling the page yet — a first
+// visit, or a browser that dropped the registration. Redirecting is the honest response: the file is
+// not recoverable here, but the user lands in the app rather than on a blank 200.
+app.MapPost("/share-target", () => Results.Redirect("/"))
+    .DisableAntiforgery()
+    .ExcludeFromDescription();
 
 app.MapFallbackToFile("index.html");
 

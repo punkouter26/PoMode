@@ -1,0 +1,341 @@
+/* Practice page. Colours come from the app's CSS variables so the page follows the theme toggle
+   and the OS setting like every other surface; nothing here is hard-coded to one scheme. */
+
+.practice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.practice-description {
+    color: var(--pm-fg-muted);
+    margin: 0.25rem 0 1rem;
+}
+
+.streak {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    background: var(--pm-surface);
+}
+
+/* Fixed box whether a glyph or the particle canvas is inside it, so the pill does not resize the
+   moment a streak reaches three. */
+.streak-flame {
+    position: relative;
+    display: inline-block;
+    width: 1.35rem;
+    height: 1.7rem;
+    font-size: 1.1rem;
+    line-height: 1;
+    align-self: center;
+}
+
+.streak-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.streak-canvas.hidden {
+    display: none;
+}
+
+.streak-glyph {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.streak-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.streak-label {
+    font-size: 0.8rem;
+    color: var(--pm-fg-muted);
+}
+
+.practice-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.practice-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 9rem;
+    flex: 1 1 9rem;
+}
+
+.practice-field > span {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--pm-fg-muted);
+}
+
+.practice-field select,
+.practice-field input[type="range"] {
+    width: 100%;
+    padding: 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-surface);
+    color: inherit;
+    font: inherit;
+}
+
+.practice-field input[type="range"] {
+    padding: 0;
+    border: none;
+    background: transparent;
+}
+
+.practice-instruction {
+    margin: 0.5rem 0 1rem;
+    line-height: 1.55;
+    max-width: 62ch;
+}
+
+/* The mode's own notes, with the degrees that name it picked out. Same colour language the canvas
+   and the share card use for a characteristic degree, so the idea reads the same everywhere. */
+.scale-notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+}
+
+.scale-note {
+    min-width: 2.4rem;
+    text-align: center;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-surface);
+    font-variant-numeric: tabular-nums;
+}
+
+.scale-note.characteristic {
+    border-color: var(--pm-note-characteristic);
+    color: var(--pm-note-characteristic);
+    font-weight: 700;
+}
+
+.practice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.practice-cue {
+    margin: 0.9rem 0 0;
+    font-weight: 600;
+}
+
+.practice-cue.counting {
+    color: var(--pm-fg-muted);
+}
+
+.practice-cue.recording {
+    color: var(--pm-playhead);
+}
+
+.practice-error {
+    margin: 0.75rem 0 0;
+    color: var(--pm-note-outside);
+}
+
+/* ---- Score ---- */
+
+.score-head {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+}
+
+.score-number {
+    display: flex;
+    align-items: baseline;
+    gap: 0.2rem;
+    padding: 0.5rem 1rem;
+    border-radius: 12px;
+    border: 2px solid currentColor;
+}
+
+.score-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.score-outof {
+    font-size: 0.9rem;
+    opacity: 0.7;
+}
+
+.score-number.great { color: var(--pm-note-in-mode); }
+.score-number.good { color: var(--pm-note-chord-tone); }
+.score-number.fair { color: var(--pm-note-characteristic); }
+.score-number.poor { color: var(--pm-note-outside); }
+
+.score-verdict {
+    flex: 1 1 18rem;
+}
+
+.verdict-text {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.5;
+}
+
+.advice-text {
+    margin: 0.5rem 0 0;
+    color: var(--pm-fg-muted);
+    line-height: 1.5;
+    max-width: 60ch;
+}
+
+.score-bars {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.score-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.flag {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--pm-border);
+}
+
+.flag.good {
+    border-color: var(--pm-note-in-mode);
+    color: var(--pm-note-in-mode);
+}
+
+.flag.missing {
+    border-color: var(--pm-note-characteristic);
+    color: var(--pm-note-characteristic);
+}
+
+.flag.extra {
+    color: var(--pm-fg-muted);
+}
+
+/* One cell per target note, target above and what was actually sung below — the comparison is the
+   whole point, so they are never shown apart. */
+.note-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.note-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 3rem;
+    padding: 0.35rem 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-surface);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.note-target {
+    font-weight: 700;
+}
+
+.note-sung {
+    opacity: 0.75;
+    font-size: 0.72rem;
+}
+
+.note-cell.hit { border-color: var(--pm-note-in-mode); }
+.note-cell.octave { border-color: var(--pm-note-chord-tone); }
+.note-cell.wrong { border-color: var(--pm-note-outside); }
+.note-cell.missed {
+    border-style: dashed;
+    opacity: 0.55;
+}
+
+/* The pitch/time plot. Sunk into the lane colour so the traces read as drawn on a surface rather
+   than floating over the card, and given a fixed aspect so the vertical semitone scale does not
+   change meaning between a phone and a desktop. */
+.ribbon-wrap {
+    position: relative;
+    margin: var(--pm-space-3) 0;
+    border: 1px solid var(--pm-border);
+    border-radius: 0.6rem;
+    background: var(--pm-lane-bg);
+    overflow: hidden;
+}
+
+.practice-ribbon {
+    display: block;
+    width: 100%;
+    height: clamp(110px, 22vw, 190px);
+}
+
+.ribbon-legend {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.6rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--pm-fg-muted);
+    pointer-events: none;
+}
+
+/* Swatches rather than words doing the colour-naming, so the legend matches whatever the theme
+   resolves those tokens to. */
+.ribbon-legend span::before {
+    content: "";
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    margin-right: 0.28rem;
+    border-radius: 50%;
+    vertical-align: -1px;
+}
+
+.legend-target::before {
+    background: var(--pm-chord-block);
+}
+
+.legend-sung::before {
+    background: var(--pm-note-in-mode);
+}
+
+/* With effects off the canvas never initialises and would otherwise leave an empty sunken box. */
+:root[data-fx="off"] .ribbon-wrap {
+    display: none;
+}

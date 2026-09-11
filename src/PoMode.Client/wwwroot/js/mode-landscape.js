@@ -7,6 +7,7 @@
 // calls init/dispose; all pointer and wheel handling lives here.
 
 import * as THREE from '../lib/three/three.module.min.js';
+import * as prefs from './fx-prefs.js';
 
 const states = new Map();
 
@@ -155,7 +156,7 @@ function attachControls(state) {
         }
         // Damped inertia: the orbit keeps gliding along the last drag, losing 8% per frame.
         // Skipped under prefers-reduced-motion; renders on demand like every other interaction.
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        if (!prefs.allowsMotion()) {
             stopInertia();
             return;
         }

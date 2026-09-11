@@ -8,6 +8,7 @@
 // ~2 s, so theme flips and key changes are picked up without a getComputedStyle per frame.
 
 import { masterLevel } from './mixer.js';
+import * as prefs from './fx-prefs.js';
 
 const states = new Map();
 
@@ -72,8 +73,10 @@ void main() {
     fragColor = vec4(uBg + accent * glow, 1.0);
 }`;
 
+/// Motion is now a user setting rather than only an OS preference; fx-prefs resolves the two.
+/// 'subtle' still animates here — this is the cheapest effect in the app — but at reduced amplitude.
 function reducedMotion() {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return !prefs.allowsMotion();
 }
 
 /// Reads the palette from the root element: key hue (may be absent) and the theme background.
@@ -251,12 +254,21 @@ function wake(state) {
     }
 }
 
-/// Starts the ambient background on `canvas`. Under prefers-reduced-motion this draws one static,
-/// very subtle wash and never animates.
+/// Starts the ambient background on `canvas`. With motion off this draws one static, very subtle
+/// wash and never animates.
 export function init(canvas) {
     if (states.has(canvas)) {
         return;
     }
+    // A level change rebuilds rather than mutates: init/dispose already handle every combination of
+    // GL, 2D and static, and re-running them is far less error-prone than teaching the frame loop to
+    // switch paths underneath itself.
+    const unsubscribe = prefs.subscribe(() => {
+        if (states.has(canvas)) {
+            dispose(canvas);
+            init(canvas);
+        }
+    });
     const pipeline = createGlPipeline(canvas);
     const state = {
         canvas,
@@ -271,6 +283,7 @@ export function init(canvas) {
         activeUntil: performance.now() + IDLE_AFTER_MS,
         raf: null,
         poll: null,
+        unsubscribe,
     };
     states.set(canvas, state);
 
@@ -294,5 +307,7 @@ export function dispose(canvas) {
     if (state.poll !== null) {
         clearTimeout(state.poll);
     }
+    // Dropped before the re-init below re-subscribes, so a rebuild cannot stack listeners.
+    state.unsubscribe?.();
     states.delete(canvas);
 }

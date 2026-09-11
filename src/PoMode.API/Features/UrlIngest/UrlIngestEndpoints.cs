@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.UrlIngest;
@@ -58,7 +59,12 @@ public static class UrlIngestEndpoints
                     // Temp cleanup is best-effort; the OS temp sweeper gets stragglers.
                 }
             }
-        }).RequireAuthorization();
+        })
+        .RequireAuthorization()
+        // Costlier than an upload, not cheaper: this one spends the server's bandwidth and disk on a
+        // URL the server did not choose, before any of the pipeline's own work begins.
+        .RequireRateLimiting(PoRateLimits.UploadPolicy)
+        .AddEndpointFilter<QueueCapacityFilter>();
 
         return app;
     }

@@ -18,6 +18,23 @@
        neutral accent so nothing changes until a song is analyzed. */
     --pm-key-hue: 262;
 
+    /* Derived key colours. Every surface that wants to carry the detected key reads one of these
+       rather than rebuilding the hsl() itself, so retuning the tint is one edit and light and dark
+       stay in step. The lightness values differ per theme (see the dark blocks); only the hue is
+       runtime data. */
+    --pm-key: hsl(var(--pm-key-hue) 58% 52%);
+    --pm-key-soft: hsl(var(--pm-key-hue) 58% 52% / 0.14);
+    --pm-key-edge: hsl(var(--pm-key-hue) 62% 58% / 0.42);
+    --pm-key-glow: hsl(var(--pm-key-hue) 70% 60% / 0.28);
+
+    /* Glass. Blur alone bands badly over a gradient and washes out saturated art behind it, so the
+       system is blur + saturate + a specular top edge + a noise veil; each is a token because the
+       reduced-effect levels turn them down rather than off. */
+    --pm-glass-blur: 16px;
+    --pm-glass-sat: 165%;
+    --pm-glass-specular: rgb(255 255 255 / 0.55);
+    --pm-glass-noise: 0.025;
+
     /* Spacing rhythm: gaps and paddings snap to this 8px-based scale. */
     --pm-space-1: 0.25rem;
     --pm-space-2: 0.5rem;
@@ -59,6 +76,15 @@
         --pm-playhead: #fb7185;
         --pm-tempo-line: #818cf8;
         --pm-tempo-change: #fbbf24;
+        
+        /* Glass over a near-black ground needs a dimmer specular edge and a touch more noise —
+           banding is far more visible in dark themes. */
+        --pm-key: hsl(var(--pm-key-hue) 70% 68%);
+        --pm-key-soft: hsl(var(--pm-key-hue) 70% 68% / 0.16);
+        --pm-key-edge: hsl(var(--pm-key-hue) 75% 70% / 0.38);
+        --pm-key-glow: hsl(var(--pm-key-hue) 80% 66% / 0.32);
+        --pm-glass-specular: rgb(255 255 255 / 0.14);
+        --pm-glass-noise: 0.04;
     }
 }
 
@@ -83,6 +109,15 @@
     --pm-playhead: #fb7185;
     --pm-tempo-line: #818cf8;
     --pm-tempo-change: #fbbf24;
+    
+    /* Glass over a near-black ground needs a dimmer specular edge and a touch more noise —
+       banding is far more visible in dark themes. */
+    --pm-key: hsl(var(--pm-key-hue) 70% 68%);
+    --pm-key-soft: hsl(var(--pm-key-hue) 70% 68% / 0.16);
+    --pm-key-edge: hsl(var(--pm-key-hue) 75% 70% / 0.38);
+    --pm-key-glow: hsl(var(--pm-key-hue) 80% 66% / 0.32);
+    --pm-glass-specular: rgb(255 255 255 / 0.14);
+    --pm-glass-noise: 0.04;
 }
 
 /* Typography: a gently fluid base size, calm heading rhythm, and lining tabular figures so
@@ -116,22 +151,108 @@ code, pre, kbd {
     border-radius: 0.25rem;
 }
 
-/* Glassmorphism cards over the reactive background. The key-tinted top edge is the one place
-   the detected key colours the chrome — deliberately subtle. */
+/* Glassmorphism cards over the reactive background.
+   Four layers, because plain blur is not glass: the blur itself, a saturate() that stops the
+   shader wash behind from going grey, a specular highlight along the top edge where real glass
+   catches light, and a faint noise veil that breaks up the banding a large blur radius produces
+   over a smooth gradient — most visible, and most worth fixing, in the dark theme.
+   The key-tinted edge is where the detected key colours the chrome. */
 .rz-card {
+    position: relative;
     background: var(--pm-surface-glass);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(var(--pm-glass-blur)) saturate(var(--pm-glass-sat));
+    backdrop-filter: blur(var(--pm-glass-blur)) saturate(var(--pm-glass-sat));
     border: 1px solid var(--pm-border);
-    border-top: 2px solid hsl(var(--pm-key-hue) 55% 55% / 0.4);
+    border-top: 2px solid var(--pm-key-edge);
     border-radius: 0.75rem;
     box-shadow: var(--pm-shadow);
+}
+
+/* The specular line. A pseudo-element rather than a second border so it can fade out toward the
+   corners the way a real highlight does; pointer-events are off so it never eats a click. */
+.rz-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: 0.75rem 0.75rem 0 0;
+    background: linear-gradient(90deg, transparent, var(--pm-glass-specular) 22%, var(--pm-glass-specular) 78%, transparent);
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+/* The noise veil, generated rather than fetched — a tiny inline SVG turbulence costs no request
+   and no cache entry, which matters for a network-first service worker. */
+.pm-grain::after,
+.rz-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    opacity: var(--pm-glass-noise);
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 @supports not (backdrop-filter: blur(1px)) {
     .rz-card {
         background: var(--pm-surface);
     }
+}
+
+/* Effect level. 'subtle' keeps the glass but stops paying for a wide blur and a noise pass on every
+   card; 'off' drops the whole treatment to a flat opaque surface, which is also the cheapest thing
+   the browser can composite. Driven by the data-fx stamp from js/fx-prefs.js. */
+:root[data-fx="subtle"] {
+    --pm-glass-blur: 8px;
+    --pm-glass-sat: 120%;
+    --pm-glass-noise: 0;
+}
+
+:root[data-fx="off"] .rz-card {
+    background: var(--pm-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+:root[data-fx="off"] .rz-card::before,
+:root[data-fx="off"] .rz-card::after,
+:root[data-fx="off"] .pm-grain::after {
+    display: none;
+}
+
+/* A key-tinted glow for the element the user should be looking at — the active take, the card the
+   playhead is inside. One class so "this is live" looks the same everywhere. */
+.pm-keyed {
+    border-color: var(--pm-key-edge) !important;
+    box-shadow: var(--pm-shadow), 0 0 0 1px var(--pm-key-edge), 0 0 28px -6px var(--pm-key-glow);
+}
+
+/* Page transitions between routes. This is a single-page app, so the automatic cross-document
+   form does not apply: js/fx-transition.js intercepts nav clicks and drives startViewTransition
+   around the Blazor render. Browsers without the API fall through to an immediate swap, which is
+   exactly the behaviour the app has today. */
+::view-transition-old(root) {
+    animation: pm-fade-out 140ms ease both;
+}
+
+::view-transition-new(root) {
+    animation: pm-fade-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes pm-fade-out {
+    to { opacity: 0; transform: translateY(-4px); }
+}
+
+@keyframes pm-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+}
+
+/* Effects off means no page transition either: the swap is instant. */
+:root[data-fx="off"]::view-transition-old(root),
+:root[data-fx="off"]::view-transition-new(root) {
+    animation: none;
 }
 
 /* Skeleton shimmer for loading states; collapses to a static block under reduced motion. */
@@ -156,13 +277,27 @@ code, pre, kbd {
     to { transform: translateX(100%); }
 }
 
-/* Motion accessibility: kill decorative animation everywhere in one move. The JS effect modules
-   check the same media query themselves. */
+/* Motion accessibility: kill decorative animation everywhere in one move.
+   Two triggers, matching js/fx-prefs.js exactly. The OS preference still switches this on by
+   default, but an explicit "Full" choice in the app's own effects control overrides it — the user
+   has answered the question more directly there than the OS setting did. Choosing "Off" in the app
+   applies it whatever the OS says. */
 @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    :root:not([data-fx="full"]) *,
+    :root:not([data-fx="full"]) *::before,
+    :root:not([data-fx="full"]) *::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
     }
+}
+
+:root[data-fx="off"] *,
+:root[data-fx="off"] *::before,
+:root[data-fx="off"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
 }

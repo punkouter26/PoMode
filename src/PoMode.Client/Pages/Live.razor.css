@@ -28,3 +28,22 @@
     margin: 0;
     color: var(--pm-note-outside);
 }
+
+/* The tuner halo. Square-ish and centred: it is a radial display, and letting it stretch into a
+   wide band would make the ring an ellipse and the pitch scale meaningless. */
+.tuner-wrap {
+    display: flex;
+    justify-content: center;
+    margin: var(--pm-space-3) 0;
+}
+
+.tuner-wrap.hidden {
+    display: none;
+}
+
+.live-tuner {
+    display: block;
+    width: min(100%, 22rem);
+    aspect-ratio: 1;
+    max-height: 40vh;
+}

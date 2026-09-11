@@ -151,7 +151,14 @@
            the full list, and every button's tooltip names its key. One less row of noise. *@
         @if (!Basic)
         {
-            <canvas class="mixer-spectrum" @ref="_spectrumCanvas" aria-hidden="true"></canvas>
+            @* Two layers, not one: the particle field is a wash behind the bars, and the bars are
+               the part that actually reports the spectrum. The field draws only where WebGPU is
+               available and the user has asked for full effects, so on most machines this is the
+               same single canvas it always was. *@
+            <div class="mixer-visual">
+                <canvas class="mixer-particles" @ref="_particleCanvas" aria-hidden="true"></canvas>
+                <canvas class="mixer-spectrum" @ref="_spectrumCanvas" aria-hidden="true"></canvas>
+            </div>
         }
         <div class="mixer-status-line @(_status is "loading" or "idle" ? "loading-active" : "")">
             @if (_status is "loading" or "idle")
@@ -251,8 +258,10 @@
 
     private ElementReference _root;
     private ElementReference _spectrumCanvas;
+    private ElementReference _particleCanvas;
     private IJSObjectReference? _module;
     private IJSObjectReference? _spectrum;
+    private IJSObjectReference? _particles;
     private bool _droneOn;
     private DotNetObjectReference<StemMixer>? _selfRef;
     private string _status = "idle";
@@ -409,6 +418,10 @@
                 {
                     _spectrum = await Js.InvokeAsync<IJSObjectReference>("import", "./js/fx-spectrum.js");
                     await _spectrum.InvokeVoidAsync("init", _spectrumCanvas);
+                    // Additive and entirely optional: false on anything without WebGPU, which is
+                    // most browsers today, and the strip above is unchanged either way.
+                    _particles = await Js.InvokeAsync<IJSObjectReference>("import", "./js/fx-particles.js");
+                    await _particles.InvokeAsync<bool>("init", _particleCanvas);
                 }
             }
             catch (Exception ex)
@@ -871,6 +884,11 @@
         StopKaraokeTimer();
         try
         {
+            if (_particles is not null)
+            {
+                await _particles.InvokeVoidAsync("dispose", _particleCanvas);
+                await _particles.DisposeAsync();
+            }
             if (_spectrum is not null)
             {
                 await _spectrum.InvokeVoidAsync("dispose", _spectrumCanvas);

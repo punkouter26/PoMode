@@ -169,10 +169,22 @@
                     break;
             }
         </div>
+        @* Your line over the chords it was sung against. Kept in the tree whatever the hum state so
+           the canvas reference stays valid across a redo; it is empty until a take is reviewed. *@
+        <div class="hum-review-wrap @(_humState == HumState.Captured && _humReviewOn ? "" : "hidden")">
+            <canvas class="hum-review" @ref="_humReviewCanvas" aria-hidden="true"
+                    data-testid="hum-review"></canvas>
+            <span class="hum-review-legend">chord tones · your line, lit where it agrees</span>
+        </div>
     </div>
 
     <!-- 7 Relative Modes Horizontal Strip with Color-Themed Cards & Purity Badges -->
-    <div class="studio-modes-strip">
+    @* The glow layer is authored here rather than injected by the module: Blazor re-renders the
+       card list on every mode change, and a canvas spliced into the middle of a list it diffs by
+       index is asking for trouble. It sits outside the strip and is positioned over it. *@
+    <div class="modes-strip-wrap">
+        <canvas class="mode-strip-fx" @ref="_stripCanvas" aria-hidden="true"></canvas>
+        <div class="studio-modes-strip" @ref="_stripContainer">
         @foreach (var modeItem in SevenModesOrdered)
         {
             var isSelected = _selectedMode == modeItem.Mode;
@@ -209,6 +221,7 @@
                 </button>
             </div>
         }
+        </div>
     </div>
 
     @if (_melody is not null)
@@ -1078,10 +1091,59 @@
         }
     }
 
+    private ElementReference _humReviewCanvas;
+    private IJSObjectReference? _humReviewFx;
+    private bool _humReviewOn;
+    private ElementReference _stripCanvas;
+    private ElementReference _stripContainer;
+    private IJSObjectReference? _stripFx;
+    private bool _stripFxOn;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                // Imported here rather than by the hum flow: hum-recorder.js drives the panel
+                // directly during playback, but the canvas it draws on has to be claimed once, and
+                // the first render is the only moment that is true exactly once.
+                _humReviewFx = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-hum-review.js");
+                _humReviewOn = await _humReviewFx.InvokeAsync<bool>("init", _humReviewCanvas);
+
+                _stripFx = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-mode-strip.js");
+                // False without WebGL2 or with effects off; the cards keep their own borders and
+                // badges either way, which is where the information actually lives.
+                _stripFxOn = await _stripFx.InvokeAsync<bool>("init", _stripCanvas, _stripContainer);
+            }
+            else if (_stripFxOn && _stripFx is not null)
+            {
+                // Which card is selected lives in a CSS class Blazor rewrites, and there is no event
+                // to observe that from — so the re-render itself is the signal, and the module
+                // re-measures on the next frame rather than on every one.
+                await _stripFx.InvokeVoidAsync("refresh", _stripContainer);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-render.
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         try
         {
+            if (_humReviewFx is not null)
+            {
+                await _humReviewFx.InvokeVoidAsync("dispose");
+                await _humReviewFx.DisposeAsync();
+            }
+            if (_stripFx is not null)
+            {
+                await _stripFx.InvokeVoidAsync("dispose", _stripContainer);
+                await _stripFx.DisposeAsync();
+            }
             // Before the player, so a take still running when the page is left releases the
             // microphone — otherwise the browser's recording indicator stays lit for the session.
             if (_humModule is not null)

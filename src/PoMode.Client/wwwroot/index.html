@@ -17,6 +17,14 @@
           media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="PoMode.Client.styles.css" />
+    <!-- Installable, and a share target for audio on Android: a voice memo can be shared straight
+         into PoMode instead of being saved and then found again. theme-color is the accent, so the
+         installed app's title bar matches the header rather than defaulting to white. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#6750a4" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="PoMode" />
     <script>
         // Pre-paint theme: apply any persisted override before the first frame so a user who chose
         // Dark on a light-OS machine never sees a light flash. Mirrors js/theme.js's apply().
@@ -35,5 +43,10 @@
     <div id="app">Loading…</div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script type="module">
+        // Registered from a module so a browser without service workers simply skips it, and after
+        // load so registration never competes with the WASM runtime the user is waiting on.
+        import('./js/pwa.js').then(pwa => pwa.register()).catch(() => { });
+    </script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Platform;
 using PoMode.API.Features.MidiExport;
 using PoMode.API.Features.MusicXml;
 using PoMode.Shared.Analysis;
@@ -69,7 +70,12 @@ public static class BatchEndpoints
             }
             var manifest = await batches.CreateAsync(tracks, ct);
             return TypedResults.Ok(new BatchStatusDto(manifest.BatchId, statuses));
-        }).DisableAntiforgery();
+        })
+        .DisableAntiforgery()
+        // One request here queues many jobs, so the capacity filter matters more on this endpoint
+        // than on any other — it is the one that can fill the queue in a single call.
+        .RequireRateLimiting(PoRateLimits.UploadPolicy)
+        .AddEndpointFilter<QueueCapacityFilter>();
 
         group.MapGet("/{batchId}", async Task<Results<Ok<BatchStatusDto>, NotFound>> (
             string batchId, BatchStore batches, JobStore store, CancellationToken ct) =>

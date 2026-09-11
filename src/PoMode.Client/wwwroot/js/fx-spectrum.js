@@ -9,6 +9,7 @@
 // prefers-reduced-motion the strip renders nothing at all.
 
 import { frequencyData } from './mixer.js';
+import * as prefs from './fx-prefs.js';
 
 const states = new Map();
 
@@ -83,7 +84,7 @@ void main() {
 }`;
 
 function reducedMotion() {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return !prefs.allowsMotion();
 }
 
 function readHue() {
@@ -275,11 +276,17 @@ function frame(state, now) {
     }
 }
 
-/// Starts the spectrum strip on `canvas`. Renders nothing under prefers-reduced-motion.
+/// Starts the spectrum strip on `canvas`. Renders nothing when motion is off.
 export function init(canvas) {
     if (!canvas || typeof canvas.getContext !== 'function' || states.has(canvas)) {
         return;
     }
+    const unsubscribe = prefs.subscribe(() => {
+        if (states.has(canvas)) {
+            dispose(canvas);
+            init(canvas);
+        }
+    });
     const state = {
         canvas,
         gl: null,
@@ -293,6 +300,7 @@ export function init(canvas) {
         lastColourRead: performance.now(),
         raf: null,
         idleTimer: null,
+        unsubscribe,
     };
     states.set(canvas, state);
 
@@ -341,5 +349,6 @@ export function dispose(canvas) {
         state.gl.deleteTexture(state.texture);
         state.gl.deleteProgram(state.program);
     }
+    state.unsubscribe?.();
     states.delete(canvas);
 }

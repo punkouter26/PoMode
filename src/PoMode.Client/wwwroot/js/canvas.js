@@ -9,6 +9,8 @@
 // Drawing is virtualized (only items intersecting the visible time range are drawn) and coalesced
 // into one requestAnimationFrame callback, so panning a five-minute track stays smooth.
 
+import * as prefs from './fx-prefs.js';
+
 const states = new Map();
 
 /// Role name -> CSS custom property. Names match the C# NoteRole enum, sent as strings so the
@@ -730,7 +732,7 @@ export function init(canvas, dotNetRef) {
         lastFrameAt: 0,
         followTarget: null,
         followSuspendedUntil: 0,
-        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        reducedMotion: !prefs.allowsMotion(),
         overlay: { vocal: true, backing: false },
         colours: readColours(canvas),
         frame: null,

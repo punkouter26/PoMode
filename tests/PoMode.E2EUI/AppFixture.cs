@@ -66,6 +66,13 @@ public class AppFixture : IAsyncLifetime
                 // the fake pipeline's deterministic output, so the browser tier is switched off;
                 // ClientDelegatedFlowTests covers Tier 2 on its own fixture with it switched on.
                 ["Tier2__Enabled"] = "false",
+                // Browser tests drive the real endpoints as fast as Playwright can click, so the
+                // per-minute limits would be measuring the harness. Off rather than raised — see
+                // PoRateLimits.IsEnabled.
+                ["RateLimits__Enabled"] = "false",
+                // And nothing here may call out to MusicBrainz or AcousticBrainz: a suite that
+                // depends on a third party's uptime is a suite that fails for reasons of its own.
+                ["Reference__Enabled"] = "false",
             },
         };
         ConfigureEnvironment(startInfo.Environment);

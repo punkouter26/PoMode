@@ -138,6 +138,30 @@ public sealed class OllamaSongInterpreter(
 
     public async Task<string> InterpretAsync(SongStats stats, CancellationToken ct)
     {
+        var text = await ChatAsync(InterpretationPrompt.System, InterpretationPrompt.User(stats), ct);
+        logger.LogInformation("Interpreted song statistics locally with Ollama model {Model}.", _resolvedModel);
+        return text;
+    }
+
+    public async Task<string> AnswerAsync(
+        SongStats stats, IReadOnlyList<InterpretationTurn>? history, string question, CancellationToken ct)
+    {
+        // The whole conversation is rebuilt into one user message rather than sent as an Ollama
+        // multi-turn exchange. The measurements have to lead every turn — a model asked to recall a
+        // figure from six messages back approximates it — and one flat message is the only shape
+        // that guarantees they do.
+        var text = await ChatAsync(QuestionPrompt.System, QuestionPrompt.User(stats, history, question), ct);
+        logger.LogInformation("Answered a song question locally with Ollama model {Model}.", _resolvedModel);
+        return text;
+    }
+
+    /// <summary>
+    /// One non-streamed chat completion. Shared by the summary and the follow-up answer so both go
+    /// through the same model resolution, the same timeout, and — importantly — the same
+    /// <c>think:false</c>, which is the setting that decides whether a reasoning model replies at all.
+    /// </summary>
+    private async Task<string> ChatAsync(string system, string user, CancellationToken ct)
+    {
         // Normally already settled by the selector's availability probe; resolved here as well so a
         // direct caller cannot reach the request with no model name.
         var model = _resolvedModel ?? await ResolveModelAsync(ct)
@@ -161,8 +185,8 @@ public sealed class OllamaSongInterpreter(
             think = false,
             messages = new[]
             {
-                new { role = "system", content = InterpretationPrompt.System },
-                new { role = "user", content = InterpretationPrompt.User(stats) },
+                new { role = "system", content = system },
+                new { role = "user", content = user },
             },
             // Low but not zero: the wording may vary, the facts come from the prompt either way.
             options = new { temperature = 0.4 },
@@ -184,13 +208,12 @@ public sealed class OllamaSongInterpreter(
             // Naming the likely cause: an empty answer from a reasoning model almost always means it
             // reasoned instead of replying, which points at a model choice rather than a bug here.
             throw new InvalidOperationException(
-                $"Ollama returned an empty interpretation for model '{model}'"
+                $"Ollama returned an empty response for model '{model}'"
                 + (HasThinking(payload)
                     ? " — it produced reasoning but no answer. Try a non-reasoning model, e.g. 'ollama pull llama3.2'."
                     : "."));
         }
 
-        logger.LogInformation("Interpreted song statistics locally with Ollama model {Model}.", model);
         return text.Trim();
     }
 

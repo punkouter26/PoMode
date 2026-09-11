@@ -1,6 +1,7 @@
 using PoMode.API.Features.Analysis;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
+using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
 
@@ -12,7 +13,8 @@ public sealed class DiagnosticsService(
     SecretSourceInfo secretSource,
     HardwareProbe hardwareProbe,
     JobQueue queue,
-    ExecutionPlanner planner)
+    ExecutionPlanner planner,
+    IConfiguration configuration)
 {
     public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
         EnvironmentName: environment.EnvironmentName,
@@ -21,7 +23,19 @@ public sealed class DiagnosticsService(
         SecretFellBack: secretSource.FellBack,
         Hardware: await hardwareProbe.ProbeAsync(ct),
         QueueDepth: queue.Depth,
-        DefaultPlan: await DefaultPlanAsync(ct));
+        DefaultPlan: await DefaultPlanAsync(ct),
+        Operational: Operational());
+
+    /// <summary>
+    /// The guards this instance is running with. Presence only — in particular the OTLP endpoint is
+    /// reported as a boolean, because that URL can carry credentials in a header and this payload
+    /// redacts everything that could.
+    /// </summary>
+    private OperationalReport Operational() => new(
+        RateLimitsEnabled: PoRateLimits.IsEnabled(configuration),
+        MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24),
+        TelemetryExporting: !string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]),
+        ReferenceLookupEnabled: configuration.GetValue("Reference:Enabled", true));
 
     private async Task<List<StagePlan>?> DefaultPlanAsync(CancellationToken ct)
     {

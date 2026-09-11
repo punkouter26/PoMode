@@ -228,6 +228,12 @@ else if (ViewState.IsAdvanced)
         @* Bottom of the page in both views: the statistics and their written interpretation. *@
         <SongStatsPanel JobId="@_status!.JobId" />
 
+        @* And the outside world's opinion of the same recording, which is worth having next to our
+           own — agreement is evidence, and the usual disagreement (a catalogue naming the relative
+           major of a modal reading) is the distinction this whole app exists to draw. Closed until
+           asked: a lookup spends a third party's rate limit. *@
+        <ReferencePanel JobId="@_status!.JobId" />
+
         @if (_landscapeOn)
         {
             <RadzenCard class="landscape-card">
@@ -250,6 +256,11 @@ else if (ViewState.IsAdvanced)
 
     [Parameter, SupplyParameterFromQuery(Name = "view")]
     public string? ViewQuery { get; set; }
+
+    /// <summary>Set by the service worker after another app shared audio into PoMode (/?shared=1).
+    /// The file itself is waiting in a cache the worker wrote it to; see js/pwa.js.</summary>
+    [Parameter, SupplyParameterFromQuery(Name = "shared")]
+    public string? Shared { get; set; }
 
     private void OnViewStateChanged() => InvokeAsync(StateHasChanged);
 
@@ -481,6 +492,9 @@ else if (ViewState.IsAdvanced)
             _probed = true;
             RebuildExecutorChoices(); // a capable browser may now offer the browser-tier options
             StateHasChanged();
+            // After the probe, not before: a shared file should get the same browser-tier treatment
+            // as one dropped on the page, and that is only known once the capability is in.
+            await TakeSharedFileAsync();
         }
 
         if (_landscapeNeedsInit && _landscapeOn && _visual is not null)
@@ -623,6 +637,55 @@ else if (ViewState.IsAdvanced)
         }
     }
 
+    /// <summary>
+    /// Picks up audio another app shared into PoMode and analyses it like any other upload.
+    ///
+    /// <para>Android's share sheet POSTs the file to <c>/share-target</c>, which the service worker
+    /// answers by stashing the bytes and redirecting here. That indirection exists because a POST
+    /// cannot be handed to a single-page app as a navigation — the page has to come and fetch what
+    /// was shared once it is running.</para>
+    /// </summary>
+    private async Task TakeSharedFileAsync()
+    {
+        if (Shared != "1")
+        {
+            return;
+        }
+        // Cleared immediately so a refresh cannot look for a file that has already been claimed.
+        Navigation.NavigateTo("/", replace: true);
+
+        try
+        {
+            await using var pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pwa.js");
+            if (await pwa.InvokeAsync<string?>("takeSharedName") is not { Length: > 0 } name)
+            {
+                return;
+            }
+            var bytes = await pwa.InvokeAsync<byte[]>("takeSharedBytes");
+            if (bytes.Length == 0)
+            {
+                _uploadError = "The shared file arrived empty.";
+                return;
+            }
+
+            var status = await Analysis.UploadAsync(bytes, name, _clientCapability is not null);
+            if (status is null)
+            {
+                _uploadError = "The analyzer would not accept the shared file.";
+                return;
+            }
+            await TrackJobAsync(status);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away before the handoff finished.
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+    }
+
     private async Task OnStopRecording()
     {
         if (_recorder is null)
@@ -731,6 +794,11 @@ else if (ViewState.IsAdvanced)
                 // arpeggio stays mode-neutral, so no musical decision happens client-side).
                 _themeJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
                 await _themeJs.InvokeVoidAsync("setKeyHue", _result.TonicPitchClass * 30);
+                // And hand the interface its voice: from here the clicks and chimes are sounded from
+                // the mode's own scale. The pitches are derived here, from the shared ScaleModes
+                // table the server graded with, rather than in the browser — sfx.js is given notes
+                // to play and never a mode to interpret.
+                await PlaySfxAsync("setPalette", _result.EarconPitches());
                 await PlaySfxAsync("fanfare", 48 + _result.TonicPitchClass);
             }
         }
@@ -765,6 +833,17 @@ else if (ViewState.IsAdvanced)
         }
         if (_sfx is not null)
         {
+            // Back to the keyless defaults on the way out. Leaving the palette set would have the
+            // Library and Practice pages clicking in the key of whatever was last analyzed, which
+            // is a claim about music that is not on screen.
+            try
+            {
+                await _sfx.InvokeVoidAsync("setPalette", (int[]?)null);
+            }
+            catch (JSException)
+            {
+                // Already torn down; nothing is listening either way.
+            }
             await _sfx.DisposeAsync();
         }
         if (_themeJs is not null)
