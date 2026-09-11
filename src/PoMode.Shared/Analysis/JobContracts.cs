@@ -67,6 +67,20 @@ public static class JobStageExtensions
         => stage is JobStage.Complete or JobStage.Failed or JobStage.Cancelled;
 }
 
+/// <summary>
+/// Where a job's audio came from, when the server knows more than "somebody uploaded a file". A hum
+/// take is the case that needs it: the mode the analyzer reports is a fact about a melody the user
+/// sang over a progression this app chose for them, and without saying so the page shows a mode on
+/// an unexplained file. <paramref name="Kind"/> is a stable token for the client to branch on;
+/// <paramref name="Description"/> is the sentence to show, worded server-side like every other
+/// musical statement in the app.
+/// </summary>
+public sealed record TakeOrigin(string Kind, string Description)
+{
+    /// <summary>Sung or hummed over a Mode Lab progression.</summary>
+    public const string HumTake = "HumTake";
+}
+
 /// <summary><paramref name="IsPlaceholder"/> mirrors the executor's own placeholder flag so the
 /// client can show the mock-data banner without knowing executor naming conventions.</summary>
 public sealed record StagePlan(string Stage, ExecutionTier Tier, string Executor, bool IsPlaceholder = false);
@@ -89,7 +103,8 @@ public sealed record JobStatusDto(
     string? Error,
     DateTimeOffset CreatedAt,
     IReadOnlyList<StageRecord>? StageHistory = null,
-    string? FileName = null);
+    string? FileName = null,
+    TakeOrigin? Origin = null);
 
 /// <summary>Request body for POST /api/analysis/from-url (yt-dlp ingest).</summary>
 public sealed record AnalyzeUrlRequest(string Url);
@@ -109,7 +124,8 @@ public sealed record LibraryEntryDto(
     JobStage Stage,
     string? TonicName,
     string? PrimaryMode,
-    double? TempoBpm);
+    double? TempoBpm,
+    TakeOrigin? Origin = null);
 
 public sealed record BatchTrackStatus(
     string JobId,

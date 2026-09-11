@@ -135,6 +135,18 @@ else if (ViewState.IsAdvanced)
     </div>
 }
 
+@* Where this audio came from, when the server knows. A hum take is a melody the user sang over a
+   progression this app chose for them, and the mode below is a fact about that melody — without the
+   provenance the page reports a mode on an unexplained file. Shown in both views, because it is
+   context for the answer rather than a detail about the run. *@
+@if (_status?.Origin is { } origin)
+{
+    <div class="take-origin" role="note" data-take-origin="@origin.Kind">
+        <span class="take-origin-icon" aria-hidden="true">🎤</span>
+        <span class="take-origin-text">@origin.Description</span>
+    </div>
+}
+
 @if (_status is not null && (ViewState.IsAdvanced || _status.Stage != JobStage.Complete || _visual is null))
 {
     <JobProgress Status="_status" OnCancel="@CancelJobAsync" />

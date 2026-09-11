@@ -49,7 +49,8 @@ public static class LibraryEndpoints
                     state.Stage,
                     tonicName,
                     primaryMode,
-                    tempoBpm));
+                    tempoBpm,
+                    state.Origin));
             }
             return TypedResults.Ok(entries.OrderByDescending(e => e.CreatedAt).ToList());
         }).RequireAuthorization();

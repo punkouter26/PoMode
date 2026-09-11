@@ -185,3 +185,19 @@
     font-size: 0.72rem;
     font-weight: 600;
 }
+
+/* Marks a row that is a sung take rather than an uploaded song; the tooltip carries the progression
+   it was hummed over, which is the row's actual subject. */
+.library-origin-badge {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    border: 1px solid #f472b6;
+    background: rgba(244, 114, 182, 0.15);
+    color: #f9a8d4;
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: help;
+}

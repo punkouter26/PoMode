@@ -28,6 +28,10 @@ public sealed class JobState
     public string? PrimaryMode { get; set; }
     public double? TempoBpm { get; set; }
 
+    /// <summary>What this job's audio is, when the server knows — a hum take names the progression
+    /// it was sung over. Null for an ordinary upload, which is its own complete explanation.</summary>
+    public TakeOrigin? Origin { get; set; }
+
     public JobStatusDto ToDto(double? liveProgress = null)
-        => new(JobId, Stage, liveProgress ?? Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName);
+        => new(JobId, Stage, liveProgress ?? Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName, Origin);
 }

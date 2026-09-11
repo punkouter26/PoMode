@@ -57,6 +57,40 @@ switched off, which restores the older one-progression-under-all-modes lesson. T
 is the mode's own scale, not the parent's — identical for the seven diatonic modes, and the reason a
 pentatonic card no longer sounds the two notes its scale exists to omit.
 
+### Hum takes (sing over the chords)
+
+The Mode Lab's "New Chords" dice rolls a progression from the same catalog the dropdown uses (the
+key is deliberately left alone — a singer picks a key for their own range), and Hum Along records the
+microphone over that progression looping until Stop. `hum-recorder.js` is a third capture path beside
+`audio-recorder.js` and `live-session.js`, and the only one that *wants* the browser's echo
+cancellation, because it is the only one recording while the page plays audio out of the speakers.
+It shares `modal-player.js`'s AudioContext so the two clocks are comparable, and trims the take so
+sample zero is bar one — the count-in and the mic-open gap come off the front.
+
+`POST /api/modal-melodies/hum` takes the recording as multipart and the backing as the same query
+parameters `/wav` and `/midi` use. `HumTakeSeeder` then hands the job what it already knows, through
+`AnalysisIntake.StartAsync`'s `seed` hook (which runs after planning and *before* enqueue, so the
+worker cannot start detecting what it is about to be given): the progression regenerated
+deterministically from that request and tiled across every loop pass as `chords.json`, and the
+slider's BPM as `beats.json` at confidence 1.0. Separation and chord detection are then marked
+complete without running — a solo hum has no stems to split and no harmony to find, and asking a
+recognizer to look would invent a chord track nobody sang. Both stages' plan entries are rewritten to
+`SkippedDryVocal` / `ModeLabBacking` so the UI never credits an executor with work it did not do.
+The pipeline needs no special case for any of this: a pre-completed stage with its artifact on disk
+is exactly the shape it already restarts from. The take is then an ordinary job — library row,
+restart-safe, blob-mirrored — whose melody is the user's and whose harmony is real.
+
+Before saving, the take can be played back against its own chords: `reviewTake` decodes the recording
+and schedules it and the loop from one instant on the shared context (hence `play`'s optional
+`startAtTime`). Hearing the voice alone says nothing about whether the phrase landed; the question is
+always how it sits against the harmony.
+
+The seeder also stamps `JobState.Origin` — a `TakeOrigin` carried on `JobStatusDto` and
+`LibraryEntryDto` — whose sentence is worded server-side like every other musical statement. It
+describes the backing that was *played to* the singer and never asserts a mode for their voice: that
+is the answer the analyzer exists to give, and stating it alongside would pre-empt it. An ordinary
+upload has no origin; a dropped file is its own explanation.
+
 ### Song statistics and interpretation
 
 `GET /api/analysis/{id}/stats` derives every melody/harmony statistic on demand from the stored

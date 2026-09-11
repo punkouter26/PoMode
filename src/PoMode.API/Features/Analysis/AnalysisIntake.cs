@@ -10,12 +10,20 @@ namespace PoMode.API.Features.Analysis;
 /// </summary>
 public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlanner planner)
 {
+    /// <param name="seed">
+    /// Optional: writes artifacts the caller already knows, and marks the stages that would have
+    /// produced them complete, before the job is queued. Runs inside the same window as planning
+    /// for a reason — the worker must not be able to dequeue the job and start detecting what the
+    /// caller was about to hand it. A Mode Lab hum take is the case that needs it: the chords the
+    /// user sang over are a setting they chose, not something to rediscover from a solo hum.
+    /// </param>
     public async Task<JobState> StartAsync(
         string fileName,
         Stream content,
         bool clientCanInfer,
         CancellationToken ct,
-        IReadOnlyDictionary<string, string>? preferredExecutors = null)
+        IReadOnlyDictionary<string, string>? preferredExecutors = null,
+        Func<JobState, CancellationToken, Task>? seed = null)
     {
         var state = await store.CreateAsync(fileName, content, ct);
         try
@@ -30,6 +38,10 @@ public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlan
             state.Error = ex.Message;
             await store.SaveAsync(state, ct);
             return state;
+        }
+        if (seed is not null)
+        {
+            await seed(state, ct);
         }
         await store.SaveAsync(state, ct);
         await queue.EnqueueAsync(state.JobId, ct);

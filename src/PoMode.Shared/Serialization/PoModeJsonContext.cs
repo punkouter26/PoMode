@@ -8,6 +8,7 @@ namespace PoMode.Shared.Serialization;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiagnosticsReport))]
 [JsonSerializable(typeof(JobStatusDto))]
+[JsonSerializable(typeof(TakeOrigin))]
 [JsonSerializable(typeof(AnalyzeUrlRequest))]
 [JsonSerializable(typeof(BatchStatusDto))]
 [JsonSerializable(typeof(List<LibraryEntryDto>))]

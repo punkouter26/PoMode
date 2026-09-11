@@ -1,8 +1,10 @@
 // One 16-bit mono PCM WAV encoder for every microphone path in the app.
 //
-// Two capture paths exist on purpose and must stay separate: the Home recorder asks for the raw
+// Three capture paths exist on purpose and must stay separate: the Home recorder asks for the raw
 // signal (no echo cancellation, no automatic gain) because the analyzer works better on untouched
-// audio, while the Live session wants the browser's cleanup because it is feeding a pitch tracker.
+// audio; the Live session wants the browser's cleanup because it is feeding a pitch tracker; and
+// the Mode Lab's hum recorder needs echo cancellation most of all, because it is the only one that
+// records while the page is playing a backing track out of the speakers.
 // What they had no business duplicating was this header, which they each carried a copy of.
 
 /// Encodes `chunks` (any iterable of Float32Array) totalling `frameCount` samples at `sampleRate`.

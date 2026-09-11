@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -131,6 +132,34 @@ public sealed class AnalysisClient(HttpClient http)
             : null;
     }
 
+
+    /// <summary>
+    /// Uploads a hum take together with the backing it was sung over. The backing rides along as the
+    /// same query parameters the WAV and MIDI exports take, so the server can regenerate the exact
+    /// progression the user heard and put it under their melody — a solo hum contains no harmony for
+    /// a chord recognizer to find, and asking one to look would invent a chord track nobody sang.
+    /// </summary>
+    public async Task<JobStatusDto?> UploadHumTakeAsync(byte[] wavBytes, ModalMelodyRequest backing)
+    {
+        using var content = new MultipartFormDataContent();
+        var filePart = new ByteArrayContent(wavBytes);
+        filePart.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        content.Add(filePart, "file", "hum.wav");
+
+        var url = "api/modal-melodies/hum"
+            + $"?tonicPitchClass={backing.TonicPitchClass}"
+            + $"&mode={backing.Mode}"
+            + $"&progressionId={Uri.EscapeDataString(backing.ProgressionId)}"
+            + $"&bpm={backing.Bpm.ToString(CultureInfo.InvariantCulture)}"
+            + $"&style={backing.Style}"
+            + $"&seed={backing.Seed}"
+            + $"&targetPurity={backing.TargetPurity.ToString(CultureInfo.InvariantCulture)}";
+
+        var response = await http.PostAsync(url, content);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<JobStatusDto>()
+            : null;
+    }
 
     /// <summary>Synthesizes the melody and chords into WAV audio and queues an end-to-end analysis job in the Song Analyzer.</summary>
     public async Task<JobStatusDto?> AnalyzeModalMelodyAsync(ModalMelodyRequest request)

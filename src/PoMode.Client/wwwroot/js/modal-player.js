@@ -62,6 +62,21 @@ function midiToFreq(midiPitch) {
     return 440 * Math.pow(2, (midiPitch - 69) / 12);
 }
 
+// The hum recorder captures the microphone against this player's clock, so the two have to share
+// one AudioContext — comparing `currentTime` across contexts is meaningless. What it needs from the
+// comparison is where bar one of the loop fell, because the server tiles the chord progression
+// across the take from sample zero: a take trimmed to the wrong instant puts the user's phrase
+// under chords they never heard.
+export function getSharedContext() {
+    return ensureContext();
+}
+
+/// The audio-clock instant the current pass through the loop started on, or null when nothing is
+/// playing and there is therefore no downbeat to align to.
+export function getPlaybackStartTime() {
+    return isPlaying && audioCtx ? playbackStartTime : null;
+}
+
 /// Concert Flute Synthesizer: simulates a wooden/silver concert flute
 /// with pure sine fundamental, gentle overtone, and breath chiff noise.
 function playFluteMelodyNote(ctx, note, startTime) {
@@ -323,7 +338,11 @@ function tick() {
     animFrameId = requestAnimationFrame(tick);
 }
 
-export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper) {
+/// `startAtTime` is an instant on this context's clock to begin the loop on, for a caller that has
+/// something else to start at the same moment — reviewing a hum take plays the recording and the
+/// chords together, and scheduling them from one instant is what keeps them in step. Omitted, the
+/// loop starts now, which is what every transport button wants.
+export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper, startAtTime) {
     const ctx = ensureContext();
     if (!ctx) return;
 
@@ -345,7 +364,7 @@ export function play(melodyNotes, backingNotes, totalDuration, dotNetHelper) {
         };
     }
 
-    playbackStartTime = ctx.currentTime - pauseOffset;
+    playbackStartTime = (typeof startAtTime === 'number' ? startAtTime : ctx.currentTime) - pauseOffset;
     scheduledElapsed = pauseOffset;
     isPlaying = true;
 

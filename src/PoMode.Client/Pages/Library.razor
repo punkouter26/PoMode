@@ -54,6 +54,12 @@
                             {
                                 <span class="library-runs-badge" title="This song was analyzed more than once">×@runs</span>
                             }
+                            @* A sung take is not an uploaded song, and the row should not read like one —
+                               its whole meaning is the progression the singer was hearing. *@
+                            @if (entry.Origin is { } origin)
+                            {
+                                <span class="library-origin-badge" title="@origin.Description">🎤 hum</span>
+                            }
                         </Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Analyzed" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px" />

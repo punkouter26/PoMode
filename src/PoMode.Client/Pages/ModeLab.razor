@@ -31,26 +31,34 @@
         <div class="studio-transport">
             @if (!_isPlaying)
             {
-                <button class="transport-btn play" @onclick="PlayAsync" disabled="@(_isLoading || _melody is null)" title="Play (Flute & Piano)">
+                <button class="transport-btn play" @onclick="PlayAsync" disabled="@(_isLoading || _melody is null || IsHumBusy)" title="Play (Flute & Piano)">
                     ▶ Play
                 </button>
             }
             else
             {
-                <button class="transport-btn pause" @onclick="PauseAsync" title="Pause">
+                <button class="transport-btn pause" @onclick="PauseAsync" disabled="@IsHumBusy" title="Pause">
                     ⏸ Pause
                 </button>
             }
-            <button class="transport-btn stop" @onclick="StopAsync" disabled="@(!_isPlaying && _playheadSec == 0)" title="Stop">
+            <button class="transport-btn stop" @onclick="StopAsync" disabled="@((!_isPlaying && _playheadSec == 0) || IsHumBusy)" title="Stop">
                 ⏹ Stop
             </button>
 
-            <button class="transport-btn loop @(_isLooping ? "active" : "")" @onclick="ToggleLoopAsync" title="Loop Toggle">
+            <button class="transport-btn loop @(_isLooping ? "active" : "")" @onclick="ToggleLoopAsync" disabled="@IsHumBusy" title="Loop Toggle">
                 🔁 Loop
             </button>
 
-            <button class="transport-btn shuffle" @onclick="RandomizeSeedAsync" title="Generate New Melody">
+            <button class="transport-btn shuffle" @onclick="RandomizeSeedAsync" disabled="@IsHumBusy" title="Generate New Melody">
                 🎲 New Melody
+            </button>
+
+            @* The harmony's own dice. Rolls until you land on a progression worth singing over —
+               the key stays where you put it, because that is the one setting a voice cares about. *@
+            <button class="transport-btn shuffle chords" id="roll-chords" @onclick="RandomizeProgressionAsync"
+                    disabled="@(IsHumBusy || _progressions.Count < 2)"
+                    title="Roll a random chord progression to sing over (the key stays as you set it)">
+                🎲 New Chords
             </button>
 
             <a class="transport-link wav" href="@($"api/modal-melodies/wav?TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={_selectedProgressionId}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}")"
@@ -63,7 +71,7 @@
                 📥 MIDI
             </a>
 
-            <button class="transport-btn send-analyzer" @onclick="SendToAnalyzerAsync" disabled="@(_isSendingToAnalyzer || _melody is null)"
+            <button class="transport-btn send-analyzer" @onclick="SendToAnalyzerAsync" disabled="@(_isSendingToAnalyzer || _melody is null || IsHumBusy)"
                     title="Synthesize and import directly into the Song Analyzer for AI stem separation and chord/pitch tracking">
                 @(_isSendingToAnalyzer ? "⏳ Analyzing…" : "🔬 Analyze in Song Analyzer →")
             </button>
@@ -74,7 +82,7 @@
                 <span class="field-label">Key:</span>
                 <RadzenDropDown TValue="int" @bind-Value="_selectedTonic" Data="@TonicOptions"
                                 TextProperty="Name" ValueProperty="PitchClass"
-                                Change="@(_ => OnConfigChanged())" class="compact-dropdown key-dd" id="tonic-select" />
+                                Change="@(_ => OnConfigChanged())" Disabled="@IsHumBusy" class="compact-dropdown key-dd" id="tonic-select" />
             </div>
 
             <div class="selector-field match-field">
@@ -83,7 +91,7 @@
                 </span>
                 <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
                         id="match-harmony-toggle" data-match-harmony="@(_matchHarmonyToMode ? "on" : "off")"
-                        @onclick="ToggleMatchHarmonyAsync">
+                        disabled="@IsHumBusy" @onclick="ToggleMatchHarmonyAsync">
                     @(_matchHarmonyToMode ? "On" : "Off")
                 </button>
             </div>
@@ -92,20 +100,74 @@
                 <span class="field-label">Progression:</span>
                 <RadzenDropDown TValue="string" @bind-Value="_selectedProgressionId" Data="@_progressions"
                                 TextProperty="Name" ValueProperty="Id"
-                                Change="@(_ => OnProgressionChanged())" class="compact-dropdown prog-dd" id="prog-select" />
+                                Change="@(_ => OnProgressionChanged())" Disabled="@IsHumBusy" class="compact-dropdown prog-dd" id="prog-select" />
             </div>
 
             <div class="selector-field">
                 <span class="field-label">Style:</span>
                 <RadzenDropDown TValue="MelodyStyle" @bind-Value="_selectedStyle" Data="@StyleOptions"
-                                Change="@(_ => OnConfigChanged())" class="compact-dropdown style-dd" id="style-select" />
+                                Change="@(_ => OnConfigChanged())" Disabled="@IsHumBusy" class="compact-dropdown style-dd" id="style-select" />
             </div>
 
             <div class="selector-field tempo-field">
                 <span class="field-label">@($"{_bpm:0} BPM")</span>
                 <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="180" Step="2"
-                              Change="@(args => OnTempoChanged(args))" class="compact-slider" id="tempo-slider" />
+                              Change="@(args => OnTempoChanged(args))" Disabled="@IsHumBusy" class="compact-slider" id="tempo-slider" />
             </div>
+        </div>
+    </div>
+
+    @* Hum Along. The progression plays on its own, the microphone records over it, and the take goes
+       to the analyzer carrying the chords it was actually sung over — so the analysis reads the
+       user's melody against real harmony instead of harmony guessed out of a solo voice. *@
+    <div class="hum-strip @(IsHumBusy ? "busy" : "")" data-hum-state="@_humState">
+        <div class="hum-lead">
+            <span class="hum-icon">🎤</span>
+            <div class="hum-copy">
+                <span class="hum-title">Hum Along</span>
+                <span class="hum-sub">@HumSubtitle</span>
+            </div>
+        </div>
+
+        <div class="hum-actions">
+            @switch (_humState)
+            {
+                case HumState.Idle:
+                    <button class="hum-btn record" type="button" id="hum-record"
+                            @onclick="StartHumAsync" disabled="@(_melody is null || _isLoading)">
+                        ● Record over these chords
+                    </button>
+                    break;
+
+                case HumState.CountingIn:
+                    <span class="hum-countdown">Counting in…</span>
+                    break;
+
+                case HumState.Recording:
+                    <span class="hum-dot" aria-hidden="true"></span>
+                    <button class="hum-btn stop" type="button" id="hum-stop" @onclick="StopHumAsync">
+                        ⏹ Stop · @($"{_humElapsedSec:0.0}s")
+                    </button>
+                    break;
+
+                case HumState.Captured:
+                    <span class="hum-take-len">Take: @($"{_humTakeSec:0.0}s")</span>
+                    @* Hearing the take against the chords is the only way to judge it — the voice
+                       alone says nothing about whether the phrase landed. *@
+                    <button class="hum-btn review" type="button" id="hum-review"
+                            @onclick="ToggleReviewAsync" disabled="@_isSavingHum">
+                        @(_isReviewing ? "⏹ Stop" : "▶ Hear it back")
+                    </button>
+                    <button class="hum-btn analyze" type="button" id="hum-analyze"
+                            @onclick="AnalyzeHumAsync" disabled="@_isSavingHum">
+                        @(_isSavingHum ? "⏳ Saving…" : "🔬 Save & analyze my melody →")
+                    </button>
+                    <button class="hum-btn redo" type="button" id="hum-redo"
+                            @onclick="DiscardHumAsync" disabled="@_isSavingHum">
+                        🗑 Redo
+                    </button>
+                    break;
+            }
         </div>
     </div>
 
@@ -180,7 +242,7 @@
             <div class="modal-purity-box">
                 <span class="ribbon-label">Modal Purity:</span>
                 <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
-                              Change="@(args => OnPurityChanged(args))"
+                              Change="@(args => OnPurityChanged(args))" Disabled="@IsHumBusy"
                               class="compact-slider purity-slider" id="purity-slider" />
                 <span class="purity-badge" data-purity-target="@($"{_targetPurity:0}")"
                       title="How hard the example insists on its mode. At the top the melody starts and ends on the mode root and the loop opens on the home chord; lower settings loosen both, so the opening chord need not be the mode's own.">
@@ -303,6 +365,46 @@
     private IJSObjectReference? _playerModule;
     private DotNetObjectReference<ModeLab>? _selfRef;
 
+    // ── Hum Along ────────────────────────────────────────────────────────────────────────────────
+
+    private enum HumState { Idle, CountingIn, Recording, Captured }
+
+    /// <summary>Beats of count-in before the loop starts, so the singer has the pulse before bar one.</summary>
+    private const int CountInBeats = 4;
+
+    /// <summary>
+    /// Ceiling on one take. The loop runs until Stop, but the browser is holding raw PCM the whole
+    /// time — at 44.1 kHz mono this is roughly 26 MB, comfortably inside the API's 100 MB upload cap.
+    /// </summary>
+    private const double MaxHumSeconds = 300.0;
+
+    private HumState _humState = HumState.Idle;
+    private byte[]? _humTake;
+    private double _humElapsedSec;
+    private double _humTakeSec;
+    private bool _isSavingHum;
+    private bool _isReviewing;
+    private readonly System.Diagnostics.Stopwatch _humWatch = new();
+    private IJSObjectReference? _humModule;
+
+    /// <summary>
+    /// The arrangement the take was actually sung over, captured when recording starts. The take
+    /// travels to the server with this rather than with whatever the selectors say at upload time —
+    /// otherwise changing the key between Stop and Save would file the recording under chords the
+    /// singer never heard.
+    /// </summary>
+    private ModalMelodyRequest? _humBacking;
+
+    private bool IsHumBusy => _humState is HumState.CountingIn or HumState.Recording;
+
+    private string HumSubtitle => _humState switch
+    {
+        HumState.CountingIn => "Get ready…",
+        HumState.Recording => $"Recording over {_selectedProgressionName}. The loop repeats until you press Stop.",
+        HumState.Captured => "Analyzed against the chords you actually heard — not chords guessed from your voice.",
+        _ => "Roll 🎲 New Chords until you like the progression, then record. Headphones keep the piano out of your take.",
+    };
+
     private string CurrentParentKeyName
         => TonicOptions.FirstOrDefault(t => t.PitchClass == _selectedTonic)?.Name ?? "C";
 
@@ -364,18 +466,20 @@
         }
     }
 
+    /// <summary>The selectors as the server's request shape — one copy, so the preview, the analyzer
+    /// hand-off and a hum take can never be generated from subtly different settings.</summary>
+    private ModalMelodyRequest CurrentRequest() => new(
+        TonicPitchClass: _selectedTonic,
+        Mode: _selectedMode,
+        ProgressionId: _selectedProgressionId,
+        Bpm: _bpm,
+        Style: _selectedStyle,
+        Seed: _seed,
+        TargetPurity: _targetPurity);
+
     private async Task RefreshMelodyAsync()
     {
-        var request = new ModalMelodyRequest(
-            TonicPitchClass: _selectedTonic,
-            Mode: _selectedMode,
-            ProgressionId: _selectedProgressionId,
-            Bpm: _bpm,
-            Style: _selectedStyle,
-            Seed: _seed,
-            TargetPurity: _targetPurity);
-
-        _melody = await Analysis.GenerateModalMelodyAsync(request);
+        _melody = await Analysis.GenerateModalMelodyAsync(CurrentRequest());
         if (_melody is not null)
         {
             _totalDurationSec = _melody.MelodyNotes.Count > 0
@@ -408,6 +512,13 @@
 
     private async Task SampleModeAsync(ScaleMode mode)
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         _selectedMode = mode;
         ApplyModeHarmony(mode);
         await RefreshMelodyAsync();
@@ -421,6 +532,13 @@
 
     private async Task OnConfigChanged(object? _ = null)
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
@@ -432,6 +550,13 @@
 
     private async Task OnPurityChanged(double _ = 0)
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         // The slider hands back negative zero at the bottom of its travel, which formats as "-0%".
         if (_targetPurity <= 0) _targetPurity = 0;
 
@@ -446,6 +571,13 @@
 
     private async Task OnProgressionChanged(object? _ = null)
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         var prog = _progressions.FirstOrDefault(p => p.Id == _selectedProgressionId);
         if (prog is not null)
         {
@@ -464,6 +596,13 @@
 
     private async Task OnTempoChanged(double _ = 0)
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         await RefreshMelodyAsync();
         if (_isPlaying)
         {
@@ -475,6 +614,13 @@
 
     private async Task RandomizeSeedAsync()
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         _seed = Random.Shared.Next(1, 100000);
         await RefreshMelodyAsync();
 
@@ -488,6 +634,295 @@
         }
     }
 
+    /// <summary>
+    /// Rolls a different progression to sing over. Deliberately leaves the key alone: a singer picks
+    /// a key for their own range and does not want it moving under them, whereas the chords are the
+    /// thing worth re-rolling until one sounds worth a take.
+    ///
+    /// <para>Sets the mode from the progression the way the dropdown does, and never routes through
+    /// <see cref="ApplyModeHarmony"/> — that would look up the new mode's signature cadence and snap
+    /// the harmony straight back off the roll.</para>
+    /// </summary>
+    private async Task RandomizeProgressionAsync()
+    {
+        if (IsHumBusy || _progressions.Count < 2) return;
+
+        // Re-roll rather than allow a no-op: a dice button that lands on the same progression reads
+        // as broken, and with a catalog this size that happens often.
+        ChordProgressionDefinition next;
+        do
+        {
+            next = _progressions[Random.Shared.Next(_progressions.Count)];
+        }
+        while (next.Id == _selectedProgressionId);
+
+        _selectedProgressionId = next.Id;
+        _selectedProgressionName = next.Name;
+        _bpm = next.DefaultBpm;
+        _selectedMode = next.SuggestedMode;
+
+        // A fresh progression deserves a fresh melody over it — the old seed's phrases were shaped
+        // around chords that are gone.
+        _seed = Random.Shared.Next(1, 100000);
+
+        // A roll that lands while a take is already captured would leave "Save my melody" pointing
+        // at chords that are no longer on screen. The take itself still carries its own backing, but
+        // the screen would be lying about what it was.
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
+        await RefreshMelodyAsync();
+
+        // Audition it straight away: the whole point of the roll is to hear whether it is worth
+        // singing over, and from bar one rather than wherever the previous loop had got to.
+        var wasPlaying = _isPlaying;
+        await StopAsync();
+        if (wasPlaying)
+        {
+            await PlayAsync();
+        }
+    }
+
+    private async Task EnsureHumRecorderAsync()
+        => _humModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/hum-recorder.js");
+
+    /// <summary>
+    /// Opens the microphone, counts the singer in, then loops the chords alone while the take runs.
+    /// The generated melody is muted for the duration: the only melody that should reach the
+    /// analyzer is the one being sung.
+    /// </summary>
+    private async Task StartHumAsync()
+    {
+        if (_melody is null || _humState is not HumState.Idle) return;
+        _humState = HumState.CountingIn;
+
+        try
+        {
+            await EnsureHumRecorderAsync();
+            await EnsurePlayerAsync();
+            if (_humModule is null || _playerModule is null)
+            {
+                _humState = HumState.Idle;
+                return;
+            }
+
+            await StopReviewIfPlayingAsync();
+            _humBacking = CurrentRequest();
+            _humTake = null;
+            _humElapsedSec = 0;
+
+            await StopAsync();
+            // The take runs until Stop, so the chords have to keep coming regardless of what the
+            // transport's own loop toggle says. It is restored when the take ends.
+            await _playerModule.InvokeVoidAsync("setLooping", true);
+
+            // Open the microphone before the clicks: the first take of a session raises the
+            // permission prompt, and counting down to a dialog box helps nobody.
+            if (!await _humModule.InvokeAsync<bool>("beginCapture"))
+            {
+                _humState = HumState.Idle;
+                NotificationService.Notify(
+                    NotificationSeverity.Error, "Hum Along", "The microphone could not be opened.");
+                return;
+            }
+
+            await _humModule.InvokeVoidAsync("countIn", _bpm, CountInBeats);
+
+            // Chords only — an empty melody list, so the flute never sounds while the mic is open.
+            _humState = HumState.Recording;
+            _isPlaying = true;
+            _humWatch.Restart();
+            await _playerModule.InvokeVoidAsync(
+                "play", Array.Empty<NoteEvent>(), _melody.BackingNotes, _totalDurationSec, _selfRef);
+        }
+        catch (Exception ex)
+        {
+            _humState = HumState.Idle;
+            _humWatch.Reset();
+            await CancelHumCaptureAsync();
+            NotificationService.Notify(NotificationSeverity.Error, "Hum Along", ex.Message);
+        }
+    }
+
+    /// <summary>Ends the take and keeps the encoded audio for the singer to save or redo.</summary>
+    private async Task StopHumAsync()
+    {
+        if (_humState is not HumState.Recording) return;
+        // Claim the transition before the first await, so a take that hits the length cap on one
+        // playhead tick cannot also be stopped by the next one.
+        _humState = HumState.Captured;
+        _humTakeSec = _humWatch.Elapsed.TotalSeconds;
+        _humWatch.Reset();
+
+        try
+        {
+            // finishCapture reads the player's downbeat to trim the take to bar one, so it has to
+            // run while the transport is still going.
+            var take = _humModule is null
+                ? []
+                : await _humModule.InvokeAsync<byte[]>("finishCapture");
+            await StopAsync();
+            if (_playerModule is not null)
+            {
+                await _playerModule.InvokeVoidAsync("setLooping", _isLooping);
+            }
+
+            // Empty covers both "the microphone gave us nothing" and "the take was all count-in" —
+            // the recorder refuses to encode either, so neither reaches the analyzer.
+            if (take.Length == 0)
+            {
+                _humState = HumState.Idle;
+                NotificationService.Notify(
+                    NotificationSeverity.Warning, "Hum Along",
+                    "Nothing usable was captured — check the microphone and try a longer take.");
+                return;
+            }
+            _humTake = take;
+        }
+        catch (Exception ex)
+        {
+            _humState = HumState.Idle;
+            NotificationService.Notify(NotificationSeverity.Error, "Hum Along", ex.Message);
+        }
+    }
+
+    /// <summary>Uploads the take with the backing it was sung over, then opens it in the analyzer.</summary>
+    private async Task AnalyzeHumAsync()
+    {
+        if (_humTake is null || _humBacking is null || _isSavingHum) return;
+        _isSavingHum = true;
+        try
+        {
+            await StopReviewIfPlayingAsync();
+            var job = await Analysis.UploadHumTakeAsync(_humTake, _humBacking);
+            if (job is not null && !string.IsNullOrEmpty(job.JobId))
+            {
+                DiscardHumTake();
+                NotificationService.Notify(
+                    NotificationSeverity.Success, "Hum Along", "Take saved — analyzing your melody against those chords.");
+                Navigation.NavigateTo($"/?job={job.JobId}");
+            }
+            else
+            {
+                NotificationService.Notify(
+                    NotificationSeverity.Error, "Hum Along", "The server would not accept the take.");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Hum Along", ex.Message);
+        }
+        finally
+        {
+            _isSavingHum = false;
+        }
+    }
+
+    /// <summary>Plays the take back with its chords underneath, or stops that playback.</summary>
+    private async Task ToggleReviewAsync()
+    {
+        if (_humModule is null || _melody is null) return;
+        try
+        {
+            if (_isReviewing)
+            {
+                _isReviewing = false;
+                await _humModule.InvokeVoidAsync("stopReview");
+                _isPlaying = false;
+                _playheadSec = 0;
+                return;
+            }
+
+            // The player is driven from inside the recorder so both start on one instant; this side
+            // only has to agree that a take is now playing.
+            _isReviewing = true;
+            _isPlaying = true;
+            var seconds = await _humModule.InvokeAsync<double>(
+                "reviewTake", _melody.BackingNotes, _totalDurationSec, _selfRef);
+            if (seconds <= 0)
+            {
+                _isReviewing = false;
+                _isPlaying = false;
+                NotificationService.Notify(
+                    NotificationSeverity.Warning, "Hum Along", "The take could not be played back.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _isReviewing = false;
+            _isPlaying = false;
+            NotificationService.Notify(NotificationSeverity.Error, "Hum Along", ex.Message);
+        }
+    }
+
+    /// <summary>Raised by the recorder when the take has played all the way through.</summary>
+    [JSInvokable]
+    public void OnHumReviewEnded()
+    {
+        _isReviewing = false;
+        _isPlaying = false;
+        _playheadSec = 0;
+        _activeWindowIndex = null;
+        StateHasChanged();
+    }
+
+    private async Task DiscardHumAsync()
+    {
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+    }
+
+    private async Task StopReviewIfPlayingAsync()
+    {
+        if (!_isReviewing || _humModule is null) return;
+        _isReviewing = false;
+        _isPlaying = false;
+        try
+        {
+            await _humModule.InvokeVoidAsync("stopReview");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void DiscardHumTake()
+    {
+        if (_humState is HumState.Captured)
+        {
+            _humState = HumState.Idle;
+        }
+        _humTake = null;
+        _humBacking = null;
+        _humElapsedSec = 0;
+        _humTakeSec = 0;
+        _isReviewing = false;
+        // Fire-and-forget: the take's bytes and decoded buffer live in the JS module too, and a page
+        // that has moved on must not keep them alive.
+        if (_humModule is not null)
+        {
+            _ = InvokeVoidSafelyAsync(_humModule, "clearTake");
+        }
+    }
+
+    private static async Task InvokeVoidSafelyAsync(IJSObjectReference module, string identifier)
+    {
+        try
+        {
+            await module.InvokeVoidAsync(identifier);
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    private async Task CancelHumCaptureAsync()
+    {
+        if (_humModule is null) return;
+        try
+        {
+            await _humModule.InvokeVoidAsync("cancelCapture");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
     private async Task SendToAnalyzerAsync()
     {
         if (_melody is null || _isSendingToAnalyzer) return;
@@ -499,16 +934,7 @@
                 await PauseAsync();
             }
 
-            var request = new ModalMelodyRequest(
-                TonicPitchClass: _selectedTonic,
-                Mode: _selectedMode,
-                ProgressionId: _selectedProgressionId,
-                Bpm: _bpm,
-                Style: _selectedStyle,
-                Seed: _seed,
-                TargetPurity: _targetPurity);
-
-            var job = await Analysis.AnalyzeModalMelodyAsync(request);
+            var job = await Analysis.AnalyzeModalMelodyAsync(CurrentRequest());
             if (job is not null && !string.IsNullOrEmpty(job.JobId))
             {
                 NotificationService.Notify(NotificationSeverity.Success, "Mode Lab Bridge", "Synthesized WAV audio & queued analysis job!");
@@ -563,6 +989,13 @@
 
     private async Task ToggleMatchHarmonyAsync()
     {
+        // A captured take belongs to the chords it was sung over. Changing the arrangement while it
+        // is still on screen would leave "Save my melody" offering to file it under an arrangement
+        // nobody sang, so the take is dropped along with the settings that produced it.
+        if (IsHumBusy) return;
+        await StopReviewIfPlayingAsync();
+        DiscardHumTake();
+
         _matchHarmonyToMode = !_matchHarmonyToMode;
         if (_matchHarmonyToMode)
         {
@@ -622,6 +1055,18 @@
     {
         _playheadSec = positionSec;
         UpdateActiveWindow(positionSec);
+
+        // The player already ticks once per animation frame while the loop runs, so the take's
+        // running time rides on that rather than on a second timer of its own.
+        if (_humState is HumState.Recording)
+        {
+            _humElapsedSec = _humWatch.Elapsed.TotalSeconds;
+            if (_humElapsedSec >= MaxHumSeconds)
+            {
+                _ = StopHumAsync();
+            }
+        }
+
         StateHasChanged();
     }
 
@@ -637,6 +1082,13 @@
     {
         try
         {
+            // Before the player, so a take still running when the page is left releases the
+            // microphone — otherwise the browser's recording indicator stays lit for the session.
+            if (_humModule is not null)
+            {
+                await _humModule.InvokeVoidAsync("dispose");
+                await _humModule.DisposeAsync();
+            }
             if (_playerModule is not null)
             {
                 await _playerModule.InvokeVoidAsync("dispose");
