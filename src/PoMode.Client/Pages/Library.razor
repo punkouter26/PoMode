@@ -44,61 +44,7 @@
                 Latest run per song
             </label>
             <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
-            @* The grid is the view for comparing figures; the wall is the view for finding a song
-               you half remember. Both read the same filtered list. *@
-            @* A group of pressed-states, not a tablist: these buttons swap the rendering of one
-               list, and there is no tabpanel for a tab relationship to point at. *@
-            <div class="library-views" role="group" aria-label="Library view">
-                <button class="library-view @(_wall ? "" : "active")" type="button"
-                        aria-pressed="@(!_wall)" @onclick="@(() => SetViewAsync(false))">Table</button>
-                <button class="library-view @(_wall ? "active" : "")" type="button"
-                        aria-pressed="@_wall" @onclick="@(() => SetViewAsync(true))">Wall</button>
-            </div>
         </div>
-        @if (_wall)
-        {
-            <div class="library-wall @(_tilt ? "tilt" : "")" data-library-count="@_entries.Count">
-                @foreach (var entry in Filtered)
-                {
-                    <button class="library-tile" type="button" @onclick="@(() => OpenAsync(entry))"
-                            disabled="@(entry.Stage != JobStage.Complete)"
-                            title="@($"{entry.FileName} · {entry.CreatedAt:yyyy-MM-dd HH:mm}")">
-                        @* Every attribute here is a server-decided fact; fx-cover.js turns them
-                           into a picture and knows nothing about what they mean. *@
-                        <canvas class="library-cover" aria-hidden="true"
-                                data-seed="@entry.JobId"
-                                data-hue="@HueOf(entry)"
-                                data-degrees="@DegreesOf(entry)"
-                                data-tempo="@((entry.TempoBpm ?? 0).ToString("0", System.Globalization.CultureInfo.InvariantCulture))"
-                                data-settled="@((entry.Stage == JobStage.Complete).ToString().ToLowerInvariant())"></canvas>
-                        <span class="tile-facts">
-                            <span class="tile-name">@entry.FileName</span>
-                            <span class="tile-key">
-                                @if (entry.TonicName is null)
-                                {
-                                    <span class="tile-unclear">Not analyzed</span>
-                                }
-                                else
-                                {
-                                    <strong>@entry.TonicName</strong>
-                                    <span>@(string.IsNullOrEmpty(entry.PrimaryMode) ? "mode unclear" : entry.PrimaryMode)</span>
-                                }
-                            </span>
-                            @if (entry.TempoBpm is { } tileBpm)
-                            {
-                                <span class="tile-tempo">@($"{tileBpm:0} BPM")</span>
-                            }
-                            @if (entry.Origin is { } tileOrigin)
-                            {
-                                <span class="tile-origin" title="@tileOrigin.Description">🎤 hum</span>
-                            }
-                        </span>
-                    </button>
-                }
-            </div>
-        }
-        else
-        {
         <div class="library-grid" data-library-count="@_entries.Count">
             <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
                             AllowPaging="true" PageSize="15" PagerHorizontalAlign="HorizontalAlign.Center">
@@ -161,7 +107,6 @@
                 </Columns>
             </RadzenDataGrid>
         </div>
-        }
     }
 </RadzenCard>
 
@@ -205,13 +150,7 @@
     private readonly HashSet<string> _compare = [];
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
 
-    private IJSObjectReference? _cover;
     private IJSObjectReference? _sfx;
-
-    /// <summary>Wall or table. A per-viewer convenience like the theme override, so it lives in the
-    /// browser rather than anywhere the server can see it.</summary>
-    private bool _wall;
-    private bool _tilt;
 
     private string _search = "";
     private string? _keyFilter;
@@ -269,55 +208,13 @@
     private List<LibraryEntryDto>? _filteredCache;
     private (List<LibraryEntryDto>? Entries, bool LatestOnly, string Search, string? Key, string? Mode) _filteredKey;
 
-    /// <summary>
-    /// The tonic's place on the colour wheel. Twelve pitch classes over 360 degrees, the same
-    /// mapping the Analyze page uses for --pm-key-hue, so a song is the same colour on the wall as
-    /// the chrome turns when you open it. Falls back to the neutral accent hue when the analysis
-    /// named no key — an unanalyzed song should not be assigned one by the art.
-    /// </summary>
-    private static int HueOf(LibraryEntryDto entry)
-    {
-        if (entry.TonicName is null)
-        {
-            return 262;
-        }
-        for (var pitchClass = 0; pitchClass < 12; pitchClass++)
-        {
-            if (string.Equals(ScaleModes.NoteName(pitchClass), entry.TonicName, StringComparison.OrdinalIgnoreCase))
-            {
-                return pitchClass * 30;
-            }
-        }
-        return 262;
-    }
-
-    /// <summary>
-    /// How many notes the named mode has, which is what makes a pentatonic cover visibly sparser
-    /// than a diatonic one. Read from the shared interval table rather than counted in the browser,
-    /// so the picture cannot disagree with the analysis about what the mode contains.
-    /// </summary>
-    private static int DegreesOf(LibraryEntryDto entry)
-        => Enum.TryParse<ScaleMode>(entry.PrimaryMode, out var mode)
-            ? ScaleModes.Intervals(mode).Count
-            : 7;
-
-    private async Task SetViewAsync(bool wall)
-    {
-        if (_wall == wall)
-        {
-            return;
-        }
-        _wall = wall;
-        await PlaySfxAsync("click");
-    }
-
     /// <summary>Fire-and-forget UI sound, matching the Analyze page's contract: a sound that cannot
     /// play is skipped, never surfaced.</summary>
     private async Task PlaySfxAsync(string name)
     {
         try
         {
-            _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
+            _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/sfx.js");
             await _sfx.InvokeVoidAsync(name);
         }
         catch (JSException)
@@ -327,29 +224,6 @@
         catch (JSDisconnectedException)
         {
             // Navigated away.
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!_wall)
-        {
-            return;
-        }
-        try
-        {
-            _cover ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-cover.js");
-            if (firstRender || !_tilt)
-            {
-                _tilt = await _cover.InvokeAsync<bool>("allowsTilt");
-            }
-            // Safe to call on every render: covers already painted carry a data attribute and are
-            // skipped, so filtering or paging repaints only what is genuinely new.
-            await _cover.InvokeAsync<int>("paintAll", null);
-        }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away mid-render.
         }
     }
 
@@ -365,22 +239,10 @@
     private void Open(LibraryEntryDto entry)
         => Navigation.NavigateTo($"/?job={entry.JobId}");
 
-    /// <summary>The wall's open: the same navigation, with the transport sound the mixer uses for a
-    /// start, because picking a cover is the gesture that begins listening to something.</summary>
-    private async Task OpenAsync(LibraryEntryDto entry)
-    {
-        await PlaySfxAsync("whoosh");
-        Open(entry);
-    }
-
     public async ValueTask DisposeAsync()
     {
         try
         {
-            if (_cover is not null)
-            {
-                await _cover.DisposeAsync();
-            }
             if (_sfx is not null)
             {
                 await _sfx.DisposeAsync();

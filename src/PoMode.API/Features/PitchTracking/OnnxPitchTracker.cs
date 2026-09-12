@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;

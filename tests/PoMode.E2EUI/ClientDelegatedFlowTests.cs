@@ -96,9 +96,7 @@ public class ClientDelegatedFlowTests(ClientDelegatedAppFixture app)
         var console = new List<string>();
         page.Console += (_, msg) => console.Add($"[{msg.Type}] {msg.Text}");
         page.PageError += (_, err) => console.Add($"[pageerror] {err}");
-        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
-        // once the job finishes, and the app now opens in Basic.
-        await page.GotoAsync($"{app.BaseUrl}/?view=advanced");
+        await page.GotoAsync($"{app.BaseUrl}/");
 
         // Wait for the capability probe so the upload declares clientCanInfer. Headless Chromium
         // here has no WebGPU adapter, so the honest expectation is the WASM path.
@@ -128,7 +126,7 @@ public class ClientDelegatedFlowTests(ClientDelegatedAppFixture app)
 
             try
             {
-                await Assertions.Expect(page.GetByText("Analysis complete"))
+                await Assertions.Expect(page.Locator("canvas.analysis-canvas"))
                     .ToBeVisibleAsync(new() { Timeout = FlowTimeoutMs });
             }
             catch (PlaywrightException ex)

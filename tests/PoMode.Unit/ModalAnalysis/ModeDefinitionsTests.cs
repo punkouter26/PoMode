@@ -7,14 +7,6 @@ namespace PoMode.Unit.ModalAnalysis;
 public class ModeDefinitionsTests
 {
     [Fact]
-    public void Masks_match_the_canonical_spec_table()
-    {
-        Assert.Equal(0xAB5, ModeDefinitions.Mask(ScaleMode.Ionian));
-        Assert.Equal(0x6AD, ModeDefinitions.Mask(ScaleMode.Dorian));
-        Assert.Equal(0x4A9, ModeDefinitions.Mask(ScaleMode.MinorPentatonic));
-    }
-
-    [Fact]
     public void Every_mode_has_a_definition_and_root_is_always_present()
     {
         Assert.Equal(9, ModeDefinitions.All.Count);

@@ -1,4 +1,4 @@
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.TestCommon;
 using Xunit;
 

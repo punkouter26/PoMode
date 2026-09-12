@@ -1,5 +1,5 @@
 using PoMode.API.Features.ModalAnalysis;
-using PoMode.API.Features.Visualization;
+using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
 using Xunit;
 

@@ -1,6 +1,6 @@
 using Melanchall.DryWetMidi.Core;
 using Melanchall.DryWetMidi.Interaction;
-using PoMode.API.Features.MidiExport;
+using PoMode.API.Features.Export;
 using PoMode.Shared.Analysis;
 using Xunit;
 

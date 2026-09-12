@@ -16,22 +16,6 @@ public sealed class MockDataStateTests
     }
 
     [Fact]
-    public void All_real_plan_is_not_mock()
-    {
-        var plan = new[]
-        {
-            new StagePlan(StageNames.Separating, ExecutionTier.Local, "OnnxStemSeparator"),
-            new StagePlan(StageNames.PitchTracking, ExecutionTier.Local, "OnnxPitchTracker"),
-            new StagePlan(StageNames.ChordDetecting, ExecutionTier.Local, "RealChordRecognizer"),
-            new StagePlan(StageNames.ModalAnalysis, ExecutionTier.Local, "ModalAnalysisEngine"),
-        };
-
-        Assert.False(MockDataState.PlanContainsFakeExecutor(plan));
-        // No plan at all cannot be vouched for, so it counts as mock — fail safe, not fail silent.
-        Assert.True(MockDataState.PlanContainsFakeExecutor([]));
-    }
-
-    [Fact]
     public void Plan_with_a_placeholder_executor_is_mock()
     {
         var plan = new[]

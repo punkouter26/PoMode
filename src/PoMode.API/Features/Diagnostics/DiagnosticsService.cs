@@ -33,9 +33,7 @@ public sealed class DiagnosticsService(
     /// </summary>
     private OperationalReport Operational() => new(
         RateLimitsEnabled: PoRateLimits.IsEnabled(configuration),
-        MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24),
-        TelemetryExporting: !string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]),
-        ReferenceLookupEnabled: configuration.GetValue("Reference:Enabled", true));
+        MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24));
 
     private async Task<List<StagePlan>?> DefaultPlanAsync(CancellationToken ct)
     {

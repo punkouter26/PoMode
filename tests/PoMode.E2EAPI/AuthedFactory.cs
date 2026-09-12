@@ -16,9 +16,6 @@ public sealed class AuthedFactory : WebApplicationFactory<Program>
         // test runner rather than the app. Switched off rather than raised, because a limit set high
         // enough for a test suite protects nothing in production.
         builder.UseSetting("RateLimits:Enabled", "false");
-        // No test may reach MusicBrainz or AcousticBrainz. A suite that calls out to a third party
-        // is a suite that fails when someone else's server is down.
-        builder.UseSetting("Reference:Enabled", "false");
     }
 
     protected override void ConfigureClient(HttpClient client)

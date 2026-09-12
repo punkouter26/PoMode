@@ -319,7 +319,7 @@ public sealed class ModelAccuracyReportTests : IDisposable
         Directory.CreateDirectory(jobDir);
         var context = new StageContext("real", jobDir, path);
 
-        var decoded = PoMode.API.Features.Audio.AudioDecoder.Decode(path);
+        var decoded = PoMode.API.Audio.AudioDecoder.Decode(path);
         var duration = decoded.DurationSeconds;
 
         var pitchRows = new List<RealPitchRow>();

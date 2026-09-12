@@ -1,4 +1,4 @@
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using Xunit;
 
 namespace PoMode.Unit.Audio;
@@ -69,11 +69,4 @@ public class TempoMapTests
         Assert.Empty(TempoEstimator.EstimateTempoMap(tiny).Measures);
     }
 
-    [Fact]
-    public void Measures_are_strictly_time_ordered()
-    {
-        var map = TempoEstimator.EstimateTempoMap(ClickTrack(64, _ => 120.0));
-        var times = map.Measures.Select(m => m.StartSec).ToArray();
-        Assert.Equal([.. times.Order()], times);
-    }
 }

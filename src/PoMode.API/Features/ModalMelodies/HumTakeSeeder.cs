@@ -1,5 +1,5 @@
 using PoMode.API.Features.Analysis;
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.Shared.Analysis;
 

@@ -6,7 +6,7 @@ namespace PoMode.API.Pipeline;
 /// progress hint for long stages (stem separation); executors may ignore it.</summary>
 public sealed record StageContext(string JobId, string JobDir, string InputPath, Action<double>? OnProgress = null)
 {
-    private (string Path, Features.Audio.AudioBuffer Buffer)? _decodedAnalysisAudio;
+    private (string Path, Audio.AudioBuffer Buffer)? _decodedAnalysisAudio;
 
     /// <summary>
     /// The audio the post-separation stages should analyze: the instrumental stem when separation
@@ -28,12 +28,12 @@ public sealed record StageContext(string JobId, string JobDir, string InputPath,
     /// soon as the stage that used it completes. Single-threaded by construction: stages run
     /// sequentially for a job.
     /// </summary>
-    public Features.Audio.AudioBuffer DecodePreferredAnalysisAudio()
+    public Audio.AudioBuffer DecodePreferredAnalysisAudio()
     {
         var path = PreferredAnalysisPath;
         if (_decodedAnalysisAudio is not { } cached || cached.Path != path)
         {
-            _decodedAnalysisAudio = (path, Features.Audio.AudioDecoder.Decode(path));
+            _decodedAnalysisAudio = (path, Audio.AudioDecoder.Decode(path));
         }
         return _decodedAnalysisAudio.Value.Buffer;
     }
@@ -61,7 +61,7 @@ public sealed record StageContext(string JobId, string JobDir, string InputPath,
 
         try
         {
-            var estimate = Features.Audio.TuningEstimator.Estimate(DecodePreferredAnalysisAudio());
+            var estimate = Audio.TuningEstimator.Estimate(DecodePreferredAnalysisAudio());
             _tuningOffsetCents = estimate.AppliedCents;
         }
         catch (Exception ex)
@@ -84,8 +84,7 @@ public interface IStageExecutor
     /// True for the Fake* development stand-ins that fabricate deterministic results instead of doing
     /// real work. A placeholder is always available, so without this flag one would outrank every
     /// executor of a higher tier — a browser genuinely running Basic Pitch (ClientDelegated) would
-    /// lose to <c>FakePitchTracker</c> forever. Placeholders rank after every real free tier but
-    /// still before Cloud: mock data is a better automatic fallback than silently spending money.
+    /// lose to <c>FakePitchTracker</c> forever. Placeholders rank after every real executor.
     /// </summary>
     bool IsPlaceholder => false;
 

@@ -13,9 +13,7 @@ public class UploadFlowTests(AppFixture app)
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
         var page = await (await browser.NewContextAsync()).NewPageAsync();
-        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
-        // once the job finishes, and the app now opens in Basic.
-        await page.GotoAsync($"{app.BaseUrl}/?view=advanced");
+        await page.GotoAsync(app.BaseUrl);
 
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-upload-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
@@ -28,12 +26,13 @@ public class UploadFlowTests(AppFixture app)
 
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
 
-            await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(visible);
+            // The result itself is the signal: JobProgress folds away the moment it renders.
+            await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(visible);
             // Real free executors won PitchTracking (YinPitchTracker) and ChordDetecting
             // (ChromaChordRecognizer) in this no-model test host, and the uploaded fixture is
-            // silence — so zero notes and zero chords are the true output, not a regression.
+            // silence — so zero notes is the true output, not a regression.
             // (Before the classic-DSP fallbacks existed, FakePitchTracker's canned 8 notes showed here.)
-            await Assertions.Expect(page.GetByText("0 notes · 0 chords")).ToBeVisibleAsync(visible);
+            await Assertions.Expect(page.GetByText("0 notes")).ToBeVisibleAsync(visible);
             // Separating still lands on FakeStemSeparator here, because AppFixture deliberately
             // sets Models:AutoDownload=false and isolates Models:RootPath so these browser tests
             // stay fast, deterministic, and network-free (see AppFixture's comment). With one

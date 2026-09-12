@@ -24,7 +24,6 @@ public enum ExecutionTier
 {
     Local,
     ClientDelegated,
-    Cloud,
 }
 
 /// <summary>The wire vocabulary for stage names — used in <see cref="StagePlan.Stage"/> and
@@ -106,16 +105,6 @@ public sealed record JobStatusDto(
     string? FileName = null,
     TakeOrigin? Origin = null);
 
-/// <summary>Request body for POST /api/analysis/from-url (yt-dlp ingest).</summary>
-public sealed record AnalyzeUrlRequest(string Url);
-
-/// <summary>Request body for POST /api/live/analyze: notes the browser transcribed from the mic.</summary>
-public sealed record LiveAnalyzeRequest(IReadOnlyList<NoteEvent> Notes);
-
-/// <summary>Reply to a live analysis: the modal result plus the ready-to-draw canvas payload,
-/// both computed server-side exactly like a stored job's.</summary>
-public sealed record LiveAnalysisDto(ModalResult Result, VisualizationPayload Visual);
-
 /// <summary>One row in the song library: a persisted job plus its headline analysis once complete.</summary>
 public sealed record LibraryEntryDto(
     string JobId,
@@ -126,12 +115,3 @@ public sealed record LibraryEntryDto(
     string? PrimaryMode,
     double? TempoBpm,
     TakeOrigin? Origin = null);
-
-public sealed record BatchTrackStatus(
-    string JobId,
-    string FileName,
-    JobStage Stage,
-    double Progress,
-    string? Error);
-
-public sealed record BatchStatusDto(string BatchId, IReadOnlyList<BatchTrackStatus> Tracks);

@@ -21,22 +21,6 @@
     min-width: 0;
 }
 
-.hud-landscape-link {
-    flex: 0 0 auto;
-    align-self: flex-start;
-    background: transparent;
-    border: 1px solid var(--pm-border);
-    border-radius: 0.4rem;
-    color: var(--pm-accent);
-    padding: 0.35rem 0.7rem;
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.hud-landscape-link:hover { background: var(--pm-surface); }
-.hud-landscape-link:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
 
 .hud-empty {
     text-align: center;

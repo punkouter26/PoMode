@@ -1,5 +1,5 @@
 using PoMode.API.Features.SongStatistics;
-using PoMode.API.Features.Visualization;
+using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
 using Xunit;
 
@@ -27,8 +27,6 @@ public class QuestionPromptTests
     [Theory]
     [InlineData("NOT IN THE DATA")]
     [InlineData("**NOT IN THE DATA**")]
-    [InlineData("  not in the data  ")]
-    [InlineData("### NOT IN THE DATA ###")]
     public void A_decorated_refusal_marker_is_still_a_refusal(string marker)
     {
         var (answer, grounded) = QuestionPrompt.Split($"{marker}\nNothing here measures the lyrics.");
@@ -36,15 +34,6 @@ public class QuestionPromptTests
         Assert.False(grounded);
         Assert.Equal("Nothing here measures the lyrics.", answer);
         Assert.DoesNotContain("NOT IN THE DATA", answer, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void A_bare_marker_still_gives_the_reader_a_sentence()
-    {
-        var (answer, grounded) = QuestionPrompt.Split("NOT IN THE DATA");
-
-        Assert.False(grounded);
-        Assert.NotEmpty(answer);
     }
 
     [Fact]

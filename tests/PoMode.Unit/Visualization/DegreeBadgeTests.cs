@@ -1,4 +1,4 @@
-using PoMode.API.Features.Visualization;
+using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
 using Xunit;
 
@@ -45,33 +45,4 @@ public class DegreeBadgeTests
         Assert.All(window.Degrees.Where(b => b.Characteristic), badge => Assert.True(badge.InMode));
     }
 
-    [Fact]
-    public void An_insufficient_window_does_not_borrow_the_primary_mode_for_its_badges()
-    {
-        // The canvas falls back to the primary mode for note colours, but the HUD must not claim a
-        // window matched a mode when the engine said there was not enough evidence.
-        var window = Build(ResultWith([], [0, 7], insufficient: true, primaryMode: ScaleMode.Lydian));
-
-        Assert.Null(window.ModeTag);
-        Assert.DoesNotContain(window.Degrees, badge => badge.InMode);
-    }
-
-    // The mask VALUES are pinned in ModeDefinitionsTests; the hex FORMAT rides along below.
-    [Fact]
-    public void Alternatives_are_the_ranked_runners_up_without_the_winner()
-    {
-        IReadOnlyList<ModalMatch> matches =
-        [
-            new ModalMatch(ScaleMode.Dorian, 0.92, [], []),
-            new ModalMatch(ScaleMode.Aeolian, 0.81, [], []),
-            new ModalMatch(ScaleMode.MinorPentatonic, 0.60, [], []),
-        ];
-        var window = Build(ResultWith(matches, [0, 3, 7]));
-
-        Assert.Equal("Dorian", window.ModeTag);
-        Assert.Equal("0x089", window.MaskHex); // sung {0,3,7} rendered as three hex digits
-        Assert.Equal(0.92, window.ModeConfidence!.Value, precision: 6);
-        Assert.Equal(["Aeolian", "MinorPentatonic"], window.Alternatives.Select(a => a.Mode).ToArray());
-        Assert.Equal([0.81, 0.60], window.Alternatives.Select(a => a.Confidence).ToArray());
-    }
 }

@@ -5,7 +5,7 @@ using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.StemSeparation;
+using PoMode.API.Features.Separation;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 using PoMode.TestCommon;
@@ -54,14 +54,17 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
     }
 
     /// <summary>
-    /// A paid-tier stand-in. The fall-through target has to be BELOW ClientDelegated: a Local tracker
-    /// would outrank the browser and the stage would never park at all — which is exactly right, and is
-    /// what an earlier version of these tests got wrong.
+    /// A classic model-less DSP stand-in, the same shape as YinPitchTracker. The fall-through
+    /// target has to rank BELOW ClientDelegated or the stage never parks at all: a plain Local
+    /// tracker would outrank the browser, which is what an earlier version of these tests got
+    /// wrong. IsClassicFallback is what puts it below â€” tier alone cannot, now that the unused
+    /// paid tier this used to borrow is gone.
     /// </summary>
-    private sealed class StubCloudPitchTracker : IPitchTracker
+    private sealed class StubFallbackPitchTracker : IPitchTracker
     {
-        public string Name => nameof(StubCloudPitchTracker);
-        public ExecutionTier Tier => ExecutionTier.Cloud;
+        public string Name => nameof(StubFallbackPitchTracker);
+        public ExecutionTier Tier => ExecutionTier.Local;
+        public bool IsClassicFallback => true;
         public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
         public Task<IReadOnlyList<NoteEvent>> TrackAsync(StageContext context, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<NoteEvent>>([new NoteEvent(48, 0.0, 1.0, 70)]);
@@ -91,7 +94,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
 
     /// <summary>
     /// Waits for the stage to park. Fails fast with the pipeline's own exception if the run finishes
-    /// first — otherwise a pipeline that threw before parking would spin this loop forever.
+    /// first ï¿½ otherwise a pipeline that threw before parking would spin this loop forever.
     /// </summary>
     private async Task WaitForParkAsync(Task run, string jobId)
     {
@@ -128,7 +131,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
     [Fact]
     public async Task The_browsers_notes_are_used_and_the_plan_records_the_browser_tier()
     {
-        IPitchTracker[] trackers = [Tracker(), new StubCloudPitchTracker()];
+        IPitchTracker[] trackers = [Tracker(), new StubFallbackPitchTracker()];
         var job = await NewJobAsync(trackers);
         var run = Pipeline(trackers).RunAsync(job.JobId, CancellationToken.None);
 
@@ -152,7 +155,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
     [Fact]
     public async Task A_browser_that_never_answers_times_out_and_the_stage_falls_through()
     {
-        IPitchTracker[] trackers = [Tracker(timeoutSeconds: 300), new StubCloudPitchTracker()];
+        IPitchTracker[] trackers = [Tracker(timeoutSeconds: 300), new StubFallbackPitchTracker()];
         var job = await NewJobAsync(trackers);
         var run = Pipeline(trackers).RunAsync(job.JobId, CancellationToken.None);
 
@@ -164,8 +167,8 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
         // The job must finish, not hang: the next tier down picks the stage up.
         Assert.Equal(JobStage.Complete, final!.Stage);
         var stage = final.Plan.Single(p => p.Stage == StageNames.PitchTracking);
-        Assert.Equal(ExecutionTier.Cloud, stage.Tier);
-        Assert.Equal(nameof(StubCloudPitchTracker), stage.Executor);
+        Assert.Equal(ExecutionTier.Local, stage.Tier);
+        Assert.Equal(nameof(StubFallbackPitchTracker), stage.Executor);
         Assert.False(_registry.IsWaiting(job.JobId), "a waiter was left behind");
     }
 

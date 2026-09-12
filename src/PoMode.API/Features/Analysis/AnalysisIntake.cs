@@ -1,5 +1,4 @@
 using PoMode.API.Pipeline;
-using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -46,10 +45,6 @@ public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlan
         }
         await store.SaveAsync(state, ct);
         await queue.EnqueueAsync(state.JobId, ct);
-        // Counted at the one place every intake path converges on, so the upload endpoint, URL
-        // ingest, batch, Mode Lab and hum takes can never drift into counting differently.
-        PoTelemetry.JobsStarted.Add(1,
-            new KeyValuePair<string, object?>("seeded", seed is not null));
         return state;
     }
 }

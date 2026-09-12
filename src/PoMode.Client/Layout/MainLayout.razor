@@ -1,14 +1,9 @@
-@using Microsoft.AspNetCore.Components.Routing
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
-@inject AnalysisClient Analysis
-@inject AnalysisViewState ViewState
 @inject NavigationManager Navigation
-@implements IDisposable
 @implements IAsyncDisposable
 
 <a class="skip-link" href="#main-content">Skip to content</a>
-<canvas class="fx-background" @ref="_background" aria-hidden="true"></canvas>
 
 <header class="app-header">
     <div class="brand">PoMode</div>
@@ -26,9 +21,6 @@
         <NavLink class="nav-link" href="library">
             <span class="nav-wide">Library</span><span class="nav-narrow">Songs</span>
         </NavLink>
-        <NavLink class="nav-link" href="live">
-            <span class="nav-wide">Live</span><span class="nav-narrow">Live</span>
-        </NavLink>
         <NavLink class="nav-link" href="practice">
             <span class="nav-wide">Practice</span><span class="nav-narrow">Sing</span>
         </NavLink>
@@ -37,23 +29,6 @@
         </NavLink>
     </nav>
     <div class="session">
-        @* Only the Analyze page reads AnalysisViewState, so the switcher is hidden elsewhere rather
-           than sitting in the header doing nothing on four routes out of five.
-           A group of two pressed-states rather than a tablist: there is no tabpanel here — the
-           buttons change what the page below renders, and claiming a tab relationship that has no
-           panel on the other end is worse for a screen reader than claiming nothing. *@
-        <div class="nav-scene-switcher @(IsAnalyzePage ? "" : "hidden")" role="group" aria-label="Analysis view mode">
-            <button class="nav-scene-btn @(ViewState.IsBasic ? "active" : "")" type="button"
-                    aria-pressed="@ViewState.IsBasic" @onclick="@(() => ViewState.SetViewMode("basic"))"
-                    title="Switch to Basic View">
-                🎯 Basic
-            </button>
-            <button class="nav-scene-btn @(ViewState.IsAdvanced ? "active" : "")" type="button"
-                    aria-pressed="@ViewState.IsAdvanced" @onclick="@(() => ViewState.SetViewMode("advanced"))"
-                    title="Switch to Advanced View">
-                🔬 Advanced
-            </button>
-        </div>
         <button class="icon-button theme-toggle" type="button" @onclick="CycleThemeAsync"
                 title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {ThemeLabel}")">
             @ThemeGlyph
@@ -153,15 +128,9 @@
 </main>
 
 @code {
-    private ElementReference _background;
-    private bool IsAnalyzePage =>
-        string.IsNullOrEmpty(Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].TrimEnd('/'));
-
-    private IJSObjectReference? _fx;
     private IJSObjectReference? _theme;
     private IJSObjectReference? _pwa;
     private IJSObjectReference? _prefs;
-    private IJSObjectReference? _transition;
     private DotNetObjectReference<MainLayout>? _self;
 
     /// <summary>The effect levels offered, in the order they read as a scale.</summary>
@@ -241,23 +210,6 @@
         }
     }
 
-    protected override void OnInitialized()
-    {
-        ViewState.Changed += OnViewStateChanged;
-        Navigation.LocationChanged += OnLocationChanged;
-    }
-
-    private void OnViewStateChanged() => InvokeAsync(StateHasChanged);
-
-    /// <summary>The view switcher only belongs on the Analyze page, so the header follows the route.</summary>
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
-
-    public void Dispose()
-    {
-        ViewState.Changed -= OnViewStateChanged;
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_focusShortcuts)
@@ -274,24 +226,18 @@
         {
             return;
         }
-        _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
+        _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/theme.js");
         _themeMode = await _theme.InvokeAsync<string>("init");
         // Before any effect module: init stamps data-fx on <html>, and every module below reads it
         // on the way up. Read back as three primitives rather than one object so this does not
         // depend on how JS interop is configured to deserialize.
-        _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-prefs.js");
+        _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/prefs.js");
         await _prefs.InvokeVoidAsync("init");
         await ReadFxStateAsync();
-        _fx = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-background.js");
-        await _fx.InvokeVoidAsync("init", _background);
         _self = DotNetObjectReference.Create(this);
-        // Returns false on a browser without the View Transitions API, in which case it installs
-        // nothing at all and routing behaves exactly as it did before.
-        _transition = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-transition.js");
-        await _transition.InvokeAsync<bool>("init", _self);
         // The install prompt fires once, on the browser's own schedule; pwa.js captures it so the
         // app can offer it from the menu rather than leaving it to Chrome's infobar.
-        _pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pwa.js");
+        _pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/pwa.js");
         await _pwa.InvokeVoidAsync("watchInstall", _self);
         _canInstall = await _pwa.InvokeAsync<bool>("canInstall");
         StateHasChanged();
@@ -322,14 +268,6 @@
         {
             _themeMode = await _theme.InvokeAsync<string>("cycle");
         }
-    }
-
-    /// <summary>Called from js/fx-transition.js inside a view transition, so the router runs while
-    /// the browser holds the old frame.</summary>
-    [JSInvokable]
-    public void NavigateTo(string href)
-    {
-        Navigation.NavigateTo(href);
     }
 
     private async Task ReadFxStateAsync()
@@ -365,19 +303,8 @@
 
     public async ValueTask DisposeAsync()
     {
-        ViewState.Changed -= OnViewStateChanged;
         try
         {
-            if (_fx is not null)
-            {
-                await _fx.InvokeVoidAsync("dispose", _background);
-                await _fx.DisposeAsync();
-            }
-            if (_transition is not null)
-            {
-                await _transition.InvokeVoidAsync("dispose");
-                await _transition.DisposeAsync();
-            }
             if (_pwa is not null)
             {
                 await _pwa.DisposeAsync();

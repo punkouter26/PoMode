@@ -1,10 +1,9 @@
 namespace PoMode.API.Features.Analysis;
 
-/// <summary>Hourly sweep deleting job folders and batch manifests older than 7 days, plus a size
-/// cap: when the store outgrows the budget, the oldest completed jobs go first.</summary>
+/// <summary>Hourly sweep deleting job folders older than 7 days, plus a size cap: when the store
+/// outgrows the budget, the oldest completed jobs go first.</summary>
 public sealed class JobCleanupService(
     JobStore store,
-    Batch.BatchStore batches,
     ILogger<JobCleanupService> logger) : BackgroundService
 {
     /// <summary>~50 average jobs of stem WAVs — generous locally, bounded on small disks.</summary>
@@ -18,11 +17,10 @@ public sealed class JobCleanupService(
             try
             {
                 var purged = store.PurgeOlderThan(TimeSpan.FromDays(7))
-                    + batches.PurgeOlderThan(TimeSpan.FromDays(7))
                     + store.PurgeToSizeBudget(MaxStoreBytes);
                 if (purged > 0)
                 {
-                    logger.LogInformation("Purged {Count} expired job folder(s) / batch manifest(s).", purged);
+                    logger.LogInformation("Purged {Count} expired job folder(s).", purged);
                 }
             }
             catch (Exception ex)

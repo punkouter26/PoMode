@@ -516,11 +516,11 @@ else if (_loadError is { } loadError)
     private async Task EnsurePlayerAsync()
     {
         _selfRef ??= DotNetObjectReference.Create(this);
-        _player ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/modal-player.js");
+        _player ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/modal-player.js");
     }
 
     private async Task EnsureHumAsync()
-        => _hum ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/hum-recorder.js");
+        => _hum ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/capture/hum-recorder.js");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -532,7 +532,7 @@ else if (_loadError is { } loadError)
         }
         try
         {
-            _plot ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-hum-review.js");
+            _plot ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/take-plot.js");
             _plotOn = await _plot.InvokeAsync<bool>("init", _plotCanvas);
             if (_plotOn)
             {

@@ -20,7 +20,7 @@ public class ChordSegmenterTests
         return frames;
     }
 
-    private static PoMode.API.Features.Audio.BeatGrid Grid(double bpm = 120.0, double firstBeatSec = 0.0)
+    private static PoMode.API.Audio.BeatGrid Grid(double bpm = 120.0, double firstBeatSec = 0.0)
         => new(bpm, firstBeatSec, Confidence: 1.0);
 
     [Fact]

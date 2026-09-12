@@ -1,6 +1,6 @@
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.ModalAnalysis;
-using PoMode.API.Features.Visualization;
+using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.ModalMelodies;

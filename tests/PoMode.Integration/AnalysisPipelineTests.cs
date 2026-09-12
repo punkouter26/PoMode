@@ -5,7 +5,7 @@ using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.StemSeparation;
+using PoMode.API.Features.Separation;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Analysis;
 using PoMode.TestCommon;

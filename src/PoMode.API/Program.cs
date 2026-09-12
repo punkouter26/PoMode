@@ -3,21 +3,14 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
-using PoMode.API.Features.Batch;
-using PoMode.API.Features.ChordChart;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Diagnostics;
-using PoMode.API.Features.Library;
-using PoMode.API.Features.Live;
-using PoMode.API.Features.MidiExport;
+using PoMode.API.Features.Export;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
-using PoMode.API.Features.MusicXml;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.Reference;
 using PoMode.API.Features.SongStatistics;
-using PoMode.API.Features.StemSeparation;
-using PoMode.API.Features.UrlIngest;
+using PoMode.API.Features.Separation;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Serialization;
@@ -46,12 +39,8 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
-// Traces and metrics for the pipeline. Creates the instruments unconditionally but exports nothing
-// unless OTEL_EXPORTER_OTLP_ENDPOINT is set — a local-first music tool must not start shipping
-// telemetry off the machine because a package was added.
-builder.Services.AddPoTelemetry(builder.Configuration);
-// Admission control for the three costly things here: queueing an analysis, running a language
-// model, and calling a public catalogue. Deliberately not global — see PoRateLimits.
+// Admission control for the two costly things here: queueing an analysis and running a language
+// model. Deliberately not global — see PoRateLimits.
 builder.Services.AddPoRateLimiting(builder.Configuration);
 builder.Services.AddSingleton<ModelRegistry>();
 builder.Services.AddSingleton<HardwareProbe>();
@@ -62,10 +51,8 @@ builder.Services.AddHealthChecks()
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<JobBlobStorage>();
 builder.Services.AddSingleton<JobStore>();
-builder.Services.AddSingleton<BatchStore>();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<AnalysisIntake>();
-builder.Services.AddSingleton<UrlAudioService>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
@@ -83,7 +70,6 @@ builder.Services.AddSingleton<HumTakeSeeder>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
-builder.Services.AddSingleton<MusicBrainzCatalog>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
@@ -92,7 +78,6 @@ builder.Services.AddHostedService<AnalysisWorker>();
 builder.Services.AddHostedService<JobRecoveryService>();
 builder.Services.AddHostedService<JobCleanupService>();
 builder.Services.AddHostedService<ModelWarmupService>();
-builder.Services.AddHostedService<JobQueueMetrics>();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(
     options => options.MultipartBodyLengthLimit = AudioFormatValidator.MaxBytes);
@@ -149,17 +134,11 @@ app.MapHealthChecks("/health/ready");
 app.MapDiagnostics();
 
 app.MapAnalysis();
-app.MapBatch();
 app.MapLibrary();
-app.MapLive();
-app.MapUrlIngest();
 app.MapWebRuntime();
 app.MapModalMelodies();
 app.MapMidiExport();
-app.MapMusicXmlExport();
-app.MapChordChart();
 app.MapSongStats();
-app.MapReference();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 // The share target's fallback. Normally the service worker answers this POST and never lets it

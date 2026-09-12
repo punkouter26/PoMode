@@ -25,11 +25,7 @@
                 }
                 <RadzenText class="hud-sub"
                             Text="@($"Tempo {Result.TempoBpm:0} BPM{(Result.TempoEstimated ? " (estimated)" : "")} · {Windows.Count} windows")" />
-                <TuningNotice Cents="Result.TuningOffsetCents" />
             </div>
-            <button class="hud-landscape-link" type="button" @onclick="OnShowLandscapeAsync" title="Open the 3D mode landscape">
-                3D landscape ↗
-            </button>
         </div>
     </RadzenCard>
 
@@ -127,9 +123,6 @@
 
     [Parameter] public int? SelectedWindowIndex { get; set; }
 
-    /// <summary>Raised when the user clicks the "3D landscape" link — the parent owns the WebGL scene.</summary>
-    [Parameter] public EventCallback OnShowLandscape { get; set; }
-
     private bool _detailsOpen;
     private int? _lastSelection;
 
@@ -148,8 +141,6 @@
     }
 
     private void ToggleDetailsAsync() => _detailsOpen = !_detailsOpen;
-
-    private Task OnShowLandscapeAsync() => OnShowLandscape.InvokeAsync();
 
     private string PrimaryHeadline => Result.PrimaryMode is null
         ? $"{Result.TonicName} · mode unclear"

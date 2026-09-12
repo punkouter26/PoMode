@@ -53,7 +53,7 @@
     <script type="module">
         // Registered from a module so a browser without service workers simply skips it, and after
         // load so registration never competes with the WASM runtime the user is waiting on.
-        import('./js/pwa.js').then(pwa => pwa.register()).catch(() => { });
+        import('./js/shell/pwa.js').then(pwa => pwa.register()).catch(() => { });
     </script>
 </body>
 </html>

@@ -112,21 +112,3 @@
 
 /* The stage illustration. A short band rather than a hero panel: the checklist under it is what
    the user is actually reading, and this is the thing to glance at while waiting. */
-.kiln-wrap {
-    margin: var(--pm-space-2) 0 var(--pm-space-3);
-    border-radius: 0.5rem;
-    overflow: hidden;
-    border: 1px solid var(--pm-border);
-}
-
-/* Hidden rather than absent when the shader declined: keeping the canvas in the tree means a user
-   who turns effects back on gets it on the next render without remounting the component. */
-.kiln-wrap.hidden {
-    display: none;
-}
-
-.kiln {
-    display: block;
-    width: 100%;
-    height: clamp(64px, 9vw, 104px);
-}

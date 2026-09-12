@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Features.Analysis;
-using PoMode.API.Features.Visualization;
 using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
@@ -30,9 +29,8 @@ public static class SongStatsEndpoints
             SongInterpreterSelector selector, CancellationToken ct) =>
             TypedResults.Ok(await selector.ListAsync(ct)));
 
-        // GET, not POST: the same job and the same interpreter is the same question, and a browser
-        // reload should not be a second billed call. Cloud interpreters are still opt-in — the
-        // selector only reaches one when ?interpreter= names it.
+        // GET, not POST: the same job and the same interpreter is the same question, so a browser
+        // reload should be cacheable rather than a second model run.
         group.MapGet("/{jobId}/interpretation", async Task<Results<Ok<SongInterpretationDto>, NotFound>> (
             string jobId,
             string? interpreter,

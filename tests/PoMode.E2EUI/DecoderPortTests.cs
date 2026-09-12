@@ -24,7 +24,7 @@ public class DecoderPortTests(AppFixture app)
         var decoded = await page.EvaluateAsync<JsonElement>(
             @"async fixtureJson => {
                 const fixture = JSON.parse(fixtureJson);
-                const module = await import('/js/basic-pitch-decoder.js');
+                const module = await import('/js/infer/basic-pitch-decoder.js');
                 return module.decodeNotes(
                     fixture.onsets, fixture.frames, fixture.framesPerSecond, fixture.minMidi);
             }",

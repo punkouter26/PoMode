@@ -1,5 +1,5 @@
 using System.Numerics;
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 
 namespace PoMode.API.Features.ChordRecognition;
 

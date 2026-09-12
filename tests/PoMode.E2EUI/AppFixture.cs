@@ -72,7 +72,6 @@ public class AppFixture : IAsyncLifetime
                 ["RateLimits__Enabled"] = "false",
                 // And nothing here may call out to MusicBrainz or AcousticBrainz: a suite that
                 // depends on a third party's uptime is a suite that fails for reasons of its own.
-                ["Reference__Enabled"] = "false",
             },
         };
         ConfigureEnvironment(startInfo.Environment);

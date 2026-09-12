@@ -29,12 +29,6 @@
         }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
-    @* An illustration of the stage in progress, not a preview of its result — nothing of the
-       song exists to draw yet while a stage is still running, which is why the checklist below
-       keeps carrying every actual fact. Hidden entirely when the shader declines to start. *@
-    <div class="kiln-wrap @(_kilnOn ? "" : "hidden")">
-        <canvas class="kiln" @ref="_kilnCanvas" aria-hidden="true" data-testid="job-kiln"></canvas>
-    </div>
     @if (CurrentStepText is { } step)
     {
         <div class="current-step-wrap">
@@ -95,10 +89,7 @@
     [Parameter] public EventCallback OnCancel { get; set; }
 
     private Timer? _elapsedTimer;
-    private IJSObjectReference? _kiln;
     private IJSObjectReference? _sfx;
-    private ElementReference _kilnCanvas;
-    private bool _kilnOn;
 
     /// <summary>How many stages had finished the last time this component looked, so a stage
     /// completing sounds once. Starts at -1 rather than 0 so a job resumed from disk with stages
@@ -108,35 +99,10 @@
     /// <summary>Completed jobs fold to one line by default; the toggle reopens the checklist.</summary>
     private bool _completedCollapsed = true;
 
-    /// <summary>The shader's name for the running stage. AwaitingClient is pitch tracking parked in
-    /// the browser, so it draws as pitch tracking — which is what it is.</summary>
-    private string StageKey => Status.Stage switch
-    {
-        JobStage.Separating => "separating",
-        JobStage.PitchTracking or JobStage.AwaitingClient => "pitch",
-        JobStage.ChordDetecting => "chords",
-        JobStage.ModalAnalysis => "modal",
-        _ => "idle",
-    };
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
         {
-            if (firstRender)
-            {
-                _kiln = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fx-kiln.js");
-                // False without WebGL2, or when the user has asked for less than full effects.
-                _kilnOn = await _kiln.InvokeAsync<bool>("init", _kilnCanvas);
-                if (_kilnOn)
-                {
-                    StateHasChanged();
-                }
-            }
-            if (_kilnOn && _kiln is not null)
-            {
-                await _kiln.InvokeVoidAsync("setStage", _kilnCanvas, StageKey, Status.Progress, IsRunning);
-            }
             await SoundStageChangeAsync();
         }
         catch (JSDisconnectedException)
@@ -170,7 +136,7 @@
         {
             return;
         }
-        _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/sfx.js");
+        _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/sfx.js");
         for (var index = previous; index < completed; index++)
         {
             await _sfx.InvokeVoidAsync("stageStep", index);
@@ -210,11 +176,6 @@
         _elapsedTimer?.Dispose();
         try
         {
-            if (_kiln is not null)
-            {
-                await _kiln.InvokeVoidAsync("dispose", _kilnCanvas);
-                await _kiln.DisposeAsync();
-            }
             if (_sfx is not null)
             {
                 await _sfx.DisposeAsync();

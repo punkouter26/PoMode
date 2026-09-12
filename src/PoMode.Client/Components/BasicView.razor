@@ -66,14 +66,12 @@
         {
             <div class="basic-player-section">
                 <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
-                           TonicName="@Result.TonicName" TonicPitchClass="@Result.TonicPitchClass" Basic="true"
                            OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
             </div>
         }
 
-        @* Last on the page, under the player: the fingerprint paragraph and the written
-           interpretation. Basic omits the detail boxes so the screen stays readable. *@
-        <SongStatsPanel JobId="@Status.JobId" Basic="true" />
+        @* Last on the card, under the player: the statistics and their written interpretation. *@
+        <SongStatsPanel JobId="@Status.JobId" />
     </RadzenCard>
 </div>
 

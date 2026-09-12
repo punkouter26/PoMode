@@ -10,7 +10,6 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<MockDataState>();
-builder.Services.AddSingleton<AnalysisViewState>();
 builder.Services.AddScoped<AnalysisClient>();
 builder.Services.AddScoped(_ =>
 {

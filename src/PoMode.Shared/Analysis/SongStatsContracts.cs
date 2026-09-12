@@ -194,11 +194,7 @@ public sealed record SongInterpretationDto(
     string Text,
     string? TheoryText);
 
-/// <summary>
-/// One selectable interpreter for the picker. Unlike <see cref="ExecutorOptionDto"/> this does list
-/// the Cloud entry: naming it is the only way to reach it, so hiding it would make it unreachable
-/// rather than merely non-default.
-/// </summary>
+/// <summary>One selectable interpreter for the picker.</summary>
 public sealed record InterpreterOptionDto(
     string Name,
     ExecutionTier Tier,

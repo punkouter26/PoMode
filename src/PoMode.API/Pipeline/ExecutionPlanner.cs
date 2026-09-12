@@ -2,7 +2,7 @@ using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Pipeline;
 
-/// <summary>Resolves each stage to the best available executor: Local → ClientDelegated → Cloud (paid last).</summary>
+/// <summary>Resolves each stage to the best available executor: Local model → browser.</summary>
 public sealed class ExecutionPlanner(
     IEnumerable<IStemSeparator> stemSeparators,
     IEnumerable<IPitchTracker> pitchTrackers,
@@ -12,18 +12,15 @@ public sealed class ExecutionPlanner(
     {
         ExecutionTier.Local => 0,
         ExecutionTier.ClientDelegated => 1,
-        ExecutionTier.Cloud => 2,
         _ => int.MaxValue,
     };
 
     /// <summary>
     /// Selection order across tiers, classic fallbacks *and* placeholders: real Local model (0) →
-    /// real ClientDelegated (4) → classic model-less DSP (5) → any Fake* placeholder (6) → real
-    /// Cloud (8). A classic-DSP alternative does real work, so it beats a placeholder — but it
-    /// ranks after every model-backed free tier so registering one never changes a stage's default.
-    /// A placeholder fabricates data, so it must lose to anything real and free — but it still
-    /// beats Cloud, because falling through to mock data is free while falling through to a paid
-    /// provider spends the user's money automatically.
+    /// real ClientDelegated (4) → classic model-less DSP (5) → any Fake* placeholder (6). A
+    /// classic-DSP alternative does real work, so it beats a placeholder — but it ranks after every
+    /// model-backed tier so registering one never changes a stage's default. A placeholder
+    /// fabricates data, so it loses to anything real.
     /// Used by both planning and mid-run fallback so the two can never disagree on order.
     /// </summary>
     public static int EffectiveRank(IStageExecutor executor) =>
@@ -32,13 +29,13 @@ public sealed class ExecutionPlanner(
         : TierRank(executor.Tier) * 4;
 
     /// <summary>
-    /// User-pickable executors: never paid Cloud (a picker click must not spend money) and never
-    /// Fake placeholders (mock data stays a planner-ordered fallback). The one predicate both the
-    /// options listing and the pick-honouring code use, so a crafted upload URL can select
-    /// exactly what the pickers offer — nothing more.
+    /// User-pickable executors: never Fake placeholders, because mock data stays a planner-ordered
+    /// fallback rather than something a user can ask for. The one predicate both the options listing
+    /// and the pick-honouring code use, so a crafted upload URL can select exactly what the pickers
+    /// offer — nothing more.
     /// </summary>
     public static bool IsUserSelectable(IStageExecutor executor)
-        => executor.Tier != ExecutionTier.Cloud && !executor.IsPlaceholder;
+        => !executor.IsPlaceholder;
 
     /// <summary>"No picks": shared empty so the stage loop never null-checks.</summary>
     private static readonly IReadOnlyDictionary<string, string> NoPicks =

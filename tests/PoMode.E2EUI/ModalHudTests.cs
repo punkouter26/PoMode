@@ -56,16 +56,14 @@ public class ModalHudTests(AppFixture app)
     private static async Task<IPage> AnalysedPageAsync(IBrowser browser, string baseUrl, byte[] audio)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
-        // Explicit: the HUD, the degree grid and the export menu are Advanced-only, and the app now
-        // opens in Basic. Asking for the view under test beats depending on a default.
-        await page.GotoAsync($"{baseUrl}/?view=advanced");
+        await page.GotoAsync($"{baseUrl}/");
 
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-hud-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, audio);
         try
         {
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
-            await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(Visible);
+            await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
             await Assertions.Expect(page.Locator("canvas.analysis-canvas"))
                 .ToHaveAttributeAsync("data-painted", "1", new() { Timeout = AppFixture.ExpectTimeoutMs });
         }
@@ -154,23 +152,8 @@ public class ModalHudTests(AppFixture app)
         await Assertions.Expect(page.GetByText("No window had enough sung material to name a mode."))
             .ToBeVisibleAsync(Visible);
         await Assertions.Expect(page.GetByText("(estimated)")).ToBeVisibleAsync(Visible);
-        await page.Locator(".export-toggle").ClickAsync();
-        await Assertions.Expect(page.GetByText("Download MIDI")).ToBeVisibleAsync(Visible);
+        // The one export left, and it is a plain link in the header rather than a dropdown item.
+        await Assertions.Expect(page.Locator("a[href$='/midi']")).ToBeVisibleAsync(Visible);
     }
 
-    [Fact]
-    public async Task Each_planned_stage_carries_a_tier_badge_with_an_explanatory_title()
-    {
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync();
-        var page = await AnalysedPageAsync(browser, app.BaseUrl, Progression((0, "maj", 2.0)));
-
-        // Completed jobs fold the checklist to one line; the badges live behind the toggle now.
-        await page.Locator(".job-progress .collapse-toggle").ClickAsync();
-
-        var badges = page.Locator(".tier-badge");
-        await Assertions.Expect(badges).ToHaveCountAsync(4); // one per pipeline stage
-        // Every stage runs locally in this fixture (no models downloaded, no cloud keys).
-        await Assertions.Expect(badges.First).ToHaveAttributeAsync("title", "Ran locally on this machine");
-    }
 }

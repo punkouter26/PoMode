@@ -16,16 +16,14 @@ public class StemMixerTests(AppFixture app)
     private static async Task<IPage> ReadyMixerPageAsync(IBrowser browser, string baseUrl)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
-        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
-        // once the job finishes, and the app now opens in Basic.
-        await page.GotoAsync($"{baseUrl}/?view=advanced");
+        await page.GotoAsync($"{baseUrl}/");
 
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-mixer-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, EightSeconds());
         try
         {
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
-            await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(Visible);
+            await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
             // The module reports 'ready' once all three stems are fetched and decoded.
             await Assertions.Expect(page.Locator(".mixer"))
                 .ToHaveAttributeAsync("data-mixer-status", "ready",

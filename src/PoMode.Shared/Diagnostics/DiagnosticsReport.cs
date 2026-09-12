@@ -25,12 +25,7 @@ public sealed record DiagnosticsReport(
 /// and indistinguishable from a bug when it is not: a 429 from a rate limiter and a 429 from a
 /// misconfigured proxy look identical to a user, and an app exporting no telemetry looks exactly
 /// like an app whose collector is down.</para>
-///
-/// <para><paramref name="TelemetryExporting"/> is a boolean, never the endpoint — an OTLP URL can
-/// carry credentials in a header and has no business in a diagnostics payload.</para>
 /// </summary>
 public sealed record OperationalReport(
     bool RateLimitsEnabled,
-    int MaxQueueDepth,
-    bool TelemetryExporting,
-    bool ReferenceLookupEnabled);
+    int MaxQueueDepth);

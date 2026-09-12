@@ -29,7 +29,6 @@ public class ExecutionPlannerTests
     public async Task Planning_PrefersLocalAndSkipsUnavailableExecutors()
     {
         var planner = Planner(
-            new StubExecutor("CloudX", ExecutionTier.Cloud, available: true),
             new StubExecutor("BrowserX", ExecutionTier.ClientDelegated, available: true),
             new StubExecutor("LocalX", ExecutionTier.Local, available: true));
 
@@ -39,9 +38,9 @@ public class ExecutionPlannerTests
 
         var fallbackPlanner = Planner(
             new StubExecutor("LocalX", ExecutionTier.Local, available: false),
-            new StubExecutor("CloudX", ExecutionTier.Cloud, available: true));
+            new StubExecutor("ClassicX", ExecutionTier.Local, available: true));
         var fallbackPlan = await fallbackPlanner.PlanAsync(CancellationToken.None);
-        Assert.Equal("CloudX", fallbackPlan[0].Executor);
+        Assert.Equal("ClassicX", fallbackPlan[0].Executor);
     }
 
     [Fact]

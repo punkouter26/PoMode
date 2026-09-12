@@ -15,15 +15,13 @@ public class CanvasTests(AppFixture app)
     /// populated and the chord lane is legitimately empty.</summary>
     private static async Task<ILocator> UploadAndGetCanvasAsync(IPage page, string baseUrl)
     {
-        // Explicit view: these tests key off JobProgress's "Analysis complete", which Basic hides
-        // once the job finishes, and the app now opens in Basic.
-        await page.GotoAsync($"{baseUrl}/?view=advanced");
+        await page.GotoAsync($"{baseUrl}/");
         var wavPath = Path.Combine(Path.GetTempPath(), $"pomode-canvas-{Guid.NewGuid():N}.wav");
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
         try
         {
             await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
-            await Assertions.Expect(page.GetByText("Analysis complete")).ToBeVisibleAsync(Visible);
+            await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
         }
         finally
         {
@@ -64,27 +62,6 @@ public class CanvasTests(AppFixture app)
             return seen.size;
         }");
         Assert.True(distinctColours > 3, $"only {distinctColours} distinct colours were painted");
-    }
-
-    [Fact]
-    public async Task Wheel_zoom_narrows_the_visible_time_range()
-    {
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync();
-        var page = await (await browser.NewContextAsync()).NewPageAsync();
-
-        var canvas = await UploadAndGetCanvasAsync(page, app.BaseUrl);
-        var before = await SpanAsync(canvas);
-
-        // HoverAsync scrolls the canvas into view first; the page is taller than the viewport.
-        await canvas.HoverAsync();
-        await page.Mouse.WheelAsync(0, -600); // negative deltaY zooms in
-
-        await Assertions.Expect(canvas).Not.ToHaveAttributeAsync("data-view-end", $"{before.End}",
-            new() { Timeout = AppFixture.ExpectTimeoutMs });
-        var after = await SpanAsync(canvas);
-        Assert.True(after.Span < before.Span,
-            $"span did not narrow: {before.Span} -> {after.Span}");
     }
 
     [Fact]

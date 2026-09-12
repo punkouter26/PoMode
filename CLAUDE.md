@@ -26,9 +26,11 @@ These override any default instinct. Where one contradicts a habit, the rule win
 
 ### Orientation
 
-- **Read `docs/` first.** The root `docs/` folder carries the project's own summaries and background
-  (currently `ai-cost-audit.md`). Skim it before planning work, so a decision already made and written
-  down is not re-litigated from scratch.
+- **Read `docs/` first.** The root `docs/` folder carries background that is not derivable from the
+  code. Skim it before planning work, so a decision already made and written down is not
+  re-litigated from scratch — and so a feature that was deliberately removed is not rebuilt.
+- **Test suites are capped**: 100 Unit, 50 Integration, 25 E2EAPI, 25 E2EUI. A new test that would
+  breach a cap has to earn its place against an existing one.
 
 ### Verifying a change
 
@@ -72,9 +74,9 @@ One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the RE
 
 ### Analysis pipeline (the core)
 
-Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Separating → PitchTracking → ChordDetecting → ModalAnalysis**. Every stage has multiple executors registered in `Program.cs` behind seams (`IStemSeparator`, `IPitchTracker`, `IChordRecognizer`), each tagged with an `ExecutionTier` (Local ONNX model, Cloud API, ClientDelegated browser inference, Fake). `ExecutionPlanner.EffectiveRank` fixes the selection order: local model → browser → classic model-less DSP (`IsClassicFallback`: `YinPitchTracker`, `ViterbiChordRecognizer`) → Fake placeholder → paid Cloud; within a rank, DI registration order breaks ties, so register new executors *after* the one that should stay the default. `AnalysisPipeline.RunWithFallbackAsync` falls through the same order when an executor fails and records who actually ran in `StageHistory`. If any Fake executor ran, the client shows the "USING MOCK DATA" banner.
+Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Separating → PitchTracking → ChordDetecting → ModalAnalysis**. Every stage has multiple executors registered in `Program.cs` behind seams (`IStemSeparator`, `IPitchTracker`, `IChordRecognizer`), each tagged with an `ExecutionTier` (Local ONNX model, or ClientDelegated browser inference). `ExecutionPlanner.EffectiveRank` fixes the selection order: local model → browser → classic model-less DSP (`IsClassicFallback`: `YinPitchTracker`, `ViterbiChordRecognizer`) → Fake placeholder; within a rank, DI registration order breaks ties, so register new executors *after* the one that should stay the default. `AnalysisPipeline.RunWithFallbackAsync` falls through the same order when an executor fails and records who actually ran in `StageHistory`. If any Fake executor ran, the client shows the "USING MOCK DATA" banner.
 
-Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dropdown per stage on the home page (Cloud and Fake are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available and not Cloud. A stage with one real option renders as plain text rather than a disabled control, which would read as broken rather than as "no choice needed".
+Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dropdown per stage on the home page (Fake placeholders are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available. A stage with one real option renders as plain text rather than a disabled control, which would read as broken rather than as "no choice needed".
 
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
@@ -96,15 +98,18 @@ switched off, which restores the older one-progression-under-all-modes lesson. T
 is the mode's own scale, not the parent's — identical for the seven diatonic modes, and the reason a
 pentatonic card no longer sounds the two notes its scale exists to omit.
 
-### Hum takes (sing over the chords)
+### Hum takes (the shared recording path)
 
-The Mode Lab's "New Chords" dice rolls a progression from the same catalog the dropdown uses (the
-key is deliberately left alone — a singer picks a key for their own range), and Hum Along records the
-microphone over that progression looping until Stop. `hum-recorder.js` is a third capture path beside
-`audio-recorder.js` and `live-session.js`, and the only one that *wants* the browser's echo
-cancellation, because it is the only one recording while the page plays audio out of the speakers.
-It shares `modal-player.js`'s AudioContext so the two clocks are comparable, and trims the take so
-sample zero is bar one — the count-in and the mic-open gap come off the front.
+`/practice` and nothing else drives this now. The Mode Lab used to carry a second copy of the same
+flow — its own record button, its own four-state machine, its own element ids — and two pages
+answering "sing over these chords" differently is the expensive kind of choice. The studio rolls and
+plays progressions; the one exercise lives on its own page.
+
+`hum-recorder.js` is the second capture path beside `audio-recorder.js`, and the only one that
+*wants* the browser's echo cancellation, because it is the only one recording while the page plays
+audio out of the speakers. It shares `modal-player.js`'s AudioContext so the two clocks are
+comparable, and trims the take so sample zero is bar one — the count-in and the mic-open gap come off
+the front.
 
 `POST /api/modal-melodies/hum` takes the recording as multipart and the backing as the same query
 parameters `/wav` and `/midi` use. `HumTakeSeeder` then hands the job what it already knows, through
@@ -202,29 +207,30 @@ replaces it with an offline pitch track once the take is decoded, because that p
 take at a steadier hop than a capture callback manages. Its consonance tick is silenced while a take
 is running, for the same reason the page carries no score.
 
-### Second opinion (MusicBrainz / AcousticBrainz)
+### What is deliberately not here
 
-`GET /api/analysis/{id}/reference` puts a public catalogue's reading of the same recording next to
-ours. Two free, unauthenticated sources: MusicBrainz for identity, AcousticBrainz for the community's
-key and tempo. Both are optional exactly as the Ollama tier is - absent, unreachable or silent is an
-ordinary answer - and `ReferenceLookupDto` deliberately distinguishes "no such recording" from "the
-catalogue did not answer", because a dropped connection must not read as an obscure recording.
-AcousticBrainz has served a frozen dataset since 2022, so a miss there is the common case.
+Each of these existed and was removed, with the reason, so nobody rebuilds one by accident:
 
-Only the cleaned-up file name leaves the machine; there is no fingerprinting and no audio upload.
-`ReferenceQuery` does that cleaning and also knows when *not* to ask: audio this app generated
-(`live-take-`, `Hum_`, `ModeLab_`) names a setting, not a release, and searching for it would return a
-confident match for a recording the user never uploaded. `MusicBrainzCatalog` paces itself to one
-request a second behind a semaphore and sends an identifying User-Agent, both conditions of use rather
-than suggestions; answers are cached six hours to stay inside the limit.
-
-`ReferenceComparison` writes the comparison sentence server-side, because comparing two readings of a
-key is a musical judgment. The case it exists for is the one that looks like a disagreement and is
-not: a catalogue classifier only ever answers major or minor, so a melody we read as D Dorian comes
-back as F major - the same seven notes with a different note treated as home, which is the exact
-distinction this whole app draws. Reporting that as a plain mismatch would throw away the most
-interesting thing the comparison produces. A doubled tempo is likewise explained as one pulse counted
-two ways rather than shown as "119 vs 238".
+- **`ExecutionTier.Cloud`** — an execution tier with zero implementations, threaded through the
+  planner's ranking, the user-selectable predicate, the pipeline, the tier badge and four paragraphs
+  of this file. There was never a paid executor to rank. `EffectiveRank` is now local model → browser
+  → classic model-less DSP → placeholder, which is the order the code actually has.
+- **A second opinion from MusicBrainz / AcousticBrainz** — 700 server lines and 26 unit cases against
+  a community dataset frozen since 2022, where a miss was the common case.
+- **URL ingest (yt-dlp)** — the server shelled out to a binary that no Bicep file, CI step or
+  appsettings ever installed, so the feature was dead on every deployed instance.
+- **Batch upload, MusicXML export, chord-chart export, the share-card PNG, the 3D mode landscape**
+  — each a second way to do something the app already did once. The landscape alone cost 691KB of
+  three.js, the largest tracked file in the repository, for one button.
+- **The `/live` page** — a third microphone path, analysing with no harmony underneath. Practice
+  answers the same question against real chords.
+- **Basic / Advanced views, and the Library's Table / Wall views** — one page rendered two ways is
+  two layouts to keep truthful. The analysis page keeps the compact one; the library keeps the table.
+- **Karaoke scoring, the tonic drone, tap tempo and BPM nudge in the mixer** — advanced-only
+  controls behind a disclosure inside a view that no longer exists.
+- **Nine of eleven `fx-*` modules and the OpenTelemetry export** — decoration, and instruments with
+  no collector configured anywhere. `js/shell/prefs.js` survives because it still governs motion and
+  sound; which executor really ran is still recorded, in `StageHistory`, where the UI can show it.
 
 ### Operational guards
 
@@ -236,61 +242,18 @@ signed-in user, falling back to remote address, and `UseRateLimiter` runs *after
 so that partition is available. The policies are always registered even when limiting is off (a
 disabled policy becomes a no-op limiter), because a missing named policy is a startup exception and
 making that reachable from a config flag is how a test setting takes production down. Both test
-fixtures set `RateLimits:Enabled=false` and `Reference:Enabled=false`.
+fixtures set `RateLimits:Enabled=false`.
 
 `QueueCapacityFilter` is a different guard, not a redundant one: the rate limit bounds how fast one
 client may ask, this bounds how much the server has agreed to do. Without it `JobQueue`'s bounded
 channel makes an over-quota upload *hang* - holding a request and a large multipart body until a
 worker frees a slot - where a 503 with a Retry-After is the honest answer.
 
-`PoTelemetry` exists to answer the question the tier system poses: which executor is actually doing
-the work, and how long is it taking. `pomode.stage.duration` is tagged with the executor that really
-ran (recorded in `CompleteStageAsync`, after a fallback has rewritten the plan entry - a duration
-attributed to the planned executor would be worse than none), and `pomode.stage.fallbacks` is the
-single most useful number here, because a local model failing on every job is invisible from outside:
-the DSP fallback answers and the page renders. Exporting is opt-in on `OTEL_EXPORTER_OTLP_ENDPOINT`;
-with nothing configured the instruments still exist and nothing leaves the machine. `/diag` reports
-which guards are on, as booleans only - an OTLP endpoint can carry credentials in a header.
-
-### Effects layer (graphics and sound)
-
-Every decorative module answers to `fx-prefs.js`, which resolves two questions the OS conflates into
-one: how much motion may run (`full` / `subtle` / `off`) and whether the app may make noise. The OS
-`prefers-reduced-motion` setting still picks the *default* level, but an explicit choice in the
-header's Effects control wins over it in both directions — the same rule `theme.js` applies to
-`prefers-color-scheme`. The effective level is stamped on `<html>` as `data-fx` so `app.css` responds
-without JS, and `subscribe()` lets a running shader downgrade in place rather than waiting for a
-reload. `allowsHeavy()` is the tier the middle setting exists to decline: compute shaders, large
-particle counts, the full-width analysis panel.
-
-Nothing in the app is gated behind an effect. Every module's `init` returns false — no WebGL2, no
-WebGPU, no context, effects off — and the page it belongs to renders exactly as it did before, because
-in each case the information lives in the markup beside the canvas and the effect only illustrates it.
-
-Rendering tier is chosen by what the effect actually needs, not for consistency: `fx-particles.js`
-(WebGPU compute, tens of thousands of particles) → `fx-kiln.js` / `fx-mode-strip.js` / `fx-tuner.js` /
-`fx-background.js` / `fx-spectrum.js` (WebGL2 fragment shaders, per-pixel fields and bloom) →
-`fx-hum-review.js` / `fx-cover.js` (2D canvas — a few dozen rectangles and a polyline). A fourth GL
-context for a stroke would cost a context and a fallback path to buy nothing. `fx-mode-strip.js` is the reason that matters: nine
-cards get one context and a uniform array of measured rectangles rather than nine contexts.
-
-The music-theory rule holds across all of it. `sfx.js` is *voiced in the detected mode* —
-`ModalResultExtensions.EarconPitches` derives the scale from the shared `ScaleModes` table and hands
-JS a list of MIDI numbers to sound; the module never derives a scale and its one chord is
-tonic-fifth-octave so it states no third. `fx-mode-strip.js` reads each card's `--mode-color` off the
-element instead of holding a colour table. `fx-hum-review.js` draws the pitches
-`ModalMelodyGenerator` voiced, never infers a chord from them, and never claims a mode for the voice —
-that is the answer the take is sent to the analyzer to get.
-`fx-cover.js` is handed a hue, a degree count and a tempo, and knows nothing about what they mean.
-
-Per-frame work never crosses into C#: `live-session.js` pushes microphone frames straight into
-`fx-tuner.js`, and `hum-recorder.js` both feeds `fx-hum-review.js` live pitch during a take and hands
-it the buffer it already decoded for playback afterwards. Blazor only calls init/dispose and the
-occasional discrete update, matching the `mixer.js` contract.
-
-Cents are reported in exactly one place. `fx-tuner.js` reads `detectPitch`'s fractional MIDI before
-any rounding, so the Live halo can show a deviation nothing else in the app measures — and it is never
-sent anywhere, stored, or scored.
+Which executor really ran is recorded in `StageHistory`, rewritten by `CompleteStageAsync` after any
+fallback has taken over - so the history names the executor that did the work rather than the one
+that was planned. That matters because a local model failing on every job is invisible from outside:
+the DSP fallback answers and the page renders normally. The job status carries it, the client shows
+it, and `/diag` reports which guards are on as booleans only.
 
 ### Look and layout
 
@@ -332,7 +295,11 @@ hiding part of them. Every other route fits 390×844 and 1440×900 with no scrol
 
 ### Client conventions
 
-- Heavy UI lives in plain JS modules, not Blazor: `canvas.js` (dual-lane visualization, pan/zoom, virtualized drawing) and `mixer.js` (Web Audio stem playback, synth note overlays, metronome clicks, Space/comma transport keys). `mixer.js` owns the transport clock and drives the canvas playhead directly — no per-frame Blazor renders. Blazor components only issue commands and receive discrete events.
+- `wwwroot/js` is grouped by what a module is for, not by what it is made of: `player/` (canvas,
+  mixer, modal-player, click-track, take-plot), `capture/` (the recorders, live-pitch, wav),
+  `infer/` (the browser-tier pitch worker and its decoder) and `shell/` (theme, pwa, prefs, sfx).
+  Imports are relative, so a module that moves folders has to fix its own siblings.
+- Heavy UI lives in plain JS modules, not Blazor: `player/canvas.js` (dual-lane visualization, pan/zoom, virtualized drawing) and `player/mixer.js` (Web Audio stem playback, synth note overlays, metronome clicks, Space/comma transport keys). `mixer.js` owns the transport clock and drives the canvas playhead directly — no per-frame Blazor renders. Blazor components only issue commands and receive discrete events.
 - JS state is mirrored onto `data-*` attributes (`data-mixer-status`, `data-playhead`, …) precisely so Playwright tests can assert without reaching into module internals. Keep that contract when changing these modules.
 - The app is an installable PWA with an Android share target, so a voice memo can be shared straight
   into PoMode. `service-worker.js` is **network-first, never cache-first** - `Program.cs` serves this
@@ -340,7 +307,7 @@ hiding part of them. Every other route fits 390×844 and 1440×900 with no scrol
   the C# beside it, and a cache-first worker (including the Blazor PWA template's) would reintroduce
   that bug and make it survive a hard refresh. The share target POSTs to `/share-target`; the worker
   stashes the file in a cache and redirects to `/?shared=1`, where `Home.razor` claims it via
-  `pwa.js`. The bytes come back from a separate `takeSharedBytes` call because Blazor only marshals a
+  `shell/pwa.js`. The bytes come back from a separate `takeSharedBytes` call because Blazor only marshals a
   `Uint8Array` as a real byte array when it is the whole return value - nested in an object a 40 MB
   memo degrades to a JSON array of numbers. `.webmanifest` is mapped explicitly in `Program.cs`: a
   manifest served as `application/octet-stream` is ignored silently and the app simply stops being

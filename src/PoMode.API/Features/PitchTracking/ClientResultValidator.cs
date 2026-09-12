@@ -1,4 +1,4 @@
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.PitchTracking;

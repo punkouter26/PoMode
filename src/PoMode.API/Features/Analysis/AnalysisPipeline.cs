@@ -1,6 +1,5 @@
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.API.Pipeline;
-using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -71,8 +70,7 @@ public sealed class AnalysisPipeline(
             // meaning. Every later stage already falls back to the upload when no stems exist.
             var separationPlan = state.Plan.FirstOrDefault(p => p.Stage == StageNames.Separating);
             var heavySeparation = separationPlan is not null
-                && (separationPlan.Tier == ExecutionTier.Cloud
-                    || stemSeparators.FirstOrDefault(s => s.Name == separationPlan.Executor)?.UsesLocalModel == true);
+                && stemSeparators.FirstOrDefault(s => s.Name == separationPlan.Executor)?.UsesLocalModel == true;
             if (heavySeparation
                 && !state.CompletedStages.Contains(StageNames.Separating)
                 && AudioDecoder.TryReadDurationSeconds(store.InputPath(state)) is { } inputSeconds
@@ -87,7 +85,6 @@ public sealed class AnalysisPipeline(
 
             if (!state.CompletedStages.Contains(StageNames.Separating))
             {
-                using var separating = PoTelemetry.StartStage(StageNames.Separating, jobId);
                 await EnterStageAsync(state, JobStage.Separating, StageNames.Separating, ct);
                 await RunWithFallbackAsync(state, StageNames.Separating, stemSeparators,
                     async (executor, token) => { await executor.SeparateAsync(context, token); return true; }, ct);
@@ -99,7 +96,6 @@ public sealed class AnalysisPipeline(
 
             if (!state.CompletedStages.Contains(StageNames.PitchTracking))
             {
-                using var tracking = PoTelemetry.StartStage(StageNames.PitchTracking, jobId);
                 await EnterStageAsync(state, JobStage.PitchTracking, StageNames.PitchTracking, ct);
                 var notes = await RunWithFallbackAsync(state, StageNames.PitchTracking, pitchTrackers,
                     (executor, token) => executor.TrackAsync(context, token), ct);
@@ -112,7 +108,6 @@ public sealed class AnalysisPipeline(
 
             if (!state.CompletedStages.Contains(StageNames.ChordDetecting))
             {
-                using var detecting = PoTelemetry.StartStage(StageNames.ChordDetecting, jobId);
                 await EnterStageAsync(state, JobStage.ChordDetecting, StageNames.ChordDetecting, ct);
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
@@ -125,7 +120,6 @@ public sealed class AnalysisPipeline(
 
             if (!state.CompletedStages.Contains(StageNames.ModalAnalysis))
             {
-                using var analysing = PoTelemetry.StartStage(StageNames.ModalAnalysis, jobId);
                 await EnterStageAsync(state, JobStage.ModalAnalysis, StageNames.ModalAnalysis, ct);
                 await modalAnalyzer.AnalyzeAsync(context, ct);
                 await CompleteStageAsync(state, StageNames.ModalAnalysis, ct);
@@ -143,24 +137,18 @@ public sealed class AnalysisPipeline(
 
             state.Stage = JobStage.Complete;
             await PersistAsync(state, ct);
-            RecordOutcome(state);
         }
         catch (OperationCanceledException)
         {
             state.Stage = JobStage.Cancelled;
             await PersistAsync(state, CancellationToken.None);
-            RecordOutcome(state);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Job {JobId} failed in stage {Stage}.", jobId, state.Stage);
-            var failedIn = state.Stage;
             state.Stage = JobStage.Failed;
             state.Error = ex.Message;
             await PersistAsync(state, CancellationToken.None);
-            // Tagged with the stage it died in, not the terminal state: "Failed" alone says nothing,
-            // where "failed in Separating" points straight at a model or a decoder.
-            RecordOutcome(state, failedIn);
         }
     }
 
@@ -297,13 +285,6 @@ public sealed class AnalysisPipeline(
         }
     }
 
-    /// <summary>One counter bump per job reaching a terminal state, tagged with the outcome and —
-    /// for a failure — the stage it died in.</summary>
-    private static void RecordOutcome(JobState state, JobStage? failedIn = null)
-        => PoTelemetry.JobsFinished.Add(1,
-            new KeyValuePair<string, object?>("outcome", state.Stage.ToString()),
-            new KeyValuePair<string, object?>("failed_in", failedIn?.ToString() ?? ""));
-
     private async Task<TResult> RunWithFallbackAsync<TExecutor, TResult>(
         JobState state,
         string stage,
@@ -337,14 +318,11 @@ public sealed class AnalysisPipeline(
                         IsPlaceholder = candidate.IsPlaceholder,
                     };
                     await PersistAsync(state, ct);
+                    // Logged rather than counted: a local model failing on every job is invisible
+                    // from the outside, because the fallback answers and the page renders normally.
+                    // The rewritten plan entry is the durable record — it rides on the job status
+                    // and the client shows which executor really ran.
                     logger.LogWarning("Stage {Stage} fell back from {Planned} to {Actual}.", stage, planned.Executor, candidate.Name);
-                    // Counted as well as logged: a local model failing on every job is invisible from
-                    // the outside, because the fallback answers and the page renders normally. The
-                    // only symptom is this number climbing.
-                    PoTelemetry.StageFallbacks.Add(1,
-                        new KeyValuePair<string, object?>("stage", stage),
-                        new KeyValuePair<string, object?>("planned", planned.Executor),
-                        new KeyValuePair<string, object?>("actual", candidate.Name));
                 }
                 return result;
             }
@@ -397,16 +375,9 @@ public sealed class AnalysisPipeline(
                 Executor = planned?.Executor ?? state.StageHistory[recordIndex].Executor,
                 CompletedAt = completedAt,
             };
+            // Written after any fallback has rewritten the plan entry, so the history names the
+            // executor that really ran rather than the one that was planned.
             state.StageHistory[recordIndex] = record;
-
-            // Recorded here rather than around the executor call because this is the one place that
-            // already knows who really ran — the plan entry has been rewritten by now if a fallback
-            // took over, and a duration attributed to the planned executor would be worse than none.
-            PoTelemetry.StageDuration.Record(
-                (completedAt - record.StartedAt).TotalSeconds,
-                new KeyValuePair<string, object?>("stage", stageName),
-                new KeyValuePair<string, object?>("executor", record.Executor),
-                new KeyValuePair<string, object?>("tier", record.Tier.ToString()));
         }
         await PersistAsync(state, ct);
     }

@@ -19,11 +19,6 @@
     <PackageVersion Include="NAudio" Version="3.0.0" />
     <PackageVersion Include="NAudio.Wasapi" Version="3.0.0" />
     <PackageVersion Include="NLayer.NAudioSupport" Version="2.0.1" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
     <PackageVersion Include="Radzen.Blazor" Version="11.2.5" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.20" />
     <PackageVersion Include="xunit" Version="2.9.3" />

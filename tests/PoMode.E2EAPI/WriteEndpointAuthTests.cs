@@ -40,16 +40,4 @@ public sealed class WriteEndpointAuthTests : IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    [Fact]
-    public async Task From_url_rejects_a_malformed_url_with_400()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Fake-User", "e2e");
-
-        var response = await client.PostAsJsonAsync(
-            "/api/analysis/from-url", new AnalyzeUrlRequest("not a url"));
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
 }

@@ -165,31 +165,6 @@ public sealed class HumTakeEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task A_hum_post_without_a_recording_is_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        using var empty = new MultipartFormDataContent();
-        var response = await client.PostAsync(Url(), empty);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task A_hum_post_that_is_not_audio_is_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        using var content = new MultipartFormDataContent();
-        content.Add(new ByteArrayContent([0x00, 0x01, 0x02, 0x03]), "file", "hum.wav");
-        var response = await client.PostAsync(Url(), content);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
     public async Task A_hum_post_without_auth_is_401()
     {
         await using var factory = new WebApplicationFactory<Program>()

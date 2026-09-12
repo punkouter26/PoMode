@@ -62,7 +62,7 @@
     {
         if (firstRender)
         {
-            _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/canvas.js");
+            _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/player/canvas.js");
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("init", _canvas, _self);
         }

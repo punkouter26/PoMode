@@ -488,3 +488,27 @@
     color: inherit;
     font: inherit;
 }
+
+/* The detail-box disclosure. Closed by default: the fingerprint paragraph above already says these
+   figures in prose, and opening with six boxes expanded made the analysis page 2.5 screens tall
+   before the reader had asked anything. */
+.stats-details > summary {
+    cursor: pointer;
+    font-size: var(--pm-text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+    padding: 0.35rem 0;
+    user-select: none;
+}
+
+.stats-details > summary:focus-visible {
+    outline: 2px solid var(--pm-accent);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+}
+
+.stats-details[open] > summary {
+    margin-bottom: 0.6rem;
+}

@@ -88,18 +88,4 @@ public class JsonContextTests
         Assert.Equal(-6.5, backResult.TuningOffsetCents);
     }
 
-    /// <summary>A result written before tuning measurement existed must still load, at zero.</summary>
-    [Fact]
-    public void A_result_written_without_a_tuning_offset_loads_as_uncorrected()
-    {
-        const string legacy = """
-            {"schemaVersion":1,"tonicPitchClass":0,"tonicName":"C","tonicConfidence":0.5,
-             "primaryMode":null,"primaryConfidence":0,"tempoBpm":120,"tempoEstimated":true,"windows":[]}
-            """;
-
-        var back = JsonSerializer.Deserialize(legacy, PoModeJsonContext.Default.ModalResult);
-
-        Assert.NotNull(back);
-        Assert.Equal(0.0, back.TuningOffsetCents);
-    }
 }

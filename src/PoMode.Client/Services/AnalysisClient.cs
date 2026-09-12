@@ -77,20 +77,6 @@ public sealed class AnalysisClient(HttpClient http)
             : null;
     }
 
-    /// <summary>
-    /// What MusicBrainz and AcousticBrainz say about this job's recording, beside what was measured.
-    /// <paramref name="query"/> overrides the guess made from the file name.
-    /// </summary>
-    public async Task<ReferenceLookupDto?> GetReferenceAsync(string jobId, string? query = null)
-    {
-        var url = $"api/analysis/{jobId}/reference"
-            + (string.IsNullOrWhiteSpace(query) ? "" : $"?query={Uri.EscapeDataString(query)}");
-        var response = await http.GetAsync(url);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<ReferenceLookupDto>()
-            : null;
-    }
-
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 
@@ -98,21 +84,9 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<List<StageExecutorsDto>?> GetExecutorsAsync()
         => http.GetFromJsonAsync<List<StageExecutorsDto>>("api/analysis/executors");
 
-    public Task<BatchStatusDto?> GetBatchAsync(string batchId)
-        => http.GetFromJsonAsync<BatchStatusDto>($"api/analysis/batch/{batchId}");
-
     /// <summary>Every persisted job, newest first, with headline analysis for completed ones.</summary>
     public Task<List<LibraryEntryDto>?> GetLibraryAsync()
         => http.GetFromJsonAsync<List<LibraryEntryDto>>("api/library");
-
-    /// <summary>Runs the modal engine over live mic notes. Null when the server rejected them.</summary>
-    public async Task<LiveAnalysisDto?> AnalyzeLiveAsync(IReadOnlyList<NoteEvent> notes)
-    {
-        var response = await http.PostAsJsonAsync("api/live/analyze", new LiveAnalyzeRequest(notes));
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<LiveAnalysisDto>()
-            : null;
-    }
 
     /// <summary>Uploads in-memory audio (the microphone recording) exactly like a file upload.</summary>
     public async Task<JobStatusDto?> UploadAsync(byte[] audioBytes, string fileName, bool clientCanInfer)
@@ -125,30 +99,6 @@ public sealed class AnalysisClient(HttpClient http)
         return response.IsSuccessStatusCode
             ? await response.Content.ReadFromJsonAsync<JobStatusDto>()
             : null;
-    }
-
-    /// <summary>Asks the server to fetch audio from a page URL (yt-dlp). Returns the job, or the
-    /// server's reason when it refused.</summary>
-    public async Task<(JobStatusDto? Status, string? Error)> AnalyzeFromUrlAsync(string url)
-    {
-        var response = await http.PostAsJsonAsync("api/analysis/from-url", new AnalyzeUrlRequest(url));
-        if (response.IsSuccessStatusCode)
-        {
-            return (await response.Content.ReadFromJsonAsync<JobStatusDto>(), null);
-        }
-        string? error = null;
-        if (response.StatusCode == HttpStatusCode.BadRequest)
-        {
-            try
-            {
-                error = await response.Content.ReadFromJsonAsync<string>();
-            }
-            catch (JsonException)
-            {
-                // fall through to the generic message
-            }
-        }
-        return (null, error ?? $"The server answered {(int)response.StatusCode}.");
     }
 
     /// <summary>Standard chord progression presets across genres and modes.</summary>

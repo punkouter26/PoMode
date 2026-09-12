@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace PoMode.API.Platform;
 
 /// <summary>
-/// Admission control for the three things on this server that cost real resources: queueing an
-/// analysis, running a language model, and calling a third-party catalogue.
+/// Admission control for the two things on this server that cost real resources: queueing an
+/// analysis, and running a language model.
 ///
 /// <para>Deliberately not a global limiter. Reading a finished job's artifacts is cheap and is what
 /// the canvas does dozens of times while a user pans a timeline, so a blanket limit would throttle
@@ -25,9 +25,6 @@ public static class PoRateLimits
     /// <summary>Asking a language model. The only endpoint a text box can drive a model from.</summary>
     public const string InterpretPolicy = "po-interpret";
 
-    /// <summary>Reaching a public music catalogue, which has its own conditions of use to respect.</summary>
-    public const string CataloguePolicy = "po-catalogue";
-
     /// <summary>
     /// Generous by design. These are sized to stop a script, not to ration a person: a musician
     /// uploading an album a track at a time must never meet a limit, and nor must the browser test
@@ -35,7 +32,6 @@ public static class PoRateLimits
     /// </summary>
     private const int DefaultUploadPerMinute = 30;
     private const int DefaultInterpretPerMinute = 10;
-    private const int DefaultCataloguePerMinute = 30;
 
     /// <summary>
     /// Everything off. Exists for the test fixtures, which boot the real app and are the one caller
@@ -63,8 +59,6 @@ public static class PoRateLimits
                 context, enabled, configuration.GetValue("RateLimits:UploadPerMinute", DefaultUploadPerMinute)));
             options.AddPolicy(InterpretPolicy, context => Partition(
                 context, enabled, configuration.GetValue("RateLimits:InterpretPerMinute", DefaultInterpretPerMinute)));
-            options.AddPolicy(CataloguePolicy, context => Partition(
-                context, enabled, configuration.GetValue("RateLimits:CataloguePerMinute", DefaultCataloguePerMinute)));
 
             options.OnRejected = async (context, ct) =>
             {

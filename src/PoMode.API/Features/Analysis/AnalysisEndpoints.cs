@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Http.HttpResults;
-using PoMode.API.Features.Audio;
+using PoMode.API.Audio;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.Visualization;
+using PoMode.API.Features.Analysis;
 using PoMode.API.Pipeline;
 using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
