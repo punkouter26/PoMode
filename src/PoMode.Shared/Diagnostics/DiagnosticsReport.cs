@@ -28,4 +28,6 @@ public sealed record DiagnosticsReport(
 /// </summary>
 public sealed record OperationalReport(
     bool RateLimitsEnabled,
-    int MaxQueueDepth);
+    int MaxQueueDepth,
+    /// <summary>Whether this instance has a VAPID key pair, i.e. can notify a closed tab at all.</summary>
+    bool PushAvailable = false);

@@ -139,7 +139,7 @@ public static class ModalMelodyEndpoints
             catch (InvalidDataException)
             {
                 // A malformed multipart body fails the parser before any file can be inspected —
-                // same treatment as no file at all, matching the upload endpoint.
+                // same treatment as no file at all.
                 return TypedResults.BadRequest("No recording uploaded.");
             }
 

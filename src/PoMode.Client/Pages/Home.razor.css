@@ -160,6 +160,36 @@
     color: var(--pm-accent);
 }
 
+/* The file input lies over the whole button, invisible: a click opens the picker and a file dropped
+   on the button lands in the input — the arrangement RadzenUpload itself uses. Kept focusable
+   rather than display:none, so the keyboard reaches the picker through it. */
+.upload-choose {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--pm-space-1);
+    cursor: pointer;
+}
+
+.upload-choose:focus-within {
+    outline: 2px solid var(--pm-accent);
+    outline-offset: 2px;
+}
+
+.upload-choose:has(.upload-input:disabled) {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.upload-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: inherit;
+}
+
 .upload-hero-sub {
     color: var(--pm-fg-muted);
     max-width: 34rem;

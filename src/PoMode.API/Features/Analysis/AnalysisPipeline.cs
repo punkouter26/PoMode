@@ -15,7 +15,8 @@ public sealed class AnalysisPipeline(
     IAnalysisNotifier notifier,
     ILogger<AnalysisPipeline> logger,
     TimeProvider? time = null,
-    IEnumerable<IBeatTracker>? beatTrackers = null)
+    IEnumerable<IBeatTracker>? beatTrackers = null,
+    IJobOutcomeNotifier? outcomes = null)
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
@@ -147,6 +148,7 @@ public sealed class AnalysisPipeline(
         {
             state.Stage = JobStage.Cancelled;
             await PersistAsync(state, CancellationToken.None);
+            return;
         }
         catch (Exception ex)
         {
@@ -154,6 +156,28 @@ public sealed class AnalysisPipeline(
             state.Stage = JobStage.Failed;
             state.Error = ex.Message;
             await PersistAsync(state, CancellationToken.None);
+        }
+        await AnnounceOutcomeAsync(state);
+    }
+
+    /// <summary>
+    /// After the terminal state is on disk, so whatever the notification links to already reads as
+    /// finished. Best-effort: a push service being down must never turn a finished job into a failed
+    /// one, and it runs uncancellable because the job's own token has no say over a job that is done.
+    /// </summary>
+    private async Task AnnounceOutcomeAsync(JobState state)
+    {
+        if (outcomes is null)
+        {
+            return;
+        }
+        try
+        {
+            await outcomes.NotifyAsync(state, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not announce the outcome of job {JobId}.", state.JobId);
         }
     }
 

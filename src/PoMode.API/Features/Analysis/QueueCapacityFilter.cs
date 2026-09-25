@@ -11,8 +11,8 @@ namespace PoMode.API.Features.Analysis;
 /// nine-minute mix is inside every rate limit and still more than one worker can hold.</para>
 ///
 /// <para>The alternative is what happens without it: <c>JobQueue</c>'s channel is bounded and waits
-/// when full, so an eleventh upload does not fail — it hangs, holding a request and a large multipart
-/// body, until a worker frees a slot. A 503 with a Retry-After is a better answer than a request that
+/// when full, so an eleventh upload does not fail — it hangs, holding a request, until a worker frees
+/// a slot. A 503 with a Retry-After is a better answer than a request that
 /// never comes back, and it is the honest one.</para>
 /// </summary>
 public sealed class QueueCapacityFilter(JobQueue queue, IConfiguration configuration) : IEndpointFilter

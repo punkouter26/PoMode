@@ -212,6 +212,22 @@
     background: var(--pm-bg);
 }
 
+/* The notifications item while the browser has them blocked: still shown, so the hint under it has
+   something to explain, but it cannot be switched from here. */
+.overflow-item:disabled {
+    color: var(--pm-fg-muted);
+    cursor: default;
+}
+
+.overflow-item:disabled:hover {
+    background: transparent;
+}
+
+/* A hint under a single item rather than inside a group, so it takes the item's inset. */
+.overflow-item-hint {
+    padding: 0 0.7rem 0.45rem;
+}
+
 /* Effects control. A three-stop segmented scale rather than a checkbox, because the middle
    setting is the one most people actually want and a two-state toggle cannot offer it. */
 .overflow-group {

@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Audio;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
-using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
+using PoMode.API.Features.Uploads;
 using PoMode.API.Pipeline;
 using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
@@ -17,62 +17,45 @@ public static class AnalysisEndpoints
         var group = app.MapGroup("/api/analysis");
         group.AddEndpointFilter<JobIdEndpointFilter>();
 
-        // Requires a session like every other write: the browser's own upload carries the session
-        // cookie, and the job has to know whose library it belongs to.
-        group.MapPost("", async Task<Results<Ok<JobStatusDto>, BadRequest<string>>> (
-            HttpRequest request, AnalysisIntake intake, CancellationToken ct) =>
+        // The one way to start analysing a file: it arrives over tus at /api/uploads (resumable, see
+        // ResumableUploads) and this call hands the finished upload to the pipeline. It used to be a
+        // multipart POST to this group's root, which restarted a 100 MB memo from zero whenever a
+        // phone lost signal; that endpoint is gone rather than kept beside this one.
+        //
+        // Requires a session like every other write: the job has to know whose library it belongs to.
+        group.MapPost("/uploads/{uploadId}", async Task<Results<Ok<JobStatusDto>, BadRequest<string>, NotFound, Conflict<string>>> (
+            string uploadId, HttpRequest request, ResumableUploads uploads, AnalysisIntake intake, CancellationToken ct) =>
         {
-            if (!request.HasFormContentType)
+            if (PoUser.IdOf(request.HttpContext.User) is not { } owner)
             {
-                return TypedResults.BadRequest("Expected a multipart form upload.");
+                return TypedResults.NotFound();
             }
-
-            IFormCollection form;
-            try
-            {
-                form = await request.ReadFormAsync(ct);
-            }
-            catch (InvalidDataException)
-            {
-                // An empty/malformed multipart body (e.g. no parts at all) fails ASP.NET Core's
-                // multipart parser before any file can be inspected — treat it the same as "no file".
-                return TypedResults.BadRequest("No file uploaded.");
-            }
-
-            var file = form.Files.FirstOrDefault();
-            if (file is null)
-            {
-                return TypedResults.BadRequest("No file uploaded.");
-            }
-            // The throw arm makes an unhandled UploadRejection fail closed (500) instead of
-            // silently accepting a file the validator just rejected.
-            if (await AudioFormatValidator.ValidateAsync(file, ct) is { } rejection)
-            {
-                return TypedResults.BadRequest(rejection switch
-                {
-                    UploadRejection.TooLarge => "File exceeds the 100 MB limit.",
-                    UploadRejection.UnsupportedFormat => "Only .mp3 and .wav files are supported.",
-                    _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Unhandled upload rejection."),
-                });
-            }
-
-            await using var fresh = file.OpenReadStream();
             // Tier 2 availability is a per-job property of the uploading browser (spec §4): the
             // client probes for onnxruntime-web support and declares it here. Absent or false, the
             // browser tier is simply invisible and planning behaves exactly as before.
             var clientCanInfer = bool.TryParse(request.Query["clientCanInfer"], out var canInfer) && canInfer;
             // The home page's per-stage model pickers arrive as plain query params; an absent or
             // bogus name simply leaves that stage on the planner's normal ranked order.
-            var state = await intake.StartAsync(
-                file.FileName, fresh, clientCanInfer, ct, PreferredExecutors(request),
-                ownerId: PoUser.IdOf(request.HttpContext.User));
-            return TypedResults.Ok(state.ToDto());
+            var handoff = await uploads.StartAnalysisAsync(
+                uploadId, owner, intake, clientCanInfer, PreferredExecutors(request), ct);
+            // The throw arm makes an unhandled outcome fail closed (500) instead of silently
+            // answering 200 for a file that was never queued.
+            return handoff switch
+            {
+                UploadHandoff.Started started => TypedResults.Ok(started.Status),
+                UploadHandoff.Missing => TypedResults.NotFound(),
+                UploadHandoff.Incomplete incomplete => TypedResults.Conflict(
+                    $"The upload has {incomplete.Offset} of {incomplete.Length} bytes; resume it before starting the analysis."),
+                UploadHandoff.Rejected { Reason: UploadRejection.TooLarge } => TypedResults.BadRequest("File exceeds the 100 MB limit."),
+                UploadHandoff.Rejected { Reason: UploadRejection.UnsupportedFormat } => TypedResults.BadRequest("Only .mp3 and .wav files are supported."),
+                _ => throw new InvalidOperationException($"Unhandled upload hand-off {handoff}."),
+            };
         })
         .RequireAuthorization()
-        .DisableAntiforgery()
         // The two guards answer different questions: the rate limit bounds how fast one client may
         // ask, the capacity filter bounds how much this server has already agreed to do. Neither
-        // substitutes for the other — see QueueCapacityFilter.
+        // substitutes for the other — see QueueCapacityFilter. A refusal leaves the upload in place,
+        // so the client can retry this call without sending the file again.
         .RequireRateLimiting(PoRateLimits.UploadPolicy)
         .AddEndpointFilter<QueueCapacityFilter>();
 

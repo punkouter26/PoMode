@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PoMode.Shared.Analysis;
@@ -20,10 +19,7 @@ public sealed class LiveAndLibraryEndpointTests : IClassFixture<AuthedFactory>
     public async Task Library_lists_only_the_callers_jobs_and_requires_auth()
     {
         using var client = _factory.CreateClient();
-        var audio = new ByteArrayContent(TestAudio.MakeWav());
-        audio.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        using var form = new MultipartFormDataContent { { audio, "file", "mine.wav" } };
-        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+        var created = await (await client.UploadAudioAsync(TestAudio.MakeWav(), "mine.wav")).Content.ReadFromJsonAsync<JobStatusDto>();
 
         var mine = await client.GetFromJsonAsync<List<LibraryEntryDto>>("/api/library");
         Assert.Contains(mine!, e => e.JobId == created!.JobId);

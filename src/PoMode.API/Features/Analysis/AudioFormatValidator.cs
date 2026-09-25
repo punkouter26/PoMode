@@ -12,17 +12,24 @@ public static class AudioFormatValidator
 {
     public const long MaxBytes = 100L * 1024 * 1024;
 
-    /// <summary>The one upload rule, shared by the single and batch upload endpoints: size cap
-    /// plus a 12-byte header sniff. Null when the file is acceptable.</summary>
+    /// <summary>The hum take's multipart file, through the same rule as a resumable upload.</summary>
     public static async Task<UploadRejection?> ValidateAsync(IFormFile file, CancellationToken ct)
     {
-        if (file.Length > MaxBytes)
+        await using var probe = file.OpenReadStream();
+        return await ValidateAsync(probe, file.Length, ct);
+    }
+
+    /// <summary>The one upload rule: size cap plus a 12-byte header sniff, read from the stream's
+    /// current position. Null when the file is acceptable. The stream is left part-read, so a caller
+    /// that goes on to store the file opens a fresh one.</summary>
+    public static async Task<UploadRejection?> ValidateAsync(Stream content, long length, CancellationToken ct)
+    {
+        if (length > MaxBytes)
         {
             return UploadRejection.TooLarge;
         }
-        await using var probe = file.OpenReadStream();
         var header = new byte[12];
-        var read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
+        var read = await content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
         return IsSupported(header.AsSpan(0, read), out _) ? null : UploadRejection.UnsupportedFormat;
     }
 

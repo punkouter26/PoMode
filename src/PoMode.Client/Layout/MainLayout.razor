@@ -103,6 +103,21 @@
                         aria-checked="@(!_fxMuted)" @onclick="ToggleFxMutedAsync" id="fx-sound-toggle">
                     @(_fxMuted ? "☓" : "♪") Interface sounds
                 </button>
+                @* Only where it can work: this server has a VAPID key and this browser can receive a
+                   push (Safari only as an installed app). The permission prompt comes from the click
+                   on this item and from nothing else. *@
+                @if (_pushState is "on" or "off" or "blocked")
+                {
+                    <button class="overflow-item" type="button" role="menuitemcheckbox" id="push-toggle"
+                            aria-checked="@(_pushState == "on" ? "true" : "false")" data-push-state="@_pushState"
+                            disabled="@(_pushState == "blocked" || _pushBusy)" @onclick="TogglePushAsync">
+                        @(_pushState == "on" ? "🔔" : "🔕") Notify me when analysis finishes
+                    </button>
+                    @if (_pushState == "blocked")
+                    {
+                        <span class="overflow-hint overflow-item-hint">Notifications are blocked for this site in your browser's settings.</span>
+                    }
+                }
                 @* Offered only when the browser has actually handed us an install prompt, so the
                    item is never a button that does nothing. *@
                 @if (_canInstall)
@@ -169,7 +184,12 @@
     private IJSObjectReference? _theme;
     private IJSObjectReference? _pwa;
     private IJSObjectReference? _prefs;
+    private IJSObjectReference? _push;
     private DotNetObjectReference<MainLayout>? _self;
+
+    /// <summary>push.js's answer: "unavailable" (item hidden), "blocked", "off" or "on".</summary>
+    private string _pushState = "unavailable";
+    private bool _pushBusy;
 
     /// <summary>The effect levels offered, in the order they read as a scale.</summary>
     private static readonly (string Value, string Label)[] FxLevels =
@@ -228,6 +248,18 @@
     private async Task SignOutAsync()
     {
         _overflowOpen = false;
+        if (_push is not null && _pushState == "on")
+        {
+            // While the session still exists: the account being left stops notifying this browser.
+            try
+            {
+                await _push.InvokeVoidAsync("forget");
+            }
+            catch (JSException)
+            {
+                // Signing out must not depend on a push service being reachable.
+            }
+        }
         await Session.SignOutAsync();
         // The library and any open job belonged to the account just left.
         Navigation.NavigateTo("", forceLoad: true);
@@ -311,6 +343,47 @@
         await _pwa.InvokeVoidAsync("watchInstall", _self);
         _canInstall = await _pwa.InvokeAsync<bool>("canInstall");
         StateHasChanged();
+        await InitPushAsync();
+    }
+
+    /// <summary>After the session exists: /api/push answers signed-in callers only, and a browser
+    /// that is already subscribed re-registers itself with whoever that is.</summary>
+    private async Task InitPushAsync()
+    {
+        try
+        {
+            await Session.EnsureAsync();
+            _push = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/push.js");
+            _pushState = await _push.InvokeAsync<string>("init");
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is JSException or HttpRequestException)
+        {
+            // No toggle, which is what a browser without push support gets anyway.
+        }
+    }
+
+    private async Task TogglePushAsync()
+    {
+        if (_push is null || _pushBusy)
+        {
+            return;
+        }
+        _pushBusy = true;
+        try
+        {
+            _pushState = await _push.InvokeAsync<string>(_pushState == "on" ? "disable" : "enable");
+        }
+        catch (JSException)
+        {
+            // Subscribing failed part-way (the push service unreachable, the server refused the
+            // endpoint); re-read what actually holds rather than guess.
+            _pushState = await _push.InvokeAsync<string>("init");
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
     }
 
     /// <summary>Called from pwa.js when the browser offers an install prompt.</summary>
@@ -383,6 +456,10 @@
             if (_prefs is not null)
             {
                 await _prefs.DisposeAsync();
+            }
+            if (_push is not null)
+            {
+                await _push.DisposeAsync();
             }
             if (_theme is not null)
             {

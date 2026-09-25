@@ -1,4 +1,5 @@
 using PoMode.API.Features.Analysis;
+using PoMode.API.Features.Push;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.API.Platform;
@@ -14,7 +15,8 @@ public sealed class DiagnosticsService(
     HardwareProbe hardwareProbe,
     JobQueue queue,
     ExecutionPlanner planner,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    PushSettings push)
 {
     public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
         EnvironmentName: environment.EnvironmentName,
@@ -33,7 +35,8 @@ public sealed class DiagnosticsService(
     /// </summary>
     private OperationalReport Operational() => new(
         RateLimitsEnabled: PoRateLimits.IsEnabled(configuration),
-        MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24));
+        MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24),
+        PushAvailable: push.Available);
 
     private async Task<List<StagePlan>?> DefaultPlanAsync(CancellationToken ct)
     {

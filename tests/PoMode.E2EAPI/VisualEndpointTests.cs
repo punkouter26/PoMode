@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PoMode.Shared.Analysis;
@@ -24,17 +23,9 @@ public sealed class VisualEndpointTests : IDisposable
             .UseSetting("Models:RootPath", _modelsRoot)
             .UseSetting("Models:AutoDownload", "false"));
 
-    private static MultipartFormDataContent WavForm()
-    {
-        var content = new ByteArrayContent(TestAudio.MakeWav());
-        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        return new MultipartFormDataContent { { content, "file", "test.wav" } };
-    }
-
     private static async Task<string> CompletedJobAsync(HttpClient client)
     {
-        using var form = WavForm();
-        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+        var created = await (await client.UploadAudioAsync(TestAudio.MakeWav())).Content.ReadFromJsonAsync<JobStatusDto>();
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (DateTime.UtcNow < deadline)
         {

@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PoMode.Shared.Analysis;
@@ -26,11 +25,7 @@ public sealed class StemEndpointTests : IDisposable
 
     private static async Task<string> CompletedJobAsync(HttpClient client)
     {
-        var content = new ByteArrayContent(TestAudio.MakeWav());
-        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        using var form = new MultipartFormDataContent { { content, "file", "test.wav" } };
-
-        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+        var created = await (await client.UploadAudioAsync(TestAudio.MakeWav())).Content.ReadFromJsonAsync<JobStatusDto>();
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (DateTime.UtcNow < deadline)
         {

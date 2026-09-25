@@ -88,6 +88,59 @@ Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.jso
 
 **Tier 2 (client-delegated)**: the browser probes onnxruntime-web support (`pitch-worker.js`), uploads declare `clientCanInfer=true`, and when a job reaches `AwaitingClient` the browser runs the model and POSTs validated notes back to `/api/analysis/{jobId}/client-result`.
 
+### Resumable uploads (tus)
+
+Every file the home page analyses — picked, recorded, or shared in from another app — arrives over
+tus (`Features/Uploads`, `tusdotnet` server, `tus-js-client` 4.3.1 vendored as
+`js/upload/tus.min.js`). A voice memo is up to 100 MB over mobile data, and a single POST that drops
+at 60 MB restarted from zero; now `js/upload/resumable-upload.js` asks the server how far it got and
+sends the rest, in 8 MB chunks, retrying through offline spells. A picked `File` also resumes across a
+reload (tus fingerprint in localStorage); a recording or shared Blob resumes within the session only.
+
+- `/api/uploads` is the tus endpoint: auth required, 100 MB cap checked at creation (deferred length
+  refused), partial files in `{jobs root}-uploads` — a *sibling* of the jobs root because both purge
+  sweeps treat every folder under it as a job. Sliding 24 h expiry, swept hourly by
+  `ResumableUploadCleanupService`. Local to the instance, never mirrored; scale-out would need
+  affinity. Upload ids carry a hash of the owner (`OwnerScopedFileIdProvider`), so someone else's id
+  answers 404 on every HEAD/PATCH/DELETE. Not rate-limited: every chunk is a request.
+- `POST /api/analysis/uploads/{id}` (with the old `clientCanInfer` / executor query params) sniffs the
+  header with `AudioFormatValidator`, hands the file to `AnalysisIntake.StartAsync` and returns the same
+  `JobStatusDto` the multipart upload did; 409 while bytes are missing. It is idempotent per upload (a
+  hand-off marker maps upload → job), so a finalize whose response was lost can be retried. It carries
+  the upload rate limit and `QueueCapacityFilter`; a refusal leaves the upload in place to retry.
+- The multipart `POST /api/analysis` is **gone**, not kept beside this. `POST /api/modal-melodies/hum`
+  stays multipart, and that is not a second way to do the same thing: it is a different request (the
+  backing parameters and the `HumTakeSeeder` hook ride with it), and its body is a take recorded
+  seconds ago that the page still holds in memory, so there is nothing to resume.
+- API tests upload through `UploadClientExtensions.UploadAudioAsync` (tus creation-with-upload, then
+  finalize) in `AuthedFactory.cs`.
+
+### Push notifications
+
+An analysis takes minutes and SignalR only reaches an open tab, so a finished job also sends a Web
+Push (`Features/Push`, `Lib.Net.Http.WebPush`) to its owner's opted-in browsers. The pipeline calls
+`IJobOutcomeNotifier` once per run on Complete or Failed (not Cancelled), after the terminal state is
+saved, best-effort. `WebPushOutcomeNotifier` words the title and body server-side ("'song.mp3' is
+ready" / "D Dorian, 96 BPM. Tap to open the analysis.", omitting any figure the job lacks; a failure
+never puts exception text on a lock screen), links to `/?job={id}`, uses the job id as the push Topic,
+and deletes a subscription the push service answers 404/410 for.
+
+- Keys: `PoMode:Push:VapidPublicKey` (appsettings or Key Vault) plus `PoMode--Push--VapidPrivateKey`
+  in Key Vault. Push is on only when both are present and well-formed (`PushSettings`). Development
+  without them generates a throwaway pair and logs that subscriptions will not survive a restart;
+  other environments without them simply have push off, and `/api/push` says so.
+- `GET /api/push`, `POST` / `DELETE /api/push/subscriptions` — all signed-in only. Endpoints are
+  allow-listed to the real push services (FCM, Mozilla, WNS, Apple): the server POSTs to whatever a
+  subscription names, so an open list is an SSRF hole.
+- `PushSubscriptionStore`: one JSON file per owner (hashed name) in `{jobs root}-push`, mirrored to the
+  job blob container under `push-subscriptions/`, restored from there when the local copy is gone.
+- Client: the header overflow menu's "Notify me when analysis finishes" (`js/shell/push.js`,
+  `data-push-state` on the item and on `<body>`). Hidden when the server has no keys or the browser
+  has no PushManager. Notification permission is requested only by a click on that item, never on
+  load. A subscribed browser re-sends its subscription on every visit, which re-registers it under
+  whoever is now signed in and resubscribes it if the server's key changed; signing out first drops
+  it from the account being left.
+
 ### Mode Lab harmony
 
 A mode is a tonal centre, not just a note set, so the Mode Lab's harmony has to move with the mode or
@@ -335,8 +388,8 @@ fixtures set `RateLimits:Enabled=false`.
 
 `QueueCapacityFilter` is a different guard, not a redundant one: the rate limit bounds how fast one
 client may ask, this bounds how much the server has agreed to do. Without it `JobQueue`'s bounded
-channel makes an over-quota upload *hang* - holding a request and a large multipart body until a
-worker frees a slot - where a 503 with a Retry-After is the honest answer.
+channel makes an over-quota finalize *hang* - holding a request until a worker frees a slot - where a
+503 with a Retry-After is the honest answer.
 
 Which executor really ran is recorded in `StageHistory`, rewritten by `CompleteStageAsync` after any
 fallback has taken over - so the history names the executor that did the work rather than the one
@@ -386,7 +439,8 @@ hiding part of them. Every other route fits 390×844 and 1440×900 with no scrol
 
 - `wwwroot/js` is grouped by what a module is for, not by what it is made of: `player/` (canvas,
   mixer, modal-player, click-track, take-plot), `capture/` (the recorders, live-pitch, wav),
-  `infer/` (the browser-tier pitch worker and its decoder) and `shell/` (theme, pwa, prefs, sfx).
+  `infer/` (the browser-tier pitch worker and its decoder), `upload/` (the vendored tus client and
+  the resumable uploader) and `shell/` (theme, pwa, push, prefs, sfx).
   Imports are relative, so a module that moves folders has to fix its own siblings.
 - Heavy UI lives in plain JS modules, not Blazor: `player/canvas.js` (dual-lane visualization, pan/zoom, virtualized drawing) and `player/mixer.js` (Web Audio stem playback, synth note overlays, metronome clicks, Space/comma transport keys). `mixer.js` owns the transport clock and drives the canvas playhead directly — no per-frame Blazor renders. Blazor components only issue commands and receive discrete events.
 - JS state is mirrored onto `data-*` attributes (`data-mixer-status`, `data-playhead`, …) precisely so Playwright tests can assert without reaching into module internals. Keep that contract when changing these modules.
@@ -394,18 +448,21 @@ hiding part of them. Every other route fits 390×844 and 1440×900 with no scrol
   into PoMode. `service-worker.js` is **network-first, never cache-first** - `Program.cs` serves this
   app's unfingerprinted JS and CSS with `no-cache` precisely to stop a stale module being paired with
   the C# beside it, and a cache-first worker (including the Blazor PWA template's) would reintroduce
-  that bug and make it survive a hard refresh. The share target POSTs to `/share-target`; the worker
-  stashes the file in a cache and redirects to `/?shared=1`, where `Home.razor` claims it via
-  `shell/pwa.js`. The bytes come back from a separate `takeSharedBytes` call because Blazor only marshals a
-  `Uint8Array` as a real byte array when it is the whole return value - nested in an object a 40 MB
-  memo degrades to a JSON array of numbers. `.webmanifest` is mapped explicitly in `Program.cs`: a
-  manifest served as `application/octet-stream` is ignored silently and the app simply stops being
-  installable.
+  that bug and make it survive a hard refresh. Adding push did not change that: the worker's
+  `push` / `notificationclick` handlers only show a server-worded notification and focus or open
+  its link, and every non-GET (all of tus included) still passes straight through. The share target
+  POSTs to `/share-target`; the worker stashes the file in a cache and redirects to `/?shared=1`,
+  where `Home.razor` claims it via `shell/pwa.js`. The file stays a Blob and reaches the uploader as a
+  JS object reference (`takeSharedFile`), so a 40 MB memo never crosses into the WASM heap. `pwa.js`
+  registers the worker immediately if `load` has already fired - it is reached through a dynamic
+  import that can settle after it, and a late listener left the app with no worker at all.
+  `.webmanifest` is mapped explicitly in `Program.cs`: a manifest served as `application/octet-stream`
+  is ignored silently and the app simply stops being installable.
 - Musical decisions (note colours, labels, measure numbers) are made server-side in `VisualizationBuilder`; `canvas.js` only maps numbers to pixels. Keep music theory out of JS. Same rule for audio: the mixer's chord-pad layer plays notes voiced server-side by `ChordPadBuilder` (served as `/api/analysis/{id}/notes-chords`, derived from chords.json, not stored) — mixer.js treats them as just another note list ('vocal'/'backing'/'chords').
 
 ### Infrastructure notes
 
-- `SecretsBootstrap` wires Key Vault via `DefaultAzureCredential` with an env-var fallback (logged as a warning). Never add connection strings or appsettings secrets.
+- `SecretsBootstrap` wires Key Vault via `DefaultAzureCredential` with an env-var fallback (logged as a warning). Never add connection strings or appsettings secrets. The VAPID private key is `PoMode--Push--VapidPrivateKey` in `kv-poshared`; nothing in the app writes it.
 - Auth lives in `Features/Auth`. `PoAuth` issues one session cookie from two doors: **guest** (every
   environment, Production included — the client mints one on first visit so the app works before
   anyone signs in) and **Microsoft** (Microsoft.Identity.Web, personal + work accounts, on only when

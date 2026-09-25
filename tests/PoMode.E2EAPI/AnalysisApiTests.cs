@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -19,6 +20,7 @@ public sealed class AnalysisApiTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        if (Directory.Exists(_root + "-uploads")) Directory.Delete(_root + "-uploads", recursive: true);
         if (Directory.Exists(_modelsRoot)) Directory.Delete(_modelsRoot, recursive: true);
     }
 
@@ -28,18 +30,17 @@ public sealed class AnalysisApiTests : IDisposable
             .UseSetting("Models:RootPath", _modelsRoot)
             .UseSetting("Models:AutoDownload", "false"));
 
-    private static MultipartFormDataContent WavForm(byte[]? bytes = null)
-    {
-        var content = new ByteArrayContent(bytes ?? TestAudio.MakeWav());
-        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        return new MultipartFormDataContent { { content, "file", "test.wav" } };
-    }
-
+    /// <summary>The phone-on-a-train case, end to end: half a memo arrives, the connection drops, the
+    /// client asks how far the server got and sends only the rest — and at no point can anyone else
+    /// see the upload, or can it become two jobs. Then the job runs to completion.</summary>
     [Fact]
-    public async Task Upload_returns_job_status_and_job_completes_via_hub_or_polling()
+    public async Task Dropped_upload_resumes_privately_starts_one_job_and_it_completes_via_hub_or_polling()
     {
         await using var factory = Factory();
         using var client = factory.CreateClient();
+        using var stranger = factory.CreateClient();
+        stranger.DefaultRequestHeaders.Remove("X-Fake-User");
+        stranger.DefaultRequestHeaders.Add("X-Fake-User", "someone-else");
 
         await using var hub = new HubConnectionBuilder()
             .WithUrl(new Uri(client.BaseAddress!, "/hubs/analysis"),
@@ -52,13 +53,35 @@ public sealed class AnalysisApiTests : IDisposable
         });
         await hub.StartAsync();
 
-        using var form = WavForm();
-        var response = await client.PostAsync("/api/analysis", form);
+        var audio = TestAudio.MakeWav();
+        var half = audio.Length / 2;
+        var uploadId = await UploadClientExtensions.CreateUploadAsync(client, audio.Length, "memo.wav", audio[..half]);
+        var path = $"/api/uploads/{uploadId}";
+
+        // Half the bytes are not a song: starting the analysis now is refused, not guessed at.
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/analysis/uploads/{uploadId}", null)).StatusCode);
+        // Resuming starts with a HEAD: the server says how much it holds.
+        var offset = long.Parse(Assert.Single((await TusHead(client, path)).Headers.GetValues("Upload-Offset")), CultureInfo.InvariantCulture);
+        Assert.Equal(half, offset);
+        // Someone else cannot probe it, finish it, or start an analysis of it.
+        Assert.Equal(HttpStatusCode.NotFound, (await TusHead(stranger, path)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await TusPatch(stranger, path, offset, audio[half..])).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.PostAsync($"/api/analysis/uploads/{uploadId}", null)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await TusPatch(client, path, offset, audio[half..])).StatusCode);
+        var response = await client.PostAsync($"/api/analysis/uploads/{uploadId}?clientCanInfer=false", null);
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<JobStatusDto>();
         Assert.NotNull(created);
+        Assert.Equal("memo.wav", created.FileName);
         Assert.Equal(4, created.Plan.Count);
         await hub.InvokeAsync("Subscribe", created.JobId);
+
+        // A client whose response was lost retries; it gets the same job, not a second one. The bytes
+        // have moved into the job, so the upload itself is gone.
+        var retried = await (await client.PostAsync($"/api/analysis/uploads/{uploadId}", null)).Content.ReadFromJsonAsync<JobStatusDto>();
+        Assert.Equal(created.JobId, retried!.JobId);
+        Assert.Equal(HttpStatusCode.NotFound, (await TusHead(client, path)).StatusCode);
 
         var final = await WaitForTerminalAsync(client, created.JobId, terminal.Task);
         Assert.Equal(JobStage.Complete, final.Stage);
@@ -66,6 +89,22 @@ public sealed class AnalysisApiTests : IDisposable
         var result = await client.GetFromJsonAsync<ModalResult>($"/api/analysis/{created.JobId}/result");
         Assert.NotNull(result);
         Assert.Equal(1, result.SchemaVersion);
+    }
+
+    private static Task<HttpResponseMessage> TusHead(HttpClient client, string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Head, path);
+        request.Headers.Add("Tus-Resumable", UploadClientExtensions.TusVersion);
+        return client.SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> TusPatch(HttpClient client, string path, long offset, byte[] bytes)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Patch, path) { Content = new ByteArrayContent(bytes) };
+        request.Headers.Add("Tus-Resumable", UploadClientExtensions.TusVersion);
+        request.Headers.Add("Upload-Offset", offset.ToString(CultureInfo.InvariantCulture));
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/offset+octet-stream");
+        return client.SendAsync(request);
     }
 
     private static async Task<JobStatusDto> WaitForTerminalAsync(
@@ -88,8 +127,7 @@ public sealed class AnalysisApiTests : IDisposable
         await using var factory = Factory();
         using var client = factory.CreateClient();
 
-        using var form = WavForm([0x25, 0x50, 0x44, 0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
-        var response = await client.PostAsync("/api/analysis", form);
+        var response = await client.UploadAudioAsync([0x25, 0x50, 0x44, 0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/analysis/..%2F..%2Fsecrets/notes")).StatusCode);
@@ -114,8 +152,7 @@ public sealed class AnalysisApiTests : IDisposable
         }));
         using var client = factory.CreateClient();
 
-        using var form = WavForm();
-        var response = await client.PostAsync("/api/analysis", form);
+        var response = await client.UploadAudioAsync(TestAudio.MakeWav());
 
         response.EnsureSuccessStatusCode();
         var status = await response.Content.ReadFromJsonAsync<JobStatusDto>();

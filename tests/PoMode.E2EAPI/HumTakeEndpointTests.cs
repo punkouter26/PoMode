@@ -123,11 +123,8 @@ public sealed class HumTakeEndpointTests : IDisposable
         await using var factory = Factory();
         using var client = factory.CreateClient();
 
-        using var content = new MultipartFormDataContent();
-        var part = new ByteArrayContent(TestAudio.MakeTone(2.0, frequencyHz: 220.0));
-        part.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(part, "file", "song.wav");
-        var job = await (await client.PostAsync("/api/analysis", content)).Content.ReadFromJsonAsync<JobStatusDto>();
+        var job = await (await client.UploadAudioAsync(TestAudio.MakeTone(2.0, frequencyHz: 220.0), "song.wav"))
+            .Content.ReadFromJsonAsync<JobStatusDto>();
 
         Assert.NotNull(job);
         // A dropped file explains itself; inventing an origin for one would be noise.

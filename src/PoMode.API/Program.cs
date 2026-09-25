@@ -12,8 +12,10 @@ using PoMode.API.Features.Export;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.PitchTracking;
+using PoMode.API.Features.Push;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.Separation;
+using PoMode.API.Features.Uploads;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.Shared.Serialization;
@@ -83,6 +85,14 @@ builder.Services.AddSingleton<SongInterpreterSelector>();
 builder.Services.AddSingleton<ClientWorkRegistry>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
+// The notice for a closed tab: Web Push to the job's owner when it finishes. Off unless a VAPID pair
+// is configured (Development generates a throwaway one) — see PushSettings.
+builder.Services.AddSingleton(sp => PushSettings.Resolve(
+    builder.Configuration, builder.Environment, sp.GetRequiredService<ILogger<PushSettings>>()));
+builder.Services.AddSingleton<PushSubscriptionStore>();
+builder.Services.AddSingleton<IJobOutcomeNotifier, WebPushOutcomeNotifier>();
+// Bounded: a push service that hangs must not hold the worker slot for HttpClient's default 100s.
+builder.Services.AddHttpClient(WebPushOutcomeNotifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
 builder.Services.AddHostedService<JobRecoveryService>();
@@ -90,6 +100,8 @@ builder.Services.AddHostedService<JobCleanupService>();
 // The first-run demo: one real pipeline run into a template, then a file copy per new library.
 builder.Services.AddSingleton<DemoLibrary>();
 builder.Services.AddHostedService<DemoTemplateService>();
+builder.Services.AddSingleton<ResumableUploads>();
+builder.Services.AddHostedService<ResumableUploadCleanupService>();
 builder.Services.AddHostedService<ModelWarmupService>();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(
@@ -101,6 +113,9 @@ if (secretSource.FellBack)
 {
     app.Logger.LogWarning("Key Vault unreachable — secrets are coming from environment variables this run.");
 }
+// Resolved now rather than on the first job to finish, so a missing or malformed key pair (or the
+// Development fallback to a throwaway one) is in the startup log where someone will read it.
+app.Services.GetRequiredService<PushSettings>();
 
 app.UseForwardedHeaders();
 app.UseBlazorFrameworkFiles();
@@ -149,11 +164,13 @@ app.MapDiagnostics();
 
 app.MapAuth();
 app.MapAnalysis();
+app.MapResumableUploads();
 app.MapLibrary();
 app.MapWebRuntime();
 app.MapModalMelodies();
 app.MapMidiExport();
 app.MapSongStats();
+app.MapPush();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 // The share target's fallback. Normally the service worker answers this POST and never lets it

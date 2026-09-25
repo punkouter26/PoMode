@@ -28,6 +28,13 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
         }
     }
 
+    /// <summary>
+    /// A folder beside the jobs root (<c>jobs-uploads</c>, <c>jobs-push</c>) for state that is not a
+    /// job. Beside it rather than inside it because both purge sweeps treat every folder under the
+    /// root as a job, and would delete a partial upload or a push subscription as "old junk".
+    /// </summary>
+    public string SiblingPath(string suffix) => Path.TrimEndingDirectorySeparator(RootPath) + "-" + suffix;
+
     public string JobDir(string jobId) => Path.Combine(RootPath, jobId);
 
     public string InputPath(JobState state)

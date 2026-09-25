@@ -2,7 +2,6 @@
 @using System.Text.Json
 @using Microsoft.AspNetCore.SignalR.Client
 @using PoMode.Shared.Analysis
-@using PoMode.Shared.Serialization
 @inject AnalysisClient Analysis
 @inject MockDataState MockData
 @inject NavigationManager Navigation
@@ -28,9 +27,18 @@
             <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
             <RadzenText TextStyle="TextStyle.H6" Text="Drop a track, get the theory" />
             <RadzenText class="upload-hero-sub" Text=".mp3 or .wav · up to 100 MB" />
-            <RadzenUpload Url="@UploadUrl" Accept=".mp3,.wav" Auto="true"
-                          Progress="@OnUploadProgress"
-                          Complete="@OnUploadComplete" Error="@OnUploadError" ChooseText="Choose audio file" />
+            @* A plain file input dressed as a Radzen button rather than RadzenUpload: RadzenUpload
+               POSTs the file itself in one request, and the point here is that the bytes go over tus
+               (js/upload/resumable-upload.js) so a dropped connection resumes instead of restarting.
+               The input covers the button, so a click or a dropped file both land on it. *@
+            <label class="rz-button rz-button-md rz-variant-filled rz-primary rz-shade-default upload-choose"
+                   data-upload-state="@(_uploading ? (_uploadResuming ? "resuming" : "uploading") : "idle")">
+                <RadzenIcon Icon="upload_file" />
+                <span>Choose audio file</span>
+                <input type="file" class="upload-input" accept=".mp3,.wav,audio/mpeg,audio/wav"
+                       aria-label="Choose audio file" disabled="@_uploading"
+                       @ref="_fileInput" @onchange="OnFileChosenAsync" />
+            </label>
 
             <div class="record-row">
                 @if (!_recording)
@@ -174,6 +182,10 @@
     private ModalResult? _result;
     private string? _uploadError;
     private bool _uploading;
+    private bool _uploadResuming;
+    private ElementReference _fileInput;
+    private IJSObjectReference? _uploader;
+    private DotNetObjectReference<Home>? _self;
     private int _uploadPercent;
     private long _uploadLoaded;
     private long _uploadTotal;
@@ -268,33 +280,6 @@
         else
         {
             _executorChoices[stage] = name;
-        }
-    }
-
-    /// <summary>
-    /// Tier 2 availability is a per-job property of this browser, declared at upload time so the
-    /// server can plan the ClientDelegated tier. Until the probe has answered, uploads declare
-    /// nothing and the plan is exactly what it always was. The per-stage model picks ride along as
-    /// query params (keys from the shared <see cref="StageNames.ExecutorQueryKeys"/> table); Auto
-    /// sends nothing. Derived per render — four short strings, and no cached copy that could go stale.
-    /// </summary>
-    private string UploadUrl
-    {
-        get
-        {
-            var query = new List<string>(4);
-            if (_clientCapability is not null)
-            {
-                query.Add("clientCanInfer=true");
-            }
-            foreach (var (stage, queryKey) in StageNames.ExecutorQueryKeys)
-            {
-                if (_executorChoices.TryGetValue(stage, out var name))
-                {
-                    query.Add($"{queryKey}={Uri.EscapeDataString(name)}");
-                }
-            }
-            return query.Count == 0 ? "api/analysis" : $"api/analysis?{string.Join("&", query)}";
         }
     }
 
@@ -413,33 +398,80 @@
     }
 
     private string UploadProgressText
-        => _uploadPercent >= 100 ? "Upload sent — waiting for the server…"
+        => _uploadResuming
+            ? $"Connection lost — resuming… {_uploadPercent}% ({_uploadLoaded / 1048576.0:0.0} of {_uploadTotal / 1048576.0:0.0} MB)"
+            : _uploadPercent >= 100 ? "Upload sent — waiting for the server…"
             : _uploadTotal > 0
                 ? $"Uploading… {_uploadPercent}% ({_uploadLoaded / 1048576.0:0.0} of {_uploadTotal / 1048576.0:0.0} MB)"
                 : $"Uploading… {_uploadPercent}%";
 
-    private void OnUploadProgress(UploadProgressArgs args)
+    /// <summary>Called by resumable-upload.js at most once per whole percent, and whenever the upload
+    /// starts or stops recovering from a dropped connection.</summary>
+    [JSInvokable]
+    public Task OnUploadProgress(long sent, long total, bool resuming)
     {
-        _uploading = true;
-        _uploadPercent = args.Progress;
-        _uploadLoaded = args.Loaded;
-        _uploadTotal = args.Total;
+        _uploadLoaded = sent;
+        _uploadTotal = total;
+        _uploadPercent = total > 0 ? (int)(sent * 100 / total) : 0;
+        _uploadResuming = resuming;
+        return InvokeAsync(StateHasChanged);
     }
 
-    private async Task OnUploadComplete(UploadCompleteEventArgs args)
+    private Task OnFileChosenAsync() => UploadAndAnalyzeAsync(_fileInput, name: null);
+
+    /// <summary>
+    /// Every intake path's one route to a job: the bytes go over tus, then the finished upload is
+    /// handed to the analyzer with this browser's capability and model picks. <paramref name="source"/>
+    /// is whatever resumable-upload.js accepts — the file input, a Blob reference, or a recording's
+    /// bytes. Returns false when nothing was started, with the reason in <c>_uploadError</c>.
+    /// </summary>
+    private async Task<bool> UploadAndAnalyzeAsync(object source, string? name)
     {
-        _uploading = false;
+        _uploading = true;
+        _uploadResuming = false;
         _uploadError = null;
-        // RadzenUpload hands back raw text; deserialize through the source-generated context.
-        if (args.RawResponse is not { } rawResponse
-            || JsonSerializer.Deserialize(rawResponse, PoModeJsonContext.Default.JobStatusDto) is not { } status)
+        _uploadPercent = 0;
+        _uploadLoaded = 0;
+        _uploadTotal = 0;
+        StateHasChanged();
+        try
         {
-            _uploadError = "Unexpected server response.";
-            Notifications.Notify(NotificationSeverity.Error, "Upload failed", "Unexpected server response.");
-            return;
+            _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
+            _self ??= DotNetObjectReference.Create(this);
+            var uploadId = await _uploader.InvokeAsync<string>("upload", source, name, _self);
+            var (status, error) = await Analysis.StartFromUploadAsync(
+                uploadId, _clientCapability is not null, _executorChoices);
+            if (status is null)
+            {
+                return Refused(error ?? "The analyzer would not accept the file.");
+            }
+            _uploading = false;
+            await PlaySfxAsync("chime");
+            await TrackJobAsync(status);
+            return true;
         }
-        await PlaySfxAsync("chime");
-        await TrackJobAsync(status);
+        catch (JSException ex)
+        {
+            // resumable-upload.js rejects with a sentence written to be shown as it is; interop
+            // appends the JS stack after the first line.
+            return Refused(ex.Message.Split('\n')[0]);
+        }
+        catch (HttpRequestException)
+        {
+            return Refused("The server could not be reached. Please try again.");
+        }
+        finally
+        {
+            _uploading = false;
+            _uploadResuming = false;
+        }
+    }
+
+    private bool Refused(string reason)
+    {
+        _uploadError = reason;
+        Notifications.Notify(NotificationSeverity.Error, "Upload failed", reason);
+        return false;
     }
 
     private async Task CancelJobAsync()
@@ -482,13 +514,7 @@
             _recordError = "Nothing was recorded.";
             return;
         }
-        var status = await Analysis.UploadAsync(wavBytes, "recording.wav", _clientCapability is not null);
-        if (status is null)
-        {
-            _recordError = "The recording upload failed.";
-            return;
-        }
-        await TrackJobAsync(status);
+        await UploadAndAnalyzeAsync(wavBytes, "recording.wav");
     }
 
     /// <summary>
@@ -515,20 +541,10 @@
             {
                 return;
             }
-            var bytes = await pwa.InvokeAsync<byte[]>("takeSharedBytes");
-            if (bytes.Length == 0)
-            {
-                _uploadError = "The shared file arrived empty.";
-                return;
-            }
-
-            var status = await Analysis.UploadAsync(bytes, name, _clientCapability is not null);
-            if (status is null)
-            {
-                _uploadError = "The analyzer would not accept the shared file.";
-                return;
-            }
-            await TrackJobAsync(status);
+            // A reference, not the bytes: the Blob goes from pwa.js to the uploader without a 40 MB
+            // detour through .NET memory.
+            await using var file = await pwa.InvokeAsync<IJSObjectReference>("takeSharedFile");
+            await UploadAndAnalyzeAsync(file, name);
         }
         catch (JSDisconnectedException)
         {
@@ -633,15 +649,13 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void OnUploadError(UploadErrorEventArgs args)
-    {
-        _uploading = false;
-        _uploadError = string.IsNullOrWhiteSpace(args.Message) ? "Upload failed." : args.Message;
-        Notifications.Notify(NotificationSeverity.Error, "Upload failed", _uploadError);
-    }
-
     public async ValueTask DisposeAsync()
     {
+        if (_uploader is not null)
+        {
+            await _uploader.DisposeAsync();
+        }
+        _self?.Dispose();
         if (_hub is not null)
         {
             await _hub.DisposeAsync();

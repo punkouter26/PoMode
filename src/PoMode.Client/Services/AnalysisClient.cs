@@ -88,17 +88,69 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<List<LibraryEntryDto>?> GetLibraryAsync()
         => http.GetFromJsonAsync<List<LibraryEntryDto>>("api/library");
 
-    /// <summary>Uploads in-memory audio (the microphone recording) exactly like a file upload.</summary>
-    public async Task<JobStatusDto?> UploadAsync(byte[] audioBytes, string fileName, bool clientCanInfer)
+    /// <summary>
+    /// Starts analysing a finished resumable upload (js/upload/resumable-upload.js), with this
+    /// browser's Tier-2 capability and the per-stage model picks on the query string (keys from the
+    /// shared <see cref="StageNames.ExecutorQueryKeys"/> table; Auto sends nothing).
+    ///
+    /// <para>A dropped connection is retried: the server answers a repeat for the same upload with the
+    /// job the first call started, so a response lost on a flaky network does not strand the file.
+    /// Returns the server's reason when it refuses.</para>
+    /// </summary>
+    public async Task<(JobStatusDto? Status, string? Error)> StartFromUploadAsync(
+        string uploadId, bool clientCanInfer, IReadOnlyDictionary<string, string> executorChoices)
     {
-        using var content = new MultipartFormDataContent();
-        var filePart = new ByteArrayContent(audioBytes);
-        filePart.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(filePart, "file", fileName);
-        var response = await http.PostAsync(clientCanInfer ? "api/analysis?clientCanInfer=true" : "api/analysis", content);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<JobStatusDto>()
-            : null;
+        var query = new List<string>(4);
+        if (clientCanInfer)
+        {
+            query.Add("clientCanInfer=true");
+        }
+        foreach (var (stage, queryKey) in StageNames.ExecutorQueryKeys)
+        {
+            if (executorChoices.TryGetValue(stage, out var name))
+            {
+                query.Add($"{queryKey}={Uri.EscapeDataString(name)}");
+            }
+        }
+        var url = $"api/analysis/uploads/{Uri.EscapeDataString(uploadId)}"
+            + (query.Count == 0 ? "" : "?" + string.Join("&", query));
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var response = await http.PostAsync(url, content: null);
+                if (response.IsSuccessStatusCode)
+                {
+                    return (await response.Content.ReadFromJsonAsync<JobStatusDto>(), null);
+                }
+                return (null, await ReasonAsync(response));
+            }
+            catch (HttpRequestException) when (attempt < 3)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+            }
+        }
+    }
+
+    /// <summary>The server's refusals are JSON strings written for people; anything else gets a
+    /// plain sentence rather than a status code.</summary>
+    private static async Task<string> ReasonAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            if (await response.Content.ReadFromJsonAsync<string>() is { Length: > 0 } reason)
+            {
+                return reason;
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            // An empty or non-JSON body: fall through to the generic sentence.
+        }
+        return response.StatusCode == HttpStatusCode.NotFound
+            ? "The upload expired before the analysis could start. Please upload the file again."
+            : "The analyzer would not accept the file.";
     }
 
     /// <summary>Standard chord progression presets across genres and modes.</summary>

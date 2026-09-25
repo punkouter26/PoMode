@@ -1,4 +1,4 @@
-// PoMode's service worker: an offline shell, a share target, and nothing clever.
+// PoMode's service worker: an offline shell, a share target, push notifications, and nothing clever.
 //
 // NETWORK-FIRST, deliberately, and this is the most important decision in the file. Program.cs
 // serves this app's own scripts and styles with `no-cache` precisely because they carry no
@@ -53,7 +53,7 @@ self.addEventListener('fetch', (event) => {
     // A file shared into the app from another app (a voice memo, a track in a file manager). The
     // POST is answered here rather than by the server: the page needs the bytes, not a round trip,
     // and handing them straight to the upload endpoint would skip the executor picks the home page
-    // collects. See share-target.js.
+    // collects. See shell/pwa.js.
     if (request.method === 'POST' && url.pathname === '/share-target' && url.origin === self.location.origin) {
         event.respondWith(receiveShare(request));
         return;
@@ -116,7 +116,7 @@ function isCacheable(url) {
 ///
 /// A redirect rather than a response body because the share target is a navigation: the browser is
 /// opening the app, and what it needs back is somewhere to land. The file goes into its own cache
-/// under a fixed key, which share-target.js reads once and then deletes.
+/// under a fixed key, which shell/pwa.js reads once and then deletes.
 async function receiveShare(request) {
     try {
         const form = await request.formData();
@@ -138,4 +138,56 @@ async function receiveShare(request) {
         // by an error the sharing app will render as a crash.
     }
     return Response.redirect('/', 303);
+}
+
+// "Your analysis is ready", sent by the server (WebPushOutcomeNotifier) to a browser whose owner opted
+// in from the header menu. An analysis takes minutes and the tab is usually closed by the end; this
+// is the only way the news reaches them. Every word is decided server-side — this only displays it.
+self.addEventListener('push', (event) => {
+    let message = {};
+    try {
+        message = event.data ? event.data.json() : {};
+    } catch {
+        // Garbled or not ours. A push must still show something: a browser that sees pushes arrive
+        // without a notification revokes the permission.
+    }
+    event.waitUntil(self.registration.showNotification(message.title || 'PoMode', {
+        body: message.body || 'An analysis has finished.',
+        // One notice per job: a re-run replaces its earlier notice instead of stacking a second.
+        tag: message.tag || undefined,
+        icon: '/icons/icon-192.png',
+        data: { url: localPath(message.url) },
+    }));
+});
+
+// Opens the analysis the notification is about. An open PoMode window is reused and taken there
+// rather than a second one opened beside it; with none open, a new one starts on that analysis.
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
+    event.waitUntil((async () => {
+        const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+        if (open) {
+            try {
+                const focused = await open.focus();
+                await (focused || open).navigate(target);
+                return;
+            } catch {
+                // navigate() works only on a window this worker controls; fall through and open one.
+            }
+        }
+        await self.clients.openWindow(target);
+    })());
+});
+
+/// The notification's link, confined to this origin. The server only ever sends a local path, but a
+/// payload is still input, and a notification is not somewhere to be sent off-site from.
+function localPath(url) {
+    try {
+        const parsed = new URL(url || '/', self.location.origin);
+        return parsed.origin === self.location.origin ? parsed.pathname + parsed.search : '/';
+    } catch {
+        return '/';
+    }
 }

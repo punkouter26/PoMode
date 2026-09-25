@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PoMode.Shared.Analysis;
@@ -55,12 +54,7 @@ public sealed class SongStatsInterpretationTests : IDisposable
 
     private static async Task<string> AnalyseAsync(HttpClient client)
     {
-        using var content = new MultipartFormDataContent();
-        var file = new ByteArrayContent(SongWav());
-        file.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(file, "file", "test-song.wav");
-
-        var response = await client.PostAsync("/api/analysis", content);
+        var response = await client.UploadAudioAsync(SongWav(), "test-song.wav");
         response.EnsureSuccessStatusCode();
         var status = await response.Content.ReadFromJsonAsync<JobStatusDto>();
         Assert.NotNull(status);

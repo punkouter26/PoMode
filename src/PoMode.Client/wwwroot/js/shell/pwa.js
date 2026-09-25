@@ -13,11 +13,16 @@ export function register() {
     }
     // After load: registration competes with the WASM download for bandwidth otherwise, and the
     // runtime is what the user is actually waiting for.
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(() => {
-            // An unregistered worker costs offline support and nothing else.
-        });
+    const registerWorker = () => navigator.serviceWorker.register('/service-worker.js').catch(() => {
+        // An unregistered worker costs offline support, the share target and push, and nothing else.
     });
+    // index.html reaches this through a dynamic import, which can settle after `load` has already
+    // fired — and a listener added then never runs, which left the app with no worker at all.
+    if (document.readyState === 'complete') {
+        registerWorker();
+    } else {
+        window.addEventListener('load', registerWorker, { once: true });
+    }
     return true;
 }
 
@@ -76,20 +81,19 @@ export function isStandalone() {
 /// Must match the SHARE_CACHE name in service-worker.js — the two halves of the handoff.
 const SHARE_CACHE = 'pomode-v1-share';
 
-/// The bytes of a shared file, held between the two calls below.
-let sharedBytes = null;
+/// The shared file, held between the two calls below.
+let sharedFile = null;
 
 /// Claims the file another app shared into PoMode and returns its name, or null if there is none.
 ///
 /// Read once and then deleted: the cache entry is a handoff, not storage, and leaving it there would
 /// make the next visit to `/?shared=1` re-upload a file the user already analysed.
 ///
-/// The bytes come back from `takeSharedBytes` rather than from here because Blazor marshals a
-/// Uint8Array as a real byte array only when it is the whole return value. Nested inside an object
-/// it degrades to a JSON array of numbers, which for a 40 MB voice memo means hundreds of megabytes
-/// of text crossing the interop boundary.
+/// The file itself stays on this side as a Blob and goes from `takeSharedFile` straight to the
+/// resumable uploader as an object reference. Its bytes never cross into .NET: a 40 MB memo copied
+/// into the WASM heap and back out again would cost memory a phone does not have to spare.
 export async function takeSharedName() {
-    sharedBytes = null;
+    sharedFile = null;
     if (!('caches' in window)) {
         return null;
     }
@@ -100,7 +104,7 @@ export async function takeSharedName() {
             return null;
         }
         const name = decodeURIComponent(response.headers.get('X-Shared-Name') || 'shared-audio');
-        sharedBytes = new Uint8Array(await response.arrayBuffer());
+        sharedFile = await response.blob();
         await cache.delete('/shared-file');
         return name;
     } catch {
@@ -108,12 +112,12 @@ export async function takeSharedName() {
     }
 }
 
-/// The bytes claimed by the last `takeSharedName`, cleared as they are handed over so a re-render
-/// cannot upload the same file twice.
-export function takeSharedBytes() {
-    const bytes = sharedBytes ?? new Uint8Array(0);
-    sharedBytes = null;
-    return bytes;
+/// The file claimed by the last `takeSharedName` (an empty Blob if none), cleared as it is handed
+/// over so a re-render cannot upload the same file twice.
+export function takeSharedFile() {
+    const file = sharedFile ?? new Blob([]);
+    sharedFile = null;
+    return file;
 }
 
 /// Mirrored onto the document like the other modules, so Playwright can assert on install state

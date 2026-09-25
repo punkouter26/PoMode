@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using PoMode.Shared.Analysis;
@@ -32,10 +31,7 @@ public sealed class MidiExportTests : IDisposable
 
         // A real tone (not silence): YinPitchTracker transcribes it for real in this model-less
         // test host, so the exported MIDI carries actual notes worth asserting a body size on.
-        var content = new ByteArrayContent(TestAudio.MakeTone(1.5, 440.0));
-        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        using var form = new MultipartFormDataContent { { content, "file", "test.wav" } };
-        var created = await (await client.PostAsync("/api/analysis", form)).Content.ReadFromJsonAsync<JobStatusDto>();
+        var created = await (await client.UploadAudioAsync(TestAudio.MakeTone(1.5, 440.0))).Content.ReadFromJsonAsync<JobStatusDto>();
 
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (DateTime.UtcNow < deadline)
