@@ -53,3 +53,10 @@ public sealed record TempoMapDto(
     bool IsSteady,
     double Confidence,
     IReadOnlyList<TempoMeasureDto> Measures);
+
+/// <summary>
+/// A min/max envelope of one track, <c>Peaks[2i]</c> and <c>Peaks[2i+1]</c> being the lowest and highest
+/// sample in the i-th equal slice. <paramref name="Source"/> says which track: "vocals" once separation
+/// has written the stem, "mix" (the upload itself) before then.
+/// </summary>
+public sealed record WaveformPeaksDto(double DurationSec, string Source, IReadOnlyList<float> Peaks);

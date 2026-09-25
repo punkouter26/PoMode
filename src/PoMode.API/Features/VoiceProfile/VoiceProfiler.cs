@@ -123,7 +123,42 @@ public static class VoiceProfiler
             strongest?.Note.Label,
             strongest?.Sentence,
             [.. byPitch.Where(Qualifies).OrderByDescending(Score).Take(5).OrderBy(n => n.Midi)],
-            HowJudged);
+            HowJudged,
+            Map(low, median, high, best.type.Type, leaning, strongest?.Note));
+    }
+
+    /// <summary>
+    /// The keyboard drawing's data: every classical range plus the singing, with a little room either
+    /// side, labelled at each C and at the notes the sentences mention. Leaning is matched by label
+    /// because that is what the summary names.
+    /// </summary>
+    private static VoiceMapDto Map(int low, int median, int high, VoiceType type, string? leaning, VoiceNoteDto? strongest)
+    {
+        var from = Math.Min(Types.Min(t => t.Low), low) - 2;
+        var to = Math.Max(Types.Max(t => t.High), high) + 2;
+        // Widened out to whole Cs, so the octave labels frame the drawing at both ends.
+        from -=((from % 12) + 12) % 12;
+        to += (12 - (to % 12)) % 12;
+
+        var labels = new SortedDictionary<int, string>();
+        for (var midi = from; midi <= to; midi += 12)
+        {
+            labels[midi] = SongStatsBuilder.PitchLabel(midi);
+        }
+        foreach (var midi in new[] { low, median, high }.Concat(strongest is null ? [] : [strongest.Midi]))
+        {
+            labels[midi] = SongStatsBuilder.PitchLabel(midi);
+        }
+
+        return new VoiceMapDto(
+            from,
+            to,
+            low,
+            median,
+            high,
+            [.. Types.Select(t => new VoiceTypeRangeDto(t.Type, t.Label, t.Low, t.High,
+                Matched: t.Type == type || t.Label == leaning))],
+            [.. labels.Select(pair => new VoiceKeyLabelDto(pair.Key, pair.Value))]);
     }
 
     /// <summary>Every sung pitch pooled over its notes. Tuning and wobble are duration-weighted over the

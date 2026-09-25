@@ -21,38 +21,50 @@
     }
     else
     {
+        @* Three kinds of control, drawn as three: Play; one either-or choice of what the audio is (a
+           select bar, because picking Vocals un-picks Full mix); and the synth layers, which combine
+           freely and mute the stems while either is on. The metronome is its own toggle. Seven
+           same-weight buttons used to say none of that. *@
         <div class="mixer-groups">
-            <div class="mixer-group mixer-group-play" role="group" aria-label="Transport">
-                <RadzenButton Click="TogglePlayAsync" Disabled="@(_status is "idle" or "loading")"
-                              Text="@(_status == "playing" ? "Pause" : "Play")" class="mixer-play"
-                              title="Space = play/pause, , = restart" />
+            <RadzenButton Click="TogglePlayAsync" Disabled="@Loading" Icon="@(_status == "playing" ? "pause" : "play_arrow")"
+                          Text="@(_status == "playing" ? "Pause" : "Play")" class="mixer-play"
+                          title="Space = play/pause, , = restart" />
+
+            <div class="mixer-group">
+                <span class="mixer-group-label" id="mixer-audio-label">Audio</span>
+                <RadzenSelectBar TValue="string" Value="@(_stemsMuted ? null : _mode)" Change="@SelectSourceAsync"
+                                 Disabled="@Loading" Size="ButtonSize.Small" class="mixer-sources"
+                                 AriaLabelledBy="mixer-audio-label">
+                    <Items>
+                        @foreach (var (mode, label) in Modes)
+                        {
+                            <RadzenSelectBarItem Text="@label" Value="@mode" />
+                        }
+                    </Items>
+                </RadzenSelectBar>
             </div>
 
-            <div class="mixer-group mixer-group-source" role="group" aria-label="Audio source">
-                <span class="mixer-group-label">Source</span>
-                @foreach (var (mode, label) in Modes)
-                {
-                    <RadzenButton Click="@(() => SelectSourceAsync(mode))"
-                                  Disabled="@(_status is "idle" or "loading")"
-                                  ButtonStyle="@(_mode == mode && !_stemsMuted ? ButtonStyle.Primary : ButtonStyle.Light)"
-                                  Text="@label" />
-                }
-                <RadzenButton Click="@(() => ToggleSoloAsync("vocal"))"
-                              Disabled="@(_status is "idle" or "loading" || _vocalNoteCount == 0)"
-                              ButtonStyle="@(_stemsMuted && SynthOn("vocal") ? ButtonStyle.Primary : ButtonStyle.Light)"
-                              Text="Solo Synth" title="Toggle the transcribed vocal melody as synth MIDI lead (mutes audio stems; combines with Solo Chords)" />
-                <RadzenButton Click="@(() => ToggleSoloAsync("chords"))"
-                              Disabled="@(_status is "idle" or "loading" || _chordNoteCount == 0)"
-                              ButtonStyle="@(_stemsMuted && SynthOn("chords") ? ButtonStyle.Primary : ButtonStyle.Light)"
-                              Text="Solo Chords" title="Toggle the detected chords as a sustained synth pad (mutes audio stems; combines with Solo Synth)" />
-                @* Hearing the click against the track is the fastest way to judge whether the
-                   detected tempo is right, so the metronome sits with the sources rather than
-                   behind a disclosure. *@
-                <RadzenButton Click="@(() => SetMetronomeAsync(!_metronomeOn))"
-                              Disabled="@(_status is "idle" or "loading" || _beatBpm <= 0)"
-                              ButtonStyle="@(_metronomeOn ? ButtonStyle.Primary : ButtonStyle.Light)"
-                              Text="@($"Click · {BpmReadout}")" title="@MetronomeTitle" />
+            <div class="mixer-group">
+                <span class="mixer-group-label" id="mixer-synth-label">Synth</span>
+                <RadzenSelectBar TValue="IEnumerable<string>" Multiple="true" Value="@SynthLayersOn"
+                                 Change="@SetSynthLayersAsync" Disabled="@Loading" Size="ButtonSize.Small"
+                                 class="mixer-synths" AriaLabelledBy="mixer-synth-label">
+                    <Items>
+                        <RadzenSelectBarItem Text="Melody" Value="@("vocal")" Disabled="@(_vocalNoteCount == 0)" />
+                        <RadzenSelectBarItem Text="Chords" Value="@("chords")" Disabled="@(_chordNoteCount == 0)" />
+                    </Items>
+                </RadzenSelectBar>
             </div>
+
+            @* Hearing the click against the track is the fastest way to judge whether the detected
+               tempo is right, so the metronome sits with the sources rather than behind a disclosure. *@
+            <RadzenButton Click="@(() => SetMetronomeAsync(!_metronomeOn))"
+                          Disabled="@(Loading || _beatBpm <= 0)" Icon="timer" Size="ButtonSize.Small"
+                          ButtonStyle="@(_metronomeOn ? ButtonStyle.Primary : ButtonStyle.Light)"
+                          Variant="@(_metronomeOn ? Variant.Flat : Variant.Filled)"
+                          Shade="@(_metronomeOn ? Shade.Lighter : Shade.Default)"
+                          aria-pressed="@(_metronomeOn ? "true" : "false")"
+                          Text="@($"Click · {BpmReadout}")" title="@MetronomeTitle" class="mixer-click" />
         </div>
 
         @* The always-visible key legend is gone: the header's "Keyboard shortcuts" modal carries
@@ -71,24 +83,32 @@
                 <button type="button" class="mixer-retry-btn" @onclick="RetryLoad">↻ Retry</button>
             </div>
         }
-        @if (_status is "loading" or "idle")
-        {
-            <RadzenProgressBar class="mixer-loading" Value="100" ShowValue="false"
-                               Mode="ProgressBarMode.Indeterminate" aria-label="Loading stems" />
-        }
+        @* The bar's room stays when it goes, so the page under the player does not jump up the moment
+           the stems finish loading. *@
+        <div class="mixer-loading-slot">
+            @if (Loading)
+            {
+                <RadzenProgressBar class="mixer-loading" Value="100" ShowValue="false"
+                                   Mode="ProgressBarMode.Indeterminate" aria-label="Loading stems" />
+            }
+        </div>
     }
 </div>
 
 @code {
     private static readonly (string Mode, string Label)[] Modes =
     [
-        ("full", "Full Mix"),
-        ("vocals", "Solo Vocals"),
-        ("backing", "Solo Backing"),
+        ("full", "Full mix"),
+        ("vocals", "Vocals"),
+        ("backing", "Backing"),
     ];
 
     /// <summary>Job whose stems to play. Changing it reloads the mixer.</summary>
     [Parameter, EditorRequired] public required string JobId { get; set; }
+
+    /// <summary>Whether the job has a bar-by-bar tempo map. Asked for only when it does: the mixer used
+    /// to fetch it for every song and log a 404 for each one analysed without a beat tracker.</summary>
+    [Parameter] public bool HasTempoMap { get; set; }
 
     /// <summary>The canvas whose playhead this mixer drives.</summary>
     [Parameter, EditorRequired] public ElementReference CanvasElement { get; set; }
@@ -123,6 +143,14 @@
     private bool SynthOn(string source) => _synthOn.GetValueOrDefault(source);
 
     private bool AnySynthOn => SynthSources.Any(SynthOn);
+
+    private bool Loading => _status is "idle" or "loading";
+
+    /// <summary>The layers the synth select bar offers — the backing transcription has no button.</summary>
+    private static readonly string[] SoloLayers = ["vocal", "chords"];
+
+    /// <summary>The synth select bar's value: which of its layers are sounding.</summary>
+    private IEnumerable<string> SynthLayersOn => SoloLayers.Where(SynthOn).ToList();
 
     private bool _metronomeOn;
     private double _beatBpm;
@@ -160,9 +188,9 @@
             {
                 return (SynthOn("vocal"), SynthOn("chords")) switch
                 {
-                    (true, true) => $"Solo Synth + Chords · {_vocalNoteCount} melody notes · {_chordNoteCount} chord tones · {_duration:0.0}s",
-                    (true, false) => $"Solo Synth · {_vocalNoteCount} melody notes · {_duration:0.0}s",
-                    _ => $"Solo Chords · {_chordNoteCount} chord tones · {_duration:0.0}s",
+                    (true, true) => $"Synth melody and chords · {_vocalNoteCount} melody notes · {_chordNoteCount} chord tones · {_duration:0.0}s",
+                    (true, false) => $"Synth melody · {_vocalNoteCount} notes · {_duration:0.0}s",
+                    _ => $"Synth chords · {_chordNoteCount} chord tones · {_duration:0.0}s",
                 };
             }
             var label = Modes.FirstOrDefault(entry => entry.Mode == _mode).Label ?? _mode;
@@ -300,10 +328,13 @@
                     // loadNotes always answers [vocal, backing, chords].
                     (_vocalNoteCount, _backingNoteCount, _chordNoteCount) = (counts[0], counts[1], counts[2]);
                     _beatBpm = await _module.InvokeAsync<double>("loadBeats", _root, $"api/analysis/{JobId}/beats");
-                    // Optional: absent for a job analysed before the tempo map existed, in which case
-                    // the metronome keeps clicking to the regular grid above.
-                    await _module.InvokeAsync<double>(
-                        "loadTempoMap", _root, $"api/analysis/{JobId}/tempo-map", _duration);
+                    // Optional: absent when no beat tracker ran (a demo or a hum take, whose tempo was
+                    // given) or the job predates the map. The metronome then keeps to the grid above.
+                    if (HasTempoMap)
+                    {
+                        await _module.InvokeAsync<double>(
+                            "loadTempoMap", _root, $"api/analysis/{JobId}/tempo-map", _duration);
+                    }
                 }
                 catch
                 {
@@ -394,17 +425,24 @@
     }
 
     /// <summary>
-    /// Solo Synth / Solo Chords: the layers combine freely, each click toggles its own. The stems
-    /// stay muted while any solo layer is on; when the last one turns off, the audio source the
-    /// user had before (still in <c>_mode</c>) comes back.
+    /// The synth melody and chord layers combine freely; the select bar hands back whichever are now
+    /// picked. The stems stay muted while any layer is on; when the last one turns off, the audio
+    /// source the user had before (still in <c>_mode</c>) comes back.
     /// </summary>
-    private async Task ToggleSoloAsync(string source)
+    private async Task SetSynthLayersAsync(IEnumerable<string>? picked)
     {
         if (_module is null)
         {
             return;
         }
-        await SetNotesAsync(source, !SynthOn(source));
+        var wanted = picked?.ToHashSet() ?? [];
+        foreach (var layer in SoloLayers)
+        {
+            if (wanted.Contains(layer) != SynthOn(layer))
+            {
+                await SetNotesAsync(layer, wanted.Contains(layer));
+            }
+        }
         var anySolo = AnySynthOn;
         if (_stemsMuted != anySolo)
         {

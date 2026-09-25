@@ -1,90 +1,39 @@
 .mixer {
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.4rem;
     margin: 0.5rem 0 0;
 }
 
 .mixer-groups {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.5rem 0.9rem;
     flex-wrap: wrap;
 }
 
 .mixer-group {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-    padding-right: 0.55rem;
-    border-right: 1px solid var(--pm-border);
-}
-
-.mixer-group:last-child {
-    border-right: 0;
-    padding-right: 0;
+    gap: 0.4rem;
+    min-width: 0;
 }
 
 .mixer-group-label {
     color: var(--pm-fg-muted);
     font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-right: 0.25rem;
+    font-weight: 600;
     user-select: none;
 }
 
-.mixer-play {
-    min-width: 5rem;
-}
-
-.metronome-cell,
-.drone-cell {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
-.bpm-nudge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.2rem;
-}
-
-.bpm-readout {
-    font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
-    color: var(--pm-fg-muted);
-    min-width: 4.5rem;
-    text-align: center;
-}
-
-.bpm-step {
-    width: 1.6rem;
-    height: 1.6rem;
-    font-size: 0.9rem;
-}
-
-.bpm-tap {
-    width: auto;
-    height: 1.6rem;
-    padding: 0 0.45rem;
-    font-size: var(--pm-text-xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-}
-
-.drone-readout {
-    color: var(--pm-fg-muted);
-    font-size: 0.85rem;
+.mixer ::deep .mixer-play {
+    min-width: 6rem;
 }
 
 .mixer-status-line {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    margin: 0.15rem 0;
 }
 
 .mixer-pulse-dot {
@@ -104,7 +53,7 @@
 
 .mixer-note {
     margin: 0;
-    font-size: 0.82rem;
+    font-size: var(--pm-text-sm);
     color: var(--pm-fg-muted);
 }
 
@@ -113,230 +62,81 @@
     font-weight: 500;
 }
 
-.karaoke-error {
-    color: var(--pm-note-outside);
-}
-
-/* Stacking context for the two visual layers. Keeps the same outer footprint the single spectrum
-   canvas had, so nothing else in the column moves. */
-.mixer-visual {
-    position: relative;
-    flex: 0 0 auto;
-    width: 100%;
-    height: 3.2rem;
-    border-radius: 0.4rem;
-    overflow: hidden;
-}
-
-.mixer-spectrum,
-.mixer-particles {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    background: transparent;
-}
-
-/* Behind the bars, and never in the way of a pointer. */
-.mixer-particles {
-    z-index: 0;
-}
-
-.mixer-spectrum {
-    z-index: 1;
-}
-
-.mixer-debug-toggle {
-    margin-left: auto;
-    background: transparent;
-    border: 1px solid var(--pm-border);
-    color: var(--pm-fg-muted);
-    font-size: var(--pm-text-xs);
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.mixer-debug-toggle:hover {
-    color: var(--pm-fg);
-    border-color: var(--pm-accent);
-}
-
-.mixer-debug-panel {
-    flex-basis: 100%;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    margin: 0.25rem 0;
-    font-size: 0.78rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.debug-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    color: var(--pm-fg-muted);
-}
-
-.debug-row span {
-    min-width: 110px;
-}
-
-.debug-row strong {
-    color: var(--pm-fg);
-}
-
-.debug-row code {
-    color: var(--pm-accent);
-    font-family: ui-monospace, monospace;
-}
-
-.debug-row.debug-error strong {
-    color: var(--pm-note-outside, #ef4444);
-}
-
 .mixer-error-bar {
-    flex-basis: 100%;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.35);
+    background: var(--pm-danger-bg);
+    border: 1px solid var(--pm-danger-edge);
     border-radius: 6px;
     padding: 0.4rem 0.75rem;
-    margin: 0.25rem 0;
-    font-size: 0.8rem;
-    color: #ef4444;
+    font-size: var(--pm-text-sm);
+    color: var(--pm-danger);
 }
 
 .mixer-retry-btn {
-    background: #ef4444;
-    color: #fff;
-    border: none;
+    min-height: 1.75rem;
+    background: transparent;
+    color: var(--pm-danger);
+    border: 1px solid var(--pm-danger-edge);
     padding: 0.2rem 0.6rem;
     border-radius: 4px;
-    font-size: 0.75rem;
+    font: inherit;
+    font-size: var(--pm-text-xs);
     font-weight: 600;
     cursor: pointer;
 }
 
 .mixer-retry-btn:hover {
-    background: #dc2626;
+    background: var(--pm-danger-bg);
+}
+
+.mixer-loading-slot {
+    height: 0.25rem;
 }
 
 .mixer-loading {
-    flex-basis: 100%;
     height: 0.25rem;
-    margin-top: 0.25rem;
 }
 
-.karaoke-cell {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
-.karaoke-stats {
-    font-size: 0.78rem;
-    color: var(--pm-fg-muted);
-    white-space: nowrap;
-}
-
-.karaoke-take {
-    color: var(--pm-accent);
-    font-weight: 600;
-}
-
-/* The floating quick transport: a small glass pill pinned bottom-right once audio is rolling,
-   so Play/Pause never scrolls out of reach under the HUD and stats. */
-.mini-transport {
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 40;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.35rem 0.75rem 0.35rem 0.35rem;
-    border-radius: 999px;
-    background: var(--pm-surface-glass);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    border: 1px solid var(--pm-border);
-    box-shadow: var(--pm-shadow);
-}
-
-.mini-transport ::deep .mini-play {
-    min-width: 2.4rem;
-    height: 2.4rem;
-    border-radius: 50%;
-    padding: 0;
-}
-
-.mini-transport-label {
-    font-size: 0.78rem;
-    color: var(--pm-fg-muted);
-    user-select: none;
-}
-
+/* On a phone Play and Click share the top row and each choice gets a row of its own, with targets a
+   thumb can hit. */
 @media (max-width: 640px) {
-    .mini-transport {
-        right: 0.5rem;
-        bottom: 0.5rem;
+    .mixer-groups {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "play click"
+            "audio audio"
+            "synth synth";
+        gap: 0.4rem;
     }
-}
 
-/* The "More" disclosure holding rare controls (note overlays, tempo nudge). */
-.mixer-more {
-    position: relative;
-    display: inline-flex;
-}
+    .mixer-groups ::deep .mixer-play { grid-area: play; }
+    .mixer-groups ::deep .mixer-click { grid-area: click; }
+    .mixer-group:nth-of-type(1) { grid-area: audio; }
+    .mixer-group:nth-of-type(2) { grid-area: synth; }
 
-.mixer-more-toggle {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    border: 1px solid var(--pm-border);
-    border-radius: 0.4rem;
-    background: transparent;
-    color: var(--pm-fg-muted);
-    cursor: pointer;
-}
+    .mixer-group {
+        display: grid;
+        grid-template-columns: 3.25rem minmax(0, 1fr);
+    }
 
-.mixer-more-toggle:hover {
-    color: var(--pm-fg);
-    border-color: var(--pm-accent);
-}
+    .mixer-group ::deep .rz-selectbar {
+        display: flex;
+        width: 100%;
+    }
 
-.mixer-more-menu {
-    position: absolute;
-    top: calc(100% + 0.35rem);
-    right: 0;
-    z-index: 30;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.4rem;
-    min-width: 13rem;
-    padding: 0.6rem;
-    border-radius: 0.6rem;
-    background: var(--pm-surface-glass);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    border: 1px solid var(--pm-border);
-    box-shadow: var(--pm-shadow);
-}
+    .mixer-group ::deep .rz-selectbar .rz-button {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 2.25rem;
+    }
 
-/* Readouts belong to their buttons: the metronome/drone cells render as one pill, so "199 BPM"
-   and the drone note never float unattached in the strip. */
-.metronome-cell,
-.drone-cell {
-    border: 1px solid var(--pm-border);
-    border-radius: 999px;
-    padding: 0.15rem 0.6rem 0.15rem 0.15rem;
+    .mixer-groups ::deep .mixer-play,
+    .mixer-groups ::deep .mixer-click {
+        width: 100%;
+        min-height: 2.5rem;
+    }
 }

@@ -1,0 +1,91 @@
+@using PoMode.Shared.Analysis
+
+@* One analysis window, read out when the timeline is clicked: its chord, which scale degrees were
+   sung, and which mode it matches. This was the lower half of a "HUD" whose upper half repeated the
+   key badge above the canvas word for word, behind a placeholder card and a "Show details" click.
+   Every value was derived server-side by VisualizationBuilder; this formats, it does not decide. *@
+
+@if (Selected is null)
+{
+    <p class="inspect-hint">Click a chord block on the timeline to inspect a window.</p>
+}
+else
+{
+    <section class="inspect" aria-label="Selected window" aria-live="polite">
+        <dl class="inspect-facts">
+            <dt>Chord</dt>
+            <dd class="hud-chord">@Selected.ChordSymbol</dd>
+            <dt>Measure</dt>
+            <dd>m@(Selected.MeasureNumber)</dd>
+            <dt>Window</dt>
+            <dd>@Selected.StartSec.ToString("0.00")–@Selected.EndSec.ToString("0.00")s</dd>
+            <dt>Sung mask</dt>
+            <dd class="hud-mask">@Selected.MaskHex</dd>
+        </dl>
+
+        <div class="inspect-degrees">
+            <span class="inspect-label">Scale degrees <span class="inspect-key">· filled = sung here</span></span>
+            <div class="degree-grid">
+                @foreach (var badge in Selected.Degrees)
+                {
+                    <span class="@DegreeClass(badge)" title="@DegreeTitle(badge)">@badge.Label</span>
+                }
+            </div>
+        </div>
+
+        <div class="inspect-match">
+            <span class="inspect-label">Mode match</span>
+            @if (Selected.InsufficientEvidence || Selected.ModeTag is null)
+            {
+                @* Honest empty state: the engine needs 3+ distinct sung pitch classes (spec §6). *@
+                <p class="inspect-note">Not enough sung notes in this window to name a mode.</p>
+            }
+            else
+            {
+                <span class="inspect-mode">@($"{Selected.ModeTag} ({Selected.ModeConfidence:P0})")</span>
+                @if (Selected.Evidence is { } evidence)
+                {
+                    @* Present only when this window settles the question on its own. *@
+                    <p class="inspect-note">@evidence</p>
+                }
+                <p class="inspect-note">
+                    @if (Selected.Alternatives.Count == 0)
+                    {
+                        <text>No close alternatives.</text>
+                    }
+                    else
+                    {
+                        <text>Close: @string.Join(" · ", Selected.Alternatives.Select(a => $"{a.Mode} {a.Confidence:P0}"))</text>
+                    }
+                </p>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public required IReadOnlyList<VisualWindow> Windows { get; set; }
+
+    [Parameter] public int? SelectedWindowIndex { get; set; }
+
+    private VisualWindow? Selected => SelectedWindowIndex is { } index && index >= 0 && index < Windows.Count
+        ? Windows[index]
+        : null;
+
+    private static string DegreeClass(DegreeBadge badge)
+    {
+        var classes = "degree";
+        if (badge.Sung) classes += " sung";
+        if (badge.Characteristic) classes += " characteristic";
+        else if (badge.InMode) classes += " in-mode";
+        return classes;
+    }
+
+    private static string DegreeTitle(DegreeBadge badge)
+    {
+        var role = badge.Characteristic ? "characteristic degree of this mode"
+            : badge.InMode ? "in this mode"
+            : "outside this mode";
+        return $"{badge.Label}: {role}; {(badge.Sung ? "sung here" : "not sung here")}";
+    }
+}

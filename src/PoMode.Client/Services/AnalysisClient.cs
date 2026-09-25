@@ -34,6 +34,16 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<VisualizationPayload?> GetVisualAsync(string jobId)
         => http.GetFromJsonAsync<VisualizationPayload>($"api/analysis/{jobId}/visual");
 
+    /// <summary>The similarity matrix and novelty curve the section ribbon was cut from, or null when
+    /// the song did not divide into sections (the server answers 404, as the ribbon is absent then).</summary>
+    public async Task<SongStructureDto?> GetStructureAsync(string jobId)
+    {
+        var response = await http.GetAsync($"api/analysis/{jobId}/structure");
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<SongStructureDto>()
+            : null;
+    }
+
     /// <summary>The lead singer's voice type and strongest note. The first request for a song measures
     /// its vocal, so it can take a second or two; later ones are cached server-side.</summary>
     public Task<VoiceProfileDto?> GetVoiceProfileAsync(string jobId)

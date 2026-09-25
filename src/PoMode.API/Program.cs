@@ -15,6 +15,7 @@ using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Push;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.Separation;
+using PoMode.API.Features.SongStructure;
 using PoMode.API.Features.VoiceProfile;
 using PoMode.API.Features.Uploads;
 using PoMode.API.Infrastructure;
@@ -173,6 +174,7 @@ app.MapModalMelodies();
 app.MapMidiExport();
 app.MapSongStats();
 app.MapVoiceProfile();
+app.MapSongStructure();
 app.MapPush();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 

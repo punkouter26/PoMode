@@ -1,0 +1,76 @@
+@using PoMode.Shared.Analysis
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* The voice read on a keyboard: the six classical ranges over the keys, where the singing sits and
+   its centre, and the strongest note's key — which the button plays. Everything drawn is the
+   server's VoiceMapDto; js/player/voice-map.js only lays the numbers out as keys. *@
+
+<div class="voice-map" data-voice-map="@($"{Map.LowMidi}-{Map.HighMidi}")">
+    <canvas @ref="_canvas" class="voice-map-canvas" role="img" aria-label="@Description"></canvas>
+    @if (StrongestMidi is { } strongest && StrongestLabel is { } label)
+    {
+        <RadzenButton Text="@($"Hear the strongest note ({label})")" Icon="volume_up" Size="ButtonSize.Small"
+                      ButtonStyle="ButtonStyle.Light" Click="@(() => PlayAsync(strongest))" class="voice-map-play" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required VoiceMapDto Map { get; set; }
+    [Parameter] public int? StrongestMidi { get; set; }
+    [Parameter] public string? StrongestLabel { get; set; }
+
+    private ElementReference _canvas;
+    private IJSObjectReference? _module;
+    private VoiceMapDto? _drawn;
+
+    private string LabelOf(int midi) => Map.Labels.FirstOrDefault(label => label.Midi == midi)?.Label ?? "";
+
+    private string Description
+        => $"Keyboard with the six classical voice ranges above it; the singing spans {LabelOf(Map.LowMidi)} to "
+           + $"{LabelOf(Map.HighMidi)}, centred on {LabelOf(Map.MedianMidi)}"
+           + (StrongestLabel is { } best ? $", strongest note {best}" : "");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ReferenceEquals(_drawn, Map))
+        {
+            return;
+        }
+        _drawn = Map;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/voice-map.js");
+            await _module.InvokeVoidAsync("init", _canvas, Map, StrongestMidi);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-render.
+        }
+    }
+
+    private async Task PlayAsync(int midi)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("play", _canvas, midi);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        try
+        {
+            await _module.InvokeVoidAsync("dispose", _canvas);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone during teardown.
+        }
+    }
+}

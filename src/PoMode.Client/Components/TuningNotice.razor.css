@@ -1,20 +1,14 @@
 .tuning-notice {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0.5rem 0;
-    padding: 0.4rem 0.7rem;
-    border: 1px solid var(--pm-accent, #6366f1);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--pm-accent, #6366f1) 10%, transparent);
-    font-size: 0.8rem;
-    line-height: 1.35;
-}
-
-.tuning-icon {
-    font-size: 1rem;
-}
-
-.tuning-text strong {
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border: 1px solid var(--pm-info-edge);
+    border-radius: 999px;
+    background: var(--pm-info-bg);
+    color: var(--pm-info);
+    font-size: var(--pm-text-xs);
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
+    cursor: help;
 }

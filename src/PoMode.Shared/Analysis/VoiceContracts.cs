@@ -28,7 +28,8 @@ public sealed record VoiceProfileDto(
     string? StrongestLabel,
     string? StrongestSentence,
     IReadOnlyList<VoiceNoteDto> Notes,
-    string HowJudged);
+    string HowJudged,
+    VoiceMapDto? Map = null);
 
 /// <summary>
 /// One sung pitch, pooled over every time it was sung. <paramref name="OffCents"/> is the average
@@ -42,3 +43,25 @@ public sealed record VoiceNoteDto(
     double HeldSec,
     double? OffCents,
     double? WobbleCents);
+
+/// <summary>
+/// Everything a keyboard drawing of the voice needs, decided server-side: the stretch of keyboard to
+/// show, where the singing sits (10th, 50th and 90th percentile notes, the same figures the summary
+/// sentence quotes), each classical type's range, and the key labels to print. Null when the voice
+/// could not be judged.
+/// </summary>
+public sealed record VoiceMapDto(
+    int FromMidi,
+    int ToMidi,
+    int LowMidi,
+    int MedianMidi,
+    int HighMidi,
+    IReadOnlyList<VoiceTypeRangeDto> Types,
+    IReadOnlyList<VoiceKeyLabelDto> Labels);
+
+/// <summary>One classical voice type's range; <paramref name="Matched"/> marks the type (and any
+/// leaning) the summary names.</summary>
+public sealed record VoiceTypeRangeDto(VoiceType Type, string Label, int LowMidi, int HighMidi, bool Matched);
+
+/// <summary>A key worth naming on the drawing: each C, plus the notes the sentences mention.</summary>
+public sealed record VoiceKeyLabelDto(int Midi, string Label);

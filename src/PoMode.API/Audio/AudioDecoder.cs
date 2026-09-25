@@ -76,6 +76,60 @@ public static class AudioDecoder
         }
     }
 
+    /// <summary>
+    /// A min/max envelope in <paramref name="columns"/> equal slices, streamed rather than decoded
+    /// whole: a waveform sketch of a five-minute mp3 should not cost the hundred megabytes of floats
+    /// <see cref="Decode"/> would hold. Channels are averaged. Null for anything unreadable.
+    /// </summary>
+    public static (float[] Peaks, double DurationSec)? TryReadPeaks(string path, int columns)
+    {
+        try
+        {
+            var header = new byte[12];
+            using (var probe = File.OpenRead(path))
+            {
+                var read = probe.Read(header);
+                if (!AudioFormatValidator.IsSupported(header.AsSpan(0, read), out _))
+                {
+                    return null;
+                }
+            }
+            using var reader = OpenReader(path, header);
+            var provider = reader.ToSampleProvider();
+            var channels = Math.Max(provider.WaveFormat.Channels, 1);
+            // TotalTime is exact for WAV and close for mp3; a frame past the estimate lands in the
+            // last column rather than being dropped.
+            var estimatedFrames = Math.Max((long)(reader.TotalTime.TotalSeconds * provider.WaveFormat.SampleRate), 1);
+            var framesPerColumn = Math.Max(estimatedFrames / columns, 1);
+
+            var peaks = new float[columns * 2];
+            var chunk = new float[provider.WaveFormat.SampleRate * channels];
+            long frame = 0;
+            int count;
+            while ((count = provider.Read(chunk.AsSpan())) > 0)
+            {
+                for (var i = 0; i + channels <= count; i += channels)
+                {
+                    var sum = 0f;
+                    for (var channel = 0; channel < channels; channel++)
+                    {
+                        sum += chunk[i + channel];
+                    }
+                    var value = sum / channels;
+                    var column = (int)Math.Min(frame / framesPerColumn, columns - 1);
+                    peaks[column * 2] = Math.Min(peaks[column * 2], value);
+                    peaks[(column * 2) + 1] = Math.Max(peaks[(column * 2) + 1], value);
+                    frame++;
+                }
+            }
+            return (peaks, frame / (double)provider.WaveFormat.SampleRate);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException)
+        {
+            return null;
+        }
+    }
+
     private static WaveStream OpenReader(string path, ReadOnlySpan<byte> header)
         => header[..4].SequenceEqual("RIFF"u8)
             ? new WaveFileReader(path)

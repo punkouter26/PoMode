@@ -1,0 +1,135 @@
+.why {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-2);
+    border-left: 3px solid var(--pm-info-edge);
+    background: var(--pm-info-bg);
+    border-radius: 0 6px 6px 0;
+    padding: var(--pm-space-2) var(--pm-space-3);
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg);
+}
+
+.why-reasons {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-1);
+}
+
+/* Plain foreground, not --pm-caution: that colour is only guaranteed legible on its own tinted
+   ground, and this sits on the info tint. The sentence opens "Against it:", which is signal enough. */
+.why-against {
+    margin: 0;
+    font-weight: 600;
+}
+
+/* align-items: start so the two-bar vote does not stretch to the twelve-row degree chart's height. */
+.why-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    align-items: start;
+    gap: var(--pm-space-2) var(--pm-space-4);
+}
+
+.why-chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-1);
+    min-width: 0;
+}
+
+.why-title {
+    font-size: var(--pm-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-fg-muted);
+    font-weight: 600;
+}
+
+.why-caption {
+    margin: 0;
+    color: var(--pm-fg-muted);
+}
+
+.why-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.why-row {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr) 2.5rem;
+    align-items: center;
+    gap: var(--pm-space-2);
+}
+
+.why-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.why-value {
+    text-align: right;
+    color: var(--pm-fg-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.row-winner .why-label {
+    font-weight: 700;
+}
+
+/* A degree the singer never touches is still worth a row — the gap is what shows the scale. */
+.row-unsung {
+    opacity: 0.45;
+}
+
+.why-crown {
+    color: var(--pm-fg);
+}
+
+.swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+}
+
+.bar-track {
+    height: 8px;
+    background: var(--pm-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    /* The width arrives as --pm-fill so the declaration lives here, not in the markup. */
+    width: var(--pm-fill, 0%);
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.35s ease;
+}
+
+/* The canvas's own note tokens, so a colour means the same thing here as on the piano roll. */
+.winner-fill { background: var(--pm-accent); }
+.runner-fill { background: var(--pm-fg-muted); }
+.swatch.characteristic, .characteristic-fill { background: var(--pm-note-characteristic); }
+.swatch.in-mode, .in-mode-fill { background: var(--pm-note-in-mode); }
+.swatch.outside, .outside-fill { background: var(--pm-note-outside); }
+
+@media (prefers-reduced-motion: reduce) {
+    .bar-fill {
+        transition: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .why {
+        padding: var(--pm-space-2);
+    }
+}

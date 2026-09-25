@@ -9,10 +9,10 @@
 
 <header class="app-header">
     <div class="brand">PoMode</div>
-    @* Two labels per destination, one of which is display:none at any given width. A phone cannot
-       fit "Diagnostics" beside five siblings, and the previous answer — a horizontally scrollable
-       strip — hid the last item behind a gesture nobody discovers. Shortening the word is honest;
-       hiding it was not. Only one span is ever rendered visible, so assistive tech reads one name. *@
+    @* Two labels per destination, one of which is display:none at any given width, so the row fits a
+       320px phone without a scroll strip hiding the last item. Only one span is ever rendered
+       visible, so assistive tech reads one name. Diagnostics is an operator's page, not a place a
+       listener goes, so it lives in the ⋯ menu rather than taking a slot here. *@
     <nav class="actions" aria-label="Main navigation">
         <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
             <span class="nav-wide">Analyze</span><span class="nav-narrow">Analyze</span>
@@ -25,9 +25,6 @@
         </NavLink>
         <NavLink class="nav-link" href="practice">
             <span class="nav-wide">Practice</span><span class="nav-narrow">Sing</span>
-        </NavLink>
-        <NavLink class="nav-link" href="diagnostics">
-            <span class="nav-wide">Diagnostics</span><span class="nav-narrow">Diag</span>
         </NavLink>
     </nav>
     <div class="session">
@@ -118,6 +115,9 @@
                         <span class="overflow-hint overflow-item-hint">Notifications are blocked for this site in your browser's settings.</span>
                     }
                 }
+                <a class="overflow-item" role="menuitem" href="diagnostics" @onclick="CloseOverflow">
+                    Diagnostics
+                </a>
                 @* Offered only when the browser has actually handed us an install prompt, so the
                    item is never a button that does nothing. *@
                 @if (_canInstall)

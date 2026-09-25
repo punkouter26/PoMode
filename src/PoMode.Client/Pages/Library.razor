@@ -2,15 +2,12 @@
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
 @inject MockDataState MockData
-@inject NavigationManager Navigation
-@inject IJSRuntime JS
-@implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
 
-<RadzenCard>
-    <RadzenText TextStyle="TextStyle.H5" Text="Song library" />
+<h1 class="pm-sr-only">Library</h1>
 
+<RadzenCard>
     @if (_entries is null)
     {
         <div class="library-skeletons" aria-hidden="true">
@@ -31,7 +28,7 @@
     else
     {
         @* Compare only makes sense with 2+ completed jobs — hide the column when there's only one. *@
-        var canCompare = _entries.Count >= 2;
+        var canCompare = _entries.Count(e => e.Stage == JobStage.Complete) >= 2;
         <div class="library-filters" role="search" aria-label="Filter songs">
             <RadzenTextBox @bind-Value="_search" Placeholder="Search songs…" aria-label="Search by file name"
                            class="library-search" @oninput="@(e => _search = e.Value?.ToString() ?? "")" />
@@ -39,22 +36,46 @@
                             Placeholder="Any key" Change="@(v => _keyFilter = v as string)" class="library-filter" />
             <RadzenDropDown TValue="string" Data="@ModeChoices" Value="@_modeFilter" AllowClear="true"
                             Placeholder="Any mode" Change="@(v => _modeFilter = v as string)" class="library-filter" />
-            <label class="library-latest-only">
-                <RadzenCheckBox TValue="bool" Value="@_latestOnly" Change="@(on => _latestOnly = on)" />
-                Latest run per song
-            </label>
             <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
         </div>
         <div class="library-grid" data-library-count="@_entries.Count">
             <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
                             AllowPaging="true" PageSize="15" PagerHorizontalAlign="HorizontalAlign.Center">
                 <Columns>
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song">
+                    @* A tick per row rather than a toggle button beside an Open button: two ticked rows
+                       are the comparison, and the song name itself is the way in. *@
+                    @if (canCompare)
+                    {
+                        <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="44px" CssClass="col-compare">
+                            <Template Context="entry">
+                                <RadzenCheckBox TValue="bool" Value="@_compare.Contains(entry.JobId)"
+                                                Change="@(_ => ToggleCompareAsync(entry))"
+                                                Disabled="@(entry.Stage != JobStage.Complete || (_compare.Count == 2 && !_compare.Contains(entry.JobId)))"
+                                                title="Compare with another song"
+                                                aria-label="@($"Compare {entry.FileName}")" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    }
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song" CssClass="col-song">
                         <Template Context="entry">
-                            @entry.FileName
-                            @if (RunCountOf(entry) is > 1 and var runs)
+                            @if (entry.Stage == JobStage.Complete)
                             {
-                                <span class="library-runs-badge" title="This song was analyzed more than once">×@runs</span>
+                                <a class="library-open" href="@($"/?job={entry.JobId}")">@entry.FileName</a>
+                            }
+                            else
+                            {
+                                @entry.FileName
+                            }
+                            @* Only the latest run of each song is listed; the badge lists the earlier ones. *@
+                            @if (IsLatest(entry) && RunCountOf(entry) is > 1 and var runs)
+                            {
+                                <button type="button" class="library-runs-badge" @onclick="@(() => ToggleRuns(entry.FileName))"
+                                        aria-expanded="@_expanded.Contains(entry.FileName)"
+                                        title="@(_expanded.Contains(entry.FileName) ? "Hide the earlier runs" : "Show the earlier runs of this song")">×@runs</button>
+                            }
+                            else if (!IsLatest(entry))
+                            {
+                                <span class="library-earlier">earlier run</span>
                             }
                             @* A sung take or the first-run demo is not an uploaded song, and the row should
                                not read like one; the tooltip carries the server's sentence about it. *@
@@ -97,19 +118,6 @@
                     {
                         <RadzenDataGridColumn TItem="LibraryEntryDto" Property="Stage" Title="Status" Width="110px" />
                     }
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="@(canCompare ? "200px" : "90px")">
-                        <Template Context="entry">
-                            <RadzenButton Text="Open" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
-                                          Click="@(() => Open(entry))" Disabled="@(entry.Stage != JobStage.Complete)" />
-                            @if (canCompare)
-                            {
-                                <RadzenToggleButton Text="Compare" Size="ButtonSize.Small"
-                                                    Value="@_compare.Contains(entry.JobId)"
-                                                    Change="@(_ => ToggleCompareAsync(entry))"
-                                                    Disabled="@(entry.Stage != JobStage.Complete)" />
-                            }
-                        </Template>
-                    </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>
         </div>
@@ -119,7 +127,7 @@
 @if (_compareResults.Count == 2)
 {
     <RadzenCard class="compare-panel" data-compare-count="2">
-        <RadzenText TextStyle="TextStyle.H6" Text="Side by side" />
+        <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H2" Text="Side by side" />
         <div class="compare-cards">
             @foreach (var (entry, result) in _compareResults)
             {
@@ -156,12 +164,27 @@
     private readonly HashSet<string> _compare = [];
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
 
-    private IJSObjectReference? _sfx;
-
     private string _search = "";
     private string? _keyFilter;
     private string? _modeFilter;
-    private bool _latestOnly = true;
+    /// <summary>Songs whose earlier runs are listed under the latest one.</summary>
+    private readonly HashSet<string> _expanded = [];
+
+    /// <summary>Bumped when <see cref="_expanded"/> changes, so the memoised view knows to rebuild.</summary>
+    private int _expandedVersion;
+
+    private void ToggleRuns(string fileName)
+    {
+        if (!_expanded.Remove(fileName))
+        {
+            _expanded.Add(fileName);
+        }
+        _expandedVersion++;
+    }
+
+    /// <summary>Entries arrive newest-first, so the first of each file name is its latest run.</summary>
+    private bool IsLatest(LibraryEntryDto entry)
+        => _entries?.First(e => e.FileName == entry.FileName).JobId == entry.JobId;
 
     private int RunCountOf(LibraryEntryDto entry)
         => _entries?.Count(e => e.FileName == entry.FileName) ?? 1;
@@ -189,17 +212,15 @@
     {
         get
         {
-            var key = (_entries, _latestOnly, _search, _keyFilter, _modeFilter);
+            var key = (_entries, _expandedVersion, _search, _keyFilter, _modeFilter);
             if (_filteredCache is not null && _filteredKey == key)
             {
                 return _filteredCache;
             }
             IEnumerable<LibraryEntryDto> view = _entries ?? [];
-            if (_latestOnly)
-            {
-                // Entries arrive newest-first, so the first of each file name is the latest run.
-                view = view.GroupBy(e => e.FileName).Select(g => g.First());
-            }
+            // The latest run of each song, plus every run of a song whose badge has been opened.
+            view = view.GroupBy(e => e.FileName)
+                .SelectMany(g => _expanded.Contains(g.Key) ? g : g.Take(1));
             _filteredCache = view
                 .Where(e => string.IsNullOrWhiteSpace(_search)
                     || e.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase))
@@ -212,26 +233,7 @@
     }
 
     private List<LibraryEntryDto>? _filteredCache;
-    private (List<LibraryEntryDto>? Entries, bool LatestOnly, string Search, string? Key, string? Mode) _filteredKey;
-
-    /// <summary>Fire-and-forget UI sound, matching the Analyze page's contract: a sound that cannot
-    /// play is skipped, never surfaced.</summary>
-    private async Task PlaySfxAsync(string name)
-    {
-        try
-        {
-            _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/sfx.js");
-            await _sfx.InvokeVoidAsync(name);
-        }
-        catch (JSException)
-        {
-            // Sounds are garnish, never an error.
-        }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away.
-        }
-    }
+    private (List<LibraryEntryDto>? Entries, int Expanded, string Search, string? Key, string? Mode) _filteredKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -240,24 +242,6 @@
         // The mock banner is the Analyze page's "I haven't shown you a real result yet" hint;
         // showing it here implies the library is mocked, which it isn't.
         MockData.SetLive();
-    }
-
-    private void Open(LibraryEntryDto entry)
-        => Navigation.NavigateTo($"/?job={entry.JobId}");
-
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            if (_sfx is not null)
-            {
-                await _sfx.DisposeAsync();
-            }
-        }
-        catch (JSDisconnectedException)
-        {
-            // The circuit is already gone during teardown.
-        }
     }
 
     private async Task ToggleCompareAsync(LibraryEntryDto entry)

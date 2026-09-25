@@ -8,6 +8,8 @@
 
 <PageTitle>PoMode · Mode Lab</PageTitle>
 
+<h1 class="pm-sr-only">Mode Lab</h1>
+
 <div class="modelab-studio-container">
     @* Loosen the purity setting far enough and the melody stops anchoring to its own tonic. Since all
        seven relative modes share one set of notes, what it drifts into is usually a real mode with a
@@ -22,120 +24,105 @@
         </div>
     }
 
-    <!-- Top Studio Toolbar: Title, Transport, and Key/Progression/Style/Purity Selectors -->
+    @* One bar: what you can do to the loop, then what it is made of. The page title and the nav
+       already say "Mode Lab", so the bar does not. *@
     <div class="studio-top-bar pm-panel">
-        <div class="studio-brand">
-            <span class="brand-title">🎼 Mode Lab</span>
-        </div>
-
         <div class="studio-transport">
-            @if (!_isPlaying)
-            {
-                <button class="transport-btn play" @onclick="PlayAsync" disabled="@(_isLoading || _melody is null)" title="Play (Flute & Piano)">
-                    ▶ Play
-                </button>
-            }
-            else
-            {
-                <button class="transport-btn pause" @onclick="PauseAsync" title="Pause">
-                    ⏸ Pause
-                </button>
-            }
-            <button class="transport-btn stop" @onclick="StopAsync" disabled="@((!_isPlaying && _playheadSec == 0))" title="Stop">
-                ⏹ Stop
-            </button>
+            @* Play and pause share a button; picking a card, rolling, or changing a setting restarts
+               the loop from bar one, which is what a separate Stop was for. Radzen buttons like every
+               other page: this bar used to be hand-rolled, green/amber/violet with emoji, and read as a
+               different app. A toggle that is on is a tinted primary. *@
+            <RadzenButton Text="@(_isPlaying ? "Pause" : "Play")" Icon="@(_isPlaying ? "pause" : "play_arrow")"
+                          Size="ButtonSize.Small" Click="@(() => _isPlaying ? PauseAsync() : PlayAsync())"
+                          Disabled="@(!_isPlaying && (_isLoading || _melody is null))"
+                          title="@(_isPlaying ? "Pause" : "Play (flute and piano)")" />
 
-            <button class="transport-btn loop @(_isLooping ? "active" : "")" @onclick="ToggleLoopAsync" title="Loop Toggle">
-                🔁 Loop
-            </button>
+            <RadzenButton Text="Loop" Icon="repeat" Size="ButtonSize.Small" Click="@ToggleLoopAsync"
+                          ButtonStyle="@(_isLooping ? ButtonStyle.Primary : ButtonStyle.Light)"
+                          Variant="@(_isLooping ? Variant.Flat : Variant.Filled)"
+                          Shade="@(_isLooping ? Shade.Lighter : Shade.Default)"
+                          aria-pressed="@(_isLooping ? "true" : "false")" title="Loop the progression" />
 
-            <button class="transport-btn shuffle" @onclick="RandomizeSeedAsync" title="Generate New Melody">
-                🎲 New Melody
-            </button>
+            <RadzenButton Text="New melody" Icon="casino" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                          Click="@RandomizeSeedAsync" title="Generate a new melody over the same chords" />
 
             @* The harmony's own dice. Rolls until you land on a progression worth singing over —
                the key stays where you put it, because that is the one setting a voice cares about. *@
-            <button class="transport-btn shuffle chords" id="roll-chords" @onclick="RandomizeProgressionAsync"
-                    disabled="@(_progressions.Count < 2)"
-                    title="Roll a random chord progression to sing over (the key stays as you set it)">
-                🎲 New Chords
-            </button>
+            <RadzenButton Text="New chords" Icon="casino" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                          id="roll-chords" Click="@RandomizeProgressionAsync" Disabled="@(_progressions.Count < 2)"
+                          title="Roll a random chord progression to sing over (the key stays as you set it)" />
 
-            <a class="transport-link wav" href="@($"api/modal-melodies/wav?TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={_selectedProgressionId}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}")"
-               target="_blank" rel="noopener" title="Download High-Fidelity 44.1kHz Stereo PCM WAV Audio">
-                📥 WAV
-            </a>
+            <DownloadMenu Items="DownloadItems" />
 
-            <a class="transport-link midi" href="@($"api/modal-melodies/midi?TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={_selectedProgressionId}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}")"
-               target="_blank" rel="noopener" title="Download Standard MIDI File">
-                📥 MIDI
-            </a>
-
-            <button class="transport-btn send-analyzer" @onclick="SendToAnalyzerAsync" disabled="@(_isSendingToAnalyzer || _melody is null)"
-                    title="Synthesize and import directly into the Song Analyzer for AI stem separation and chord/pitch tracking">
-                @(_isSendingToAnalyzer ? "⏳ Analyzing…" : "🔬 Analyze in Song Analyzer →")
-            </button>
+            <RadzenButton Text="@(_isSendingToAnalyzer ? "Analyzing…" : "Analyze")" Icon="science"
+                          Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light" class="send-analyzer"
+                          Click="@SendToAnalyzerAsync" Disabled="@(_isSendingToAnalyzer || _melody is null)"
+                          title="Synthesize this loop and run it through the song analyzer" />
         </div>
 
-        <div class="studio-selectors">
-            <div class="selector-field">
-                <span class="field-label">Key:</span>
-                <RadzenDropDown TValue="int" @bind-Value="_selectedTonic" Data="@TonicOptions"
-                                TextProperty="Name" ValueProperty="PitchClass"
-                                Change="@(_ => OnConfigChanged())" class="compact-dropdown key-dd" id="tonic-select" />
-            </div>
-
-            <div class="selector-field match-field">
-                <span class="field-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
-                    Match to mode:
-                </span>
-                <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
-                        id="match-harmony-toggle" data-match-harmony="@(_matchHarmonyToMode ? "on" : "off")"
-                        @onclick="ToggleMatchHarmonyAsync">
-                    @(_matchHarmonyToMode ? "On" : "Off")
-                </button>
-            </div>
-
-            <div class="selector-field prog-field">
-                <span class="field-label">Progression:</span>
-                <RadzenDropDown TValue="string" @bind-Value="_selectedProgressionId" Data="@_progressions"
-                                TextProperty="Name" ValueProperty="Id"
-                                Change="@(_ => OnProgressionChanged())" class="compact-dropdown prog-dd" id="prog-select" />
-            </div>
-
-            <div class="selector-field">
-                <span class="field-label">Style:</span>
-                <RadzenDropDown TValue="MelodyStyle" @bind-Value="_selectedStyle" Data="@StyleOptions"
-                                Change="@(_ => OnConfigChanged())" class="compact-dropdown style-dd" id="style-select" />
-            </div>
-
-            <div class="selector-field tempo-field">
-                <span class="field-label">@($"{_bpm:0} BPM")</span>
-                <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="180" Step="2"
-                              Change="@(args => OnTempoChanged(args))" class="compact-slider" id="tempo-slider" />
-            </div>
-        </div>
+        <BackingControls Tonic="_selectedTonic" TonicChanged="OnTonicPickedAsync"
+                         ProgressionId="@_selectedProgressionId" ProgressionIdChanged="OnProgressionPickedAsync"
+                         Progressions="_progressions"
+                         Bpm="_bpm" BpmChanged="OnTempoPickedAsync">
+            <Between>
+                <div class="backing-field">
+                    <span class="backing-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
+                        Match to mode
+                    </span>
+                    <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
+                            id="match-harmony-toggle" data-match-harmony="@(_matchHarmonyToMode ? "on" : "off")"
+                            aria-pressed="@_matchHarmonyToMode" @onclick="ToggleMatchHarmonyAsync">
+                        @(_matchHarmonyToMode ? "On" : "Off")
+                    </button>
+                </div>
+            </Between>
+            <ChildContent>
+                <div class="backing-field">
+                    <span class="backing-label" id="style-label">Style</span>
+                    <RadzenDropDown TValue="MelodyStyle" @bind-Value="_selectedStyle" Data="@StyleOptions"
+                                    Change="@(_ => OnConfigChanged())" class="style-dd" id="style-select"
+                                    aria-labelledby="style-label" />
+                </div>
+                @* One purity readout: the target you set and what the generated melody measured. It used
+                   to be stated five times across the card pill, two badges and the canvas header. *@
+                <div class="backing-field purity-field">
+                    <span class="backing-label" id="purity-label">Purity</span>
+                    <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
+                                  Change="@(args => OnPurityChanged(args))"
+                                  class="purity-slider" id="purity-slider" aria-labelledby="purity-label" />
+                    <span class="purity-readout" data-purity-target="@($"{_targetPurity:0}")"
+                          title="How hard the example insists on its mode. At the top the melody starts and ends on the mode root and the loop opens on the home chord; lower settings loosen both, so the opening chord need not be the mode's own.">
+                        @($"{_targetPurity:0}%")
+                        @if (_melody is not null)
+                        {
+                            <span class="purity-measured">@($" · measured {_melody.ModePercentage:0.#}%")</span>
+                        }
+                    </span>
+                </div>
+            </ChildContent>
+        </BackingControls>
     </div>
 
-    <!-- The seven relative modes: one scale read seven ways, side by side. -->
+    @* The seven relative modes and the two pentatonics: one scale read nine ways, side by side. The
+       pentatonics used to be two buttons in a ribbon of their own; they are modes of the same key, so
+       they are cards like the rest. *@
+    <div class="studio-modes-wrap">
     <div class="studio-modes-strip">
-        @foreach (var modeItem in SevenModesOrdered)
+        @foreach (var modeItem in StripModes)
         {
             var isSelected = _selectedMode == modeItem.Mode;
             var modeNotes = ScaleModes.RelativeScaleNoteNames(_selectedTonic, modeItem.Mode);
-            <div class="compact-mode-card @GetModeCssClass(modeItem.Mode) @(isSelected ? "selected" : "")"
-                 @onclick="@(() => SampleModeAsync(modeItem.Mode))">
-                <div class="mode-card-top">
-                    <span class="compact-mode-title">@GetModeDisplayName(modeItem.Mode)</span>
-                    <div class="card-badges">
-                        @if (isSelected && _melody is not null)
-                        {
-                            <span class="compact-purity-pill" title="Actual Modal Purity score">@($"{_melody.ModePercentage:0.#}%")</span>
-                        }
-                        <span class="compact-degree-badge">@modeItem.Degree</span>
-                    </div>
-                </div>
-                <div class="compact-scale-notes">
+            @* The whole card is the button: it was a clickable <div> the keyboard could not reach, with a
+               23px "Sample" button inside doing the same thing. *@
+            <button type="button"
+                    class="compact-mode-card @GetModeCssClass(modeItem.Mode) @(isSelected ? "selected" : "") @(isSelected && _isPlaying ? "playing" : "")"
+                    aria-pressed="@(isSelected ? "true" : "false")"
+                    @onclick="@(() => SampleModeAsync(modeItem.Mode))">
+                <span class="mode-card-top">
+                    <span class="compact-mode-title">@CardTitle(modeItem)</span>
+                    <span class="compact-degree-badge">@modeItem.Degree</span>
+                </span>
+                <span class="compact-scale-notes">
                     @for (var n = 0; n < modeNotes.Length; n++)
                     {
                         var noteName = modeNotes[n];
@@ -147,96 +134,41 @@
                             <span class="note-dot">·</span>
                         }
                     }
-                </div>
-                <div class="compact-mode-desc">@modeItem.Mood</div>
-                <button class="compact-sample-btn @(isSelected && _isPlaying ? "playing" : "")"
-                        type="button" @onclick:stopPropagation="true" @onclick="@(() => SampleModeAsync(modeItem.Mode))">
-                    @(isSelected && _isPlaying ? "🔊 Playing" : "▶ Sample")
-                </button>
-            </div>
+                </span>
+                <span class="compact-mode-desc">@modeItem.Mood</span>
+                <span class="compact-card-cta">@(isSelected && _isPlaying ? "🔊 Playing" : "▶ Sample")</span>
+            </button>
         }
+    </div>
+    </div>
+
+    @* The strip's lesson made physical: the same notes, a different home. Each note is a body on a
+       chromatic clock around the mode's home note; picking a card springs the new home to the centre.
+       Which notes, and which is home, come from ScaleModes; mode-gravity.js only moves them. *@
+    <div class="studio-gravity-panel pm-panel">
+        <div class="gravity-text">
+            <span class="gravity-label">Home note</span>
+            <span class="gravity-home">@GetModeDisplayName(_selectedMode)</span>
+            <span class="gravity-desc">Each note sits on the clock by how far it is above home. Another card: the same notes, a new home, a new shape. Tap a note to hear it.</span>
+        </div>
+        <canvas class="gravity-canvas" @ref="_gravityCanvas" id="mode-gravity"
+                role="img" aria-label="@GravityLabel"></canvas>
     </div>
 
     @if (_melody is not null)
     {
-        <!-- Mid Ribbon: Scale spelling + Modal Purity + Chords Flow + Pentatonics -->
-        <div class="studio-mid-ribbon pm-panel">
-            <div class="scale-spelling-box">
-                <span class="ribbon-label">Scale:</span>
-                <div class="spelling-badges">
-                    @for (var i = 0; i < _melody.ScaleNotes.Count; i++)
-                    {
-                        var noteName = _melody.ScaleNotes[i];
-                        var isRoot = i == 0;
-                        var isChar = i > 0 && IsCharacteristicNote(_selectedTonic, _selectedMode, noteName);
-                        <span class="compact-note-badge @(isRoot ? "root-badge" : (isChar ? "char-badge" : "scale-badge"))"
-                              title="@(isRoot ? "Mode Tonic Root" : (isChar ? "Characteristic Modal Color Tone" : "In-Mode Scale Note"))">
-                            @noteName
-                            @if (isRoot)
-                            {
-                                <small class="badge-sub">[1]</small>
-                            }
-                            else if (isChar)
-                            {
-                                <small class="badge-sub">★</small>
-                            }
-                        </span>
-                    }
-                </div>
-            </div>
-
-            <div class="modal-purity-box">
-                <span class="ribbon-label">Modal Purity:</span>
-                <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
-                              Change="@(args => OnPurityChanged(args))"
-                              class="compact-slider purity-slider" id="purity-slider" />
-                <span class="purity-badge" data-purity-target="@($"{_targetPurity:0}")"
-                      title="How hard the example insists on its mode. At the top the melody starts and ends on the mode root and the loop opens on the home chord; lower settings loosen both, so the opening chord need not be the mode's own.">
-                    🎯 @($"{_targetPurity:0}%")
-                </span>
-                <span class="purity-measured" title="Modal purity actually measured in the generated melody">
-                    measured @($"{_melody.ModePercentage:0.#}%")
-                </span>
-            </div>
-
-            <div class="progression-chords-box">
-                <span class="ribbon-label">Chords:</span>
-                <div class="compact-chords-list">
-                    @for (var i = 0; i < _melody.Chords.Count; i++)
-                    {
-                        var chord = _melody.Chords[i];
-                        var isCurrent = _playheadSec >= chord.StartSec && _playheadSec < chord.EndSec;
-                        <div class="compact-chord-pill @(isCurrent ? "current" : "")">
-                            <span class="ch-bar">M@(i + 1)</span>
-                            <span class="ch-sym">@chord.Symbol</span>
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <div class="pentatonics-box">
-                <span class="ribbon-label">Pentatonics:</span>
-                @foreach (var penta in PentatonicModes)
-                {
-                    var isSelected = _selectedMode == penta.Mode;
-                    var pentaNotes = ScaleModes.RelativeScaleNoteNames(_selectedTonic, penta.Mode);
-                    <button class="compact-penta-btn @(isSelected ? "selected" : "")" type="button"
-                            @onclick="@(() => SampleModeAsync(penta.Mode))" title="@string.Join(" · ", pentaNotes)">
-                        @penta.BaseName
-                    </button>
-                }
-            </div>
-        </div>
-
-        <!-- Visual Piano Roll Panel -->
+        @* The chords as text sit on the roll's own header: the roll draws them as blocks, and the pills
+           are the readable spelling of the same lane, lit while each sounds. *@
         <div class="studio-canvas-panel pm-panel">
             <div class="canvas-panel-header">
-                <div class="canvas-title-group">
-                    <span class="canvas-panel-title">Piano Roll (Flute Melody Lead & Acoustic Piano Chords)</span>
-                    <span class="purity-tag" title="Modal affinity score">@($"{_melody.ModePercentage:0.#}% Modal Purity")</span>
-                    <span class="canvas-panel-desc">@_melody.CharacteristicExplanation</span>
+                <span class="canvas-panel-desc">@_melody.CharacteristicExplanation</span>
+                <div class="compact-chords-list" aria-label="The chords in this loop">
+                    @foreach (var chord in _melody.Chords)
+                    {
+                        var isCurrent = _playheadSec >= chord.StartSec && _playheadSec < chord.EndSec;
+                        <span class="compact-chord-pill @(isCurrent ? "current" : "")"><span class="ch-sym">@chord.Symbol</span></span>
+                    }
                 </div>
-                <span class="canvas-panel-time">Playhead: @($"{_playheadSec:0.0}s / {_totalDurationSec:0.0}s")</span>
             </div>
             <AnalysisCanvas Model="_melody.Visual" SelectedWindowIndex="_activeWindowIndex"
                             PlayheadSec="_playheadSec" OnSeek="OnSeek" />
@@ -252,15 +184,7 @@
 </div>
 
 @code {
-    private sealed record TonicOption(int PitchClass, string Name);
     private sealed record ModePresetInfo(ScaleMode Mode, string BaseName, string Degree, string Mood, string CharacteristicTone);
-
-    private static readonly IReadOnlyList<TonicOption> TonicOptions =
-    [
-        new(0, "C"), new(1, "C# / Db"), new(2, "D"), new(3, "D# / Eb"),
-        new(4, "E"), new(5, "F"), new(6, "F# / Gb"), new(7, "G"),
-        new(8, "G# / Ab"), new(9, "A"), new(10, "A# / Bb"), new(11, "B")
-    ];
 
     private static readonly IReadOnlyList<MelodyStyle> StyleOptions =
     [
@@ -288,10 +212,32 @@
         new(ScaleMode.MinorPentatonic, "Minor Pentatonic", "5-Tone", "Bluesy rock", "Degrees 6-1-2-3-5")
     ];
 
+    /// <summary>Every card on the strip, in the order it reads: the seven modes, then the two pentatonics.</summary>
+    private static readonly IReadOnlyList<ModePresetInfo> StripModes = [.. SevenModesOrdered, .. PentatonicModes];
+
+    /// <summary>The seven modes are named on their own root ("D Dorian"); a pentatonic by its own name
+    /// on the root its notes start from.</summary>
+    private string CardTitle(ModePresetInfo info) => PentatonicModes.Contains(info)
+        ? $"{ScaleModes.RelativeScaleNoteNames(_selectedTonic, info.Mode)[0]} {info.BaseName}"
+        : GetModeDisplayName(info.Mode);
+
+    /// <summary>The loop as files, built from the same request the preview plays.</summary>
+    private IReadOnlyList<DownloadMenu.Item> DownloadItems
+    {
+        get
+        {
+            var query = $"TonicPitchClass={_selectedTonic}&Mode={_selectedMode}&ProgressionId={Uri.EscapeDataString(_selectedProgressionId)}&Bpm={_bpm}&Style={_selectedStyle}&Seed={_seed}&TargetPurity={_targetPurity}";
+            return
+            [
+                new("WAV audio (44.1 kHz stereo)", $"api/modal-melodies/wav?{query}", "Download the loop as a WAV file"),
+                new("MIDI (melody and chords)", $"api/modal-melodies/midi?{query}", "Download the loop as a standard MIDI file"),
+            ];
+        }
+    }
+
     private List<ChordProgressionDefinition> _progressions = [];
     private int _selectedTonic = 0; // C
     private string _selectedProgressionId = "pop-axis";
-    private string _selectedProgressionName = "Axis of Pop (C - G - Am - F / I - V - vi - IV)";
     private ScaleMode _selectedMode = ScaleMode.Ionian;
     private MelodyStyle _selectedStyle = MelodyStyle.Lyrical;
     private double _targetPurity = 90.0;
@@ -311,8 +257,58 @@
     private IJSObjectReference? _playerModule;
     private DotNetObjectReference<ModeLab>? _selfRef;
 
-    private string CurrentParentKeyName
-        => TonicOptions.FirstOrDefault(t => t.PitchClass == _selectedTonic)?.Name ?? "C";
+    /// <summary>One body per note of the mode on screen, as the home-note view draws it.</summary>
+    private sealed record GravityBody(int PitchClass, string Label, int Interval, bool Home, bool Characteristic);
+
+    private ElementReference _gravityCanvas;
+    private IJSObjectReference? _gravityModule;
+    private (int Tonic, ScaleMode Mode)? _gravitySent;
+
+    /// <summary>The mode's notes as the home-note view wants them: pitch class, name, semitones above
+    /// the mode's own root, and whether it is home or the mode's characteristic tone. All from the
+    /// shared ScaleModes tables, so this view and the cards above it cannot disagree.</summary>
+    private IReadOnlyList<GravityBody> GravityBodies()
+    {
+        var root = (_selectedTonic + ScaleModes.ModeDegreeOffset(_selectedMode)) % 12;
+        var characteristic = ScaleModes.CharacteristicIntervals(_selectedMode) is [var first, ..] ? first : -1;
+        return [.. ScaleModes.Intervals(_selectedMode).Select(interval =>
+        {
+            var pitchClass = (root + interval) % 12;
+            return new GravityBody(pitchClass, ScaleModes.NoteName(pitchClass), interval, interval == 0, interval == characteristic);
+        })];
+    }
+
+    private string GravityLabel
+        => $"{GetModeDisplayName(_selectedMode)}: home note at the centre, the other notes of the scale around it by distance above it";
+
+    /// <summary>Pushes the mode to the home-note view whenever the key or the mode changed.</summary>
+    private async Task SyncGravityAsync()
+    {
+        if (_gravitySent == (_selectedTonic, _selectedMode))
+        {
+            return;
+        }
+        if (_gravityModule is null)
+        {
+            _gravityModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/mode-gravity.js");
+            await _gravityModule.InvokeVoidAsync("init", _gravityCanvas);
+        }
+        _gravitySent = (_selectedTonic, _selectedMode);
+        var token = GetModeCssClass(_selectedMode) is { Length: > 0 } css ? $"--pm-{css}" : "--pm-accent";
+        await _gravityModule.InvokeVoidAsync("setMode", _gravityCanvas, GravityBodies(), token);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await SyncGravityAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-render.
+        }
+    }
 
     private string GetModeDisplayName(ScaleMode mode)
     {
@@ -338,8 +334,11 @@
         var offset = ScaleModes.ModeDegreeOffset(mode);
         var modeRootClass = (parentTonic + offset) % 12;
         // The table lives in PoMode.Shared so the client and the analyzer cannot drift apart on which
-        // degree gives a mode its colour.
-        var charInterval = ScaleModes.CharacteristicIntervals(mode)[0];
+        // degree gives a mode its colour. A scale with no characteristic tone marks none.
+        if (ScaleModes.CharacteristicIntervals(mode) is not [var charInterval, ..])
+        {
+            return false;
+        }
         var charPitchClass = (modeRootClass + charInterval) % 12;
         return string.Equals(noteName, ScaleModes.NoteName(charPitchClass), StringComparison.OrdinalIgnoreCase);
     }
@@ -353,7 +352,6 @@
             {
                 _progressions = progs;
                 _selectedProgressionId = _progressions[0].Id;
-                _selectedProgressionName = _progressions[0].Name;
                 _bpm = _progressions[0].DefaultBpm;
 
                 // Open on the harmony that matches the mode the strip starts on, so the first thing
@@ -412,7 +410,6 @@
         if (signature is null || signature.Id == _selectedProgressionId) return;
 
         _selectedProgressionId = signature.Id;
-        _selectedProgressionName = signature.Name;
         _bpm = signature.DefaultBpm;
     }
 
@@ -440,6 +437,24 @@
         }
     }
 
+    private async Task OnTonicPickedAsync(int tonic)
+    {
+        _selectedTonic = tonic;
+        await OnConfigChanged();
+    }
+
+    private async Task OnProgressionPickedAsync(string id)
+    {
+        _selectedProgressionId = id;
+        await OnProgressionChanged();
+    }
+
+    private async Task OnTempoPickedAsync(double bpm)
+    {
+        _bpm = bpm;
+        await OnTempoChanged();
+    }
+
     private async Task OnPurityChanged(double _ = 0)
     {
         // The slider hands back negative zero at the bottom of its travel, which formats as "-0%".
@@ -459,7 +474,6 @@
         var prog = _progressions.FirstOrDefault(p => p.Id == _selectedProgressionId);
         if (prog is not null)
         {
-            _selectedProgressionName = prog.Name;
             _bpm = prog.DefaultBpm;
             _selectedMode = prog.SuggestedMode;
         }
@@ -521,7 +535,6 @@
         while (next.Id == _selectedProgressionId);
 
         _selectedProgressionId = next.Id;
-        _selectedProgressionName = next.Name;
         _bpm = next.DefaultBpm;
         _selectedMode = next.SuggestedMode;
 
@@ -623,7 +636,6 @@
             if (shared is not null)
             {
                 _selectedProgressionId = shared.Id;
-                _selectedProgressionName = shared.Name;
                 _bpm = shared.DefaultBpm;
             }
         }
@@ -688,6 +700,11 @@
             {
                 await _playerModule.InvokeVoidAsync("dispose");
                 await _playerModule.DisposeAsync();
+            }
+            if (_gravityModule is not null)
+            {
+                await _gravityModule.InvokeVoidAsync("dispose", _gravityCanvas);
+                await _gravityModule.DisposeAsync();
             }
             _selfRef?.Dispose();
         }

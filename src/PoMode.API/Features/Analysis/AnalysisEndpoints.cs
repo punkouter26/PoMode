@@ -204,8 +204,31 @@ public static class AnalysisEndpoints
                 : TypedResults.PhysicalFile(path, contentType, enableRangeProcessing: true);
         });
 
+        // A waveform sketch for the progress view, readable while the job is still running: the vocal
+        // stem once separation has written it, the upload itself before then. Derived per request
+        // like /visual; a streamed min/max pass over one file is cheap next to what the view replaces.
+        group.MapGet("/{jobId}/peaks", async Task<Results<Ok<WaveformPeaksDto>, NotFound>> (
+            string jobId, JobStore store, CancellationToken ct) =>
+        {
+            var state = await store.LoadAsync(jobId, ct);
+            if (state is null)
+            {
+                return TypedResults.NotFound();
+            }
+            var vocals = await store.GetArtifactPathAsync(jobId, "vocals.wav", ct);
+            var (path, source) = vocals is not null
+                ? (vocals, "vocals")
+                : (await store.GetArtifactPathAsync(jobId, Path.GetFileName(store.InputPath(state)), ct), "mix");
+            return path is not null && AudioDecoder.TryReadPeaks(path, PeakColumns) is var (peaks, duration)
+                ? TypedResults.Ok(new WaveformPeaksDto(duration, source, peaks))
+                : TypedResults.NotFound();
+        });
+
         return app;
     }
+
+    /// <summary>Slices in a waveform sketch: finer than a phone is wide, coarse enough to stay a few kB.</summary>
+    private const int PeakColumns = 512;
 
     /// <summary>Reads the per-stage executor picks off the upload query string via the shared
     /// key table; empty when the user left every stage on Auto.</summary>

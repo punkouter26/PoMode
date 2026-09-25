@@ -4,7 +4,7 @@ using Xunit;
 namespace PoMode.E2EUI;
 
 /// <summary>
-/// Guards the Mode Lab's per-mode Sample buttons. The regression these cover: picking a second mode
+/// Guards the Mode Lab's mode cards, each of which is the button that samples its mode. The regression these cover: picking a second mode
 /// while a first one was already sounding used to fall through to a melody-only swap, so the piano
 /// kept the previous mode's chords, the loop kept the previous mode's length, and no restart ever
 /// happened. The <c>data-modal-*</c> attributes published by modal-player.js are the assertion
@@ -17,15 +17,14 @@ public class ModeLabTests(AppFixture app)
         new() { Timeout = AppFixture.ExpectTimeoutMs };
 
     private static ILocator SampleButtonFor(IPage page, string modeName) =>
-        page.Locator(".compact-mode-card", new() { HasText = modeName })
-            .Locator(".compact-sample-btn");
+        page.Locator("button.compact-mode-card", new() { HasText = modeName });
 
     private async Task<IPage> ModeLabPageAsync(IBrowser browser)
     {
         var page = await (await browser.NewContextAsync()).NewPageAsync();
         await page.GotoAsync($"{app.BaseUrl}/modes");
         // The first WASM load pulls the framework down; wait on the melody being generated rather
-        // than on a timer, since the Sample buttons stay inert until a melody exists.
+        // than on a timer, since the cards stay inert until a melody exists.
         await Assertions.Expect(page.GetByText("Mode Lab").First).ToBeVisibleAsync(Visible);
         await Assertions.Expect(SampleButtonFor(page, "Dorian").First).ToBeEnabledAsync(
             new LocatorAssertionsToBeEnabledOptions { Timeout = AppFixture.ExpectTimeoutMs });
@@ -76,7 +75,7 @@ public class ModeLabTests(AppFixture app)
 
         // And the newly picked card is the one reporting itself as playing.
         await Assertions.Expect(
-            page.Locator(".compact-mode-card", new() { HasText = "Lydian" }).Locator(".compact-sample-btn.playing"))
+            page.Locator(".compact-mode-card.playing", new() { HasText = "Lydian" }))
             .ToBeVisibleAsync(Visible);
     }
 

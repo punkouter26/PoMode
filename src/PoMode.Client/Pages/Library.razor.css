@@ -55,7 +55,6 @@
 @media (max-width: 640px) {
     .library-grid ::deep .rz-grid-table,
     .library-grid ::deep .rz-grid-table tbody,
-    .library-grid ::deep .rz-grid-table tr,
     .library-grid ::deep .rz-grid-table td {
         display: block;
         width: auto !important;
@@ -69,7 +68,12 @@
         display: none;
     }
 
+    /* Name and compare tick on the first line, the facts wrapped under it. */
     .library-grid ::deep .rz-grid-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.1rem 0.8rem;
         border: 1px solid var(--pm-border);
         border-radius: 0.5rem;
         margin-bottom: var(--pm-space-2);
@@ -79,7 +83,9 @@
 
     .library-grid ::deep .rz-grid-table td {
         border: 0 !important;
-        padding: 0.1rem 0 !important;
+        padding: 0 !important;
+        color: var(--pm-fg-muted);
+        font-size: var(--pm-text-sm);
     }
 
     /* Radzen truncates cell text with an ellipsis to protect the fixed layout; with no fixed layout
@@ -91,25 +97,16 @@
         text-overflow: clip !important;
     }
 
-    /* Name on its own line and leading; the middle facts share a wrapped line under it; the actions
-       get their own row at the bottom. */
-    .library-grid ::deep .rz-grid-table td:first-child {
+    .library-grid ::deep td.col-song {
+        order: -2;
+        flex: 1 1 calc(100% - 3rem);
+        color: var(--pm-fg);
+        font-size: inherit;
         font-weight: 600;
-        margin-bottom: 0.15rem;
     }
 
-    .library-grid ::deep .rz-grid-table td:not(:first-child):not(:last-child) {
-        display: inline-block;
-        margin-right: 0.8rem;
-        color: var(--pm-fg-muted);
-        font-size: var(--pm-text-sm);
-    }
-
-    .library-grid ::deep .rz-grid-table td:last-child {
-        margin-top: 0.4rem;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4rem;
+    .library-grid ::deep td.col-compare {
+        order: -1;
     }
 }
 
@@ -235,24 +232,44 @@
     }
 }
 
-.library-latest-only {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--pm-fg-muted);
-    user-select: none;
-    white-space: nowrap;
+/* Padded to a 24px target: the song title is the row's way in, and text-height is too small to tap. */
+.library-open {
+    display: inline-block;
+    padding-block: 0.25rem;
+    color: var(--pm-fg);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.library-open:hover,
+.library-open:focus-visible {
+    color: var(--pm-accent);
+    text-decoration: underline;
 }
 
 .library-runs-badge {
     margin-left: 0.35rem;
-    padding: 0 0.35rem;
+    padding: 0 0.4rem;
+    border: 1px solid transparent;
     border-radius: 999px;
-    background: hsl(var(--pm-key-hue) 60% 55% / 0.15);
-    color: var(--pm-accent);
+    background: var(--pm-accent-soft);
+    color: var(--pm-fg);
+    font: inherit;
     font-size: var(--pm-text-xs);
     font-weight: 600;
+    cursor: pointer;
+}
+
+.library-runs-badge:hover,
+.library-runs-badge[aria-expanded="true"] {
+    border-color: var(--pm-accent);
+}
+
+.library-earlier {
+    margin-left: 0.35rem;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+    font-style: italic;
 }
 
 /* Marks a row that is a sung take rather than an uploaded song; the tooltip carries the progression
@@ -278,4 +295,3 @@
     color: var(--pm-info);
 }
 
-/* ---- Wall view ---- */

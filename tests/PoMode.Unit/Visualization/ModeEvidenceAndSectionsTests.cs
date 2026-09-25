@@ -1,5 +1,6 @@
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Features.SongStructure;
 using PoMode.Shared.Analysis;
 using Xunit;
 
@@ -88,6 +89,19 @@ public class ModeEvidenceAndSectionsTests
             Assert.Equal(0.0, payload.Sections[0].StartSec);
             Assert.Equal(chords[^1].EndSec, payload.Sections[^1].EndSec);
         }
+
+        // The "how were the sections found?" data is the analysis the ribbon was cut from: one cell
+        // per pair of bars, every bar identical to itself, and a boundary under every section start.
+        var structure = SongStructureEndpoints.ToDto(SongSectionBuilder.Analyse(chords, result)!);
+        var bars = form.Length * BarsPerLetter;
+        Assert.Equal(bars, structure.Novelty.Count);
+        Assert.Equal(bars + 1, structure.BarStarts.Count);
+        var cells = Convert.FromBase64String(structure.Similarity);
+        Assert.Equal(bars * bars, cells.Length);
+        Assert.All(Enumerable.Range(0, bars), bar => Assert.Equal(255, cells[(bar * bars) + bar]));
+        Assert.All(payload.Sections.Skip(1), section =>
+            Assert.Contains(section.StartSec, structure.Boundaries.Select(bar => structure.BarStarts[bar])));
+        Assert.Equal(payload.Sections.Select(section => section.Letter), structure.Sections.Select(section => section.Letter));
     }
 
     /// <summary>The diatonic triad on a degree of the mode, as a D-rooted pitch class and quality.</summary>

@@ -15,10 +15,28 @@
 //
 // Every sound and every buzz is gated on fx-prefs: a user who has muted the effects hears nothing
 // from here, and one who has turned the level off feels nothing either.
+//
+// The tonal cues (chime, fanfare, stage steps) are struck on the FM electric piano from voices.js and
+// ring in its generated room, the same instrument the chord pad plays, so the interface and the music
+// sound like one thing. Clicks and the practice ticks stay dry sine blips: a reverb tail on a tick
+// smears it into the next one.
 
 import * as prefs from './prefs.js';
+import { bus, epiano } from '../player/voices.js';
 
 let context = null;
+
+/// The room bus the tonal cues ring in, built once per context.
+let roomBus = null;
+
+function roomOf(ctx) {
+    roomBus ??= bus(ctx, ctx.destination, 0.3);
+    return roomBus;
+}
+
+function midiOf(freq) {
+    return 69 + (12 * Math.log2(freq / 440));
+}
 
 /// Peak gain any single voice may reach. UI sounds should be felt, not heard over the music.
 const PEAK = 0.12;
@@ -146,8 +164,8 @@ export function chime() {
         // cases a consonant step up from the tonic, which is all this needs to be.
         const low = paletteFreq(0) ?? 660;
         const high = paletteFreq(4) ?? 880;
-        voice(ctx, { freq: low * (palette ? 2 : 1), when: now, duration: 0.22, peak: 0.09 });
-        voice(ctx, { freq: high * (palette ? 2 : 1), when: now + 0.18, duration: 0.22, peak: 0.09 });
+        epiano(ctx, roomOf(ctx), midiOf(low * (palette ? 2 : 1)), now, 0.3, 0.09);
+        epiano(ctx, roomOf(ctx), midiOf(high * (palette ? 2 : 1)), now + 0.18, 0.4, 0.09);
     } catch {
         // Fail silent.
     }
@@ -224,13 +242,8 @@ export function fanfare(tonicMidi) {
         const now = ctx.currentTime;
         const intervals = [0, 7, 12];
         for (let i = 0; i < intervals.length; i++) {
-            voice(ctx, {
-                type: 'triangle',
-                freq: freqOf(midi + intervals[i]),
-                when: now + i * 0.22,
-                duration: 0.45,
-                peak: 0.1,
-            });
+            // The last note rings longest: the arpeggio resolves rather than stops.
+            epiano(ctx, roomOf(ctx), midi + intervals[i], now + (i * 0.22), i === intervals.length - 1 ? 1.1 : 0.45, 0.1);
         }
     } catch {
         // Fail silent.
@@ -250,9 +263,7 @@ export function stageStep(index) {
         // Degrees 0, 2, 4, 6 — every other note of the mode, which ascends fast enough that four
         // stages span most of an octave without needing to know how many there will be.
         const freq = paletteFreq(step * 2) ?? (440 * Math.pow(2, (step * 2) / 12));
-        const now = ctx.currentTime;
-        voice(ctx, { type: 'sine', freq: freq * 2, when: now, duration: 0.16, peak: 0.055 });
-        voice(ctx, { type: 'sine', freq: freq * 4, when: now + 0.01, duration: 0.1, peak: 0.02 });
+        epiano(ctx, roomOf(ctx), midiOf(freq * 2), ctx.currentTime, 0.2, 0.05);
     } catch {
         // Fail silent.
     }

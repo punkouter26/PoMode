@@ -1,0 +1,81 @@
+/* One wrapping row: each label sits beside its control, so the whole backing fits one line on a
+   desktop and folds to a two-column grid on a phone. */
+.backing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--pm-space-2) var(--pm-space-3);
+    min-width: 0;
+}
+
+.backing-field,
+.backing ::deep .backing-field {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.backing-label,
+.backing ::deep .backing-label {
+    font-size: var(--pm-text-xs);
+    font-weight: 600;
+    color: var(--pm-fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.backing ::deep .backing-dd.rz-dropdown {
+    min-width: 0;
+}
+
+.backing ::deep .backing-key {
+    width: 6.5rem;
+}
+
+.backing ::deep .backing-mode {
+    width: 9rem;
+}
+
+/* The progression names are whole phrases, so this one takes the room the row has left. */
+.backing-field-wide {
+    flex: 1 1 16rem;
+}
+
+.backing-field-wide ::deep .backing-chords {
+    flex: 1;
+    width: 100%;
+}
+
+.backing-field-slider {
+    flex: 0 1 12rem;
+}
+
+.backing-field-slider ::deep .backing-slider {
+    flex: 1;
+    min-width: 5rem;
+}
+
+@media (max-width: 720px) {
+    .backing {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .backing-field,
+    .backing ::deep .backing-field {
+        justify-content: space-between;
+    }
+
+    .backing ::deep .backing-key,
+    .backing ::deep .backing-mode {
+        width: auto;
+        flex: 1;
+    }
+
+    .backing-field-wide,
+    .backing-field-slider {
+        grid-column: 1 / -1;
+    }
+}

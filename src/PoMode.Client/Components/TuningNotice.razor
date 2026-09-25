@@ -2,18 +2,16 @@
 
 @* Shown only when a correction was actually made. A recording already at A=440, and one whose
    deviations were too scattered for any single offset to describe, both report zero, and in both
-   cases there is nothing to tell the user about. *@
+   cases there is nothing to tell the user about. A chip beside the take's origin rather than a
+   full-width banner: the figure is one line, and the reasoning is in the tooltip. *@
 
 @if (Math.Abs(Cents) >= 0.5)
 {
-    <div class="tuning-notice" data-tuning-cents="@($"{Cents:0.0}")"
-         title="Measured across the whole recording, then applied once. Every interval you sang is unchanged; only the reference the notes are read against moved.">
-        <span class="tuning-icon" aria-hidden="true">🎚</span>
-        <span class="tuning-text">
-            Pitch adjusted <strong>@Direction @($"{Math.Abs(Cents):0.#}")&nbsp;cents</strong>
-            &middot; this recording sits @Direction of A=440, so its notes were read against @ReferenceHz&nbsp;Hz
-        </span>
-    </div>
+    <span class="tuning-notice" data-tuning-cents="@($"{Cents:0.0}")"
+          title="@($"This recording sits {Direction} of A=440, so its notes were read against {ReferenceHz} Hz. Measured across the whole recording, then applied once: every interval you sang is unchanged; only the reference moved.")">
+        <span aria-hidden="true">🎚</span>
+        Tuned @($"{Math.Abs(Cents):0.#}")&nbsp;cents @Direction · A=@ReferenceHz&nbsp;Hz
+    </span>
 }
 
 @code {

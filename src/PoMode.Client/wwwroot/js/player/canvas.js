@@ -30,16 +30,31 @@ const NOTE_LANE_FRACTION = 0.68;
 const TEMPO_LANE_PX = 38;
 /// The section ribbon: tall enough for one line of 12px caption, the app's text floor.
 const SECTION_LANE_PX = 22;
-const SECTION_FONT = '12px system-ui, sans-serif';
+// The app's text floor (--pm-text-xs) holds on the canvas too: a label that does not fit at 12px is
+// dropped, not shrunk. Note labels need a row at least MIN_LABEL_ROW_HEIGHT_PX tall to be drawn.
+const LABEL_FONT = '12px system-ui, sans-serif';
 /// The server names each band's colour as a theme token; anything else is ignored rather than read.
 const SECTION_TOKEN = /^--pm-[a-z-]+$/;
 const TEMPO_LANE_PAD_PX = 7;
 const LANE_GAP_PX = 6;
 const MIN_LABEL_WIDTH_PX = 38;
-const MIN_LABEL_ROW_HEIGHT_PX = 9;
+const MIN_LABEL_ROW_HEIGHT_PX = 13;
 const MIN_VIEW_SECONDS = 0.5;
 const DRAG_THRESHOLD_PX = 4;
 const FALLBACK_DURATION_SECONDS = 10;
+
+/// The result reveal's timing, in seconds. Each note waits for its turn by how far across the view
+/// it sits, so the transcription arrives left to right as it was sung; chords land a beat behind the
+/// notes. With `ink` a colour front then sweeps the same way (see reveal()).
+const REVEAL = {
+    noteSpread: 0.45,
+    noteRise: 0.6,
+    chordDelay: 0.25,
+    chordSpread: 0.45,
+    chordDrop: 0.4,
+    inkStart: 1.0,
+    inkSweep: 1.1,
+};
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -61,6 +76,7 @@ function readColours(canvas) {
         muted: read('--pm-fg-muted', '#55555f'),
         chordBlock: read('--pm-chord-block', '#e2e8f0'),
         chordSelected: read('--pm-accent', '#6750a4'),
+        key: read('--pm-key', '#6750a4'),
         playhead: read('--pm-playhead', '#e11d48'),
         tempoLine: read('--pm-tempo-line', '#818cf8'),
         // Amber, matching the tempo chart in the stats panel, so a change reads the same everywhere.
@@ -215,6 +231,7 @@ function draw(state) {
 
     drawWaveform(state, ctx, width, noteLaneHeight);
 
+    const reveal = revealClock(state, now, width);
     let drawn = 0;
     if (state.model) {
         if (state.drop) {
@@ -222,10 +239,12 @@ function draw(state) {
             drawDrop(state, ctx);
             drawn += state.drop.bodies.length;
         } else {
-            drawn += drawNotes(state, ctx, width, noteLaneHeight);
+            drawn += drawNotes(state, ctx, width, noteLaneHeight, reveal);
         }
-        drawn += drawChords(state, ctx, width, chordLaneTop, chordLaneHeight);
-        drawLivePitch(state, ctx, width, noteLaneHeight);
+        drawn += drawChords(state, ctx, width, chordLaneTop, chordLaneHeight, reveal);
+        if (reveal && reveal.ink) {
+            drawInkFront(state, ctx, reveal.inkX, noteLaneHeight + LANE_GAP_PX + chordLaneHeight);
+        }
         updateParticles(state, dt, noteLaneHeight);
         drawParticles(state, ctx, width, noteLaneHeight);
     }
@@ -235,9 +254,11 @@ function draw(state) {
     // Full height on purpose: one playhead crossing all three lanes ties the tempo reading to the
     // moment it belongs to.
     drawPlayhead(state, ctx, width, height);
+    updateChip(state, reveal !== null);
 
-    // Animations in flight (view glide, live particles, the end-of-song drop) need the next frame.
-    if (state.followTarget !== null || state.particles.length > 0 || state.drop) {
+    // Animations in flight (view glide, live particles, the end-of-song drop, the reveal) need the
+    // next frame.
+    if (state.followTarget !== null || state.particles.length > 0 || state.drop || state.reveal) {
         invalidate(state);
     }
 
@@ -280,7 +301,7 @@ function drawSections(state, ctx, width, laneHeight, sections) {
     ctx.beginPath();
     ctx.rect(0, 0, width, laneHeight);
     ctx.clip();
-    ctx.font = SECTION_FONT;
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = 'middle';
 
     for (let index = 0; index < sections.length; index++) {
@@ -400,22 +421,70 @@ function drawTempo(state, ctx, width, laneHeight, points) {
 
     // The two ends of the scale, so the line's height means something without a full axis.
     ctx.fillStyle = colours.muted;
-    ctx.font = '10px system-ui, sans-serif';
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = 'top';
     ctx.fillText(String(Math.round(max)), 5, 3);
     ctx.textBaseline = 'bottom';
     ctx.fillText(Math.round(min) + ' BPM', 5, laneHeight - 3);
 }
 
-function drawNotes(state, ctx, width, laneHeight) {
+/// Where the reveal is, or null when none is running (and the moment it finishes, marks it done).
+/// `inkX` is the colour front's pixel position; notes left of it are in their role colours.
+function revealClock(state, now, width) {
+    const reveal = state.reveal;
+    if (!reveal) {
+        return null;
+    }
+    const t = (now - reveal.start) / 1000;
+    const end = reveal.ink ? REVEAL.inkStart + REVEAL.inkSweep : REVEAL.noteSpread + REVEAL.noteRise + 0.05;
+    if (t >= end) {
+        state.reveal = null;
+        state.canvas.dataset.reveal = 'done';
+        return null;
+    }
+    const inkX = reveal.ink ? clamp((t - REVEAL.inkStart) / REVEAL.inkSweep, 0, 1) * width : width;
+    return { t, ink: reveal.ink, inkX };
+}
+
+/// 0..1 progress of one item whose turn comes `delay` seconds in and lasts `span`.
+function revealProgress(t, delay, span) {
+    return clamp((t - delay) / span, 0, 1);
+}
+
+/// A lightly underdamped spring from 0 to 1: it overshoots its row a little and settles, which is
+/// what makes the notes read as landing rather than fading in.
+function spring(progress) {
+    return progress >= 1 ? 1 : 1 - (Math.exp(-5 * progress) * Math.cos(9 * progress));
+}
+
+/// The ink front: a soft band of the key colour where the verdict is being painted on.
+function drawInkFront(state, ctx, x, height) {
+    if (x <= 0 || x >= Math.max(state.canvas.clientWidth, 1)) {
+        return;
+    }
+    const band = 18;
+    const gradient = ctx.createLinearGradient(x - band, 0, x + 2, 0);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, state.colours.key);
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x - band, 0, band + 2, height);
+    ctx.globalAlpha = 1;
+}
+
+function drawNotes(state, ctx, width, laneHeight, reveal) {
     const model = state.model;
     const pitchSpan = Math.max(model.maxPitch - model.minPitch + 1, 1);
     const rowHeight = laneHeight / pitchSpan;
     const capsuleHeight = Math.max(rowHeight - 1, 3);
-    const showLabels = rowHeight >= MIN_LABEL_ROW_HEIGHT_PX;
+    const showLabels = rowHeight >= MIN_LABEL_ROW_HEIGHT_PX && !reveal;
+    // How loud the vocal stem is right now, when the mixer meters it: the sounding note's halo grows
+    // and brightens with it, so the glow follows the singer rather than a clock.
+    const voice = state.reducedMotion ? 0 : (state.stems.vocal ?? 0);
+    const middle = (laneHeight - capsuleHeight) / 2;
 
     if (showLabels) {
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = LABEL_FONT;
         ctx.textBaseline = 'middle';
     }
 
@@ -433,24 +502,40 @@ function drawNotes(state, ctx, width, laneHeight) {
 
         const x = timeToX(state, note.startSec, width);
         const capsuleWidth = Math.max(timeToX(state, endSec, width) - x, 2);
-        const top = (model.maxPitch - note.midiPitch) * rowHeight;
+        let top = (model.maxPitch - note.midiPitch) * rowHeight;
 
-        // Halo when the playhead is on this note, OR when the vocal overlay is on and the note
-        // has already played (so the user sees the strip of synth notes they just heard).
-        const haloed = (state.playhead >= note.startSec && state.playhead < endSec)
-            || (state.overlay.vocal && note.startSec <= state.playhead && state.playhead - note.startSec < 0.8);
         // While the "why this mode?" readout is open, the notes it cites stay at full strength and
         // everything else steps back. Which notes those are was decided server-side (note.evidence).
         const faded = state.highlightEvidence && !note.evidence;
-        ctx.globalAlpha = faded ? 0.3 : 1;
-        ctx.fillStyle = colourForRole(state, note.role);
-        if (haloed) {
-            // A soft halo behind the sounding note: same colour, low alpha, slightly larger.
-            ctx.globalAlpha = 0.28;
-            roundedRect(ctx, x - 2, top - 2, capsuleWidth + 4, capsuleHeight + 4, Math.min(5, (capsuleHeight + 4) / 2));
-            ctx.fill();
-            ctx.globalAlpha = 1;
+        let alpha = faded ? 0.3 : 1;
+        let fill = colourForRole(state, note.role);
+        if (reveal) {
+            // Every note rises from the lane's middle to its own row, in the order it was sung.
+            const progress = revealProgress(reveal.t, REVEAL.noteSpread * clamp(x / width, 0, 1), REVEAL.noteRise);
+            top = middle + ((top - middle) * spring(progress));
+            alpha *= Math.min(1, progress * 3);
+            // Until the ink front reaches it, a take's note is just a sung pitch, not yet a verdict.
+            if (reveal.ink && x > reveal.inkX) {
+                fill = state.colours.muted;
+            }
         }
+
+        // Halo when the playhead is on this note, OR when the vocal overlay is on and the note
+        // has already played (so the user sees the strip of synth notes they just heard).
+        const sounding = state.playhead >= note.startSec && state.playhead < endSec;
+        const haloed = sounding
+            || (state.overlay.vocal && note.startSec <= state.playhead && state.playhead - note.startSec < 0.8);
+        ctx.fillStyle = fill;
+        if (haloed && !reveal) {
+            // A soft halo behind the sounding note: same colour, low alpha, slightly larger — and
+            // larger and brighter again with the vocal stem's level while the note is sounding.
+            const lift = sounding ? voice : 0;
+            const pad = 2 + (lift * 5);
+            ctx.globalAlpha = 0.28 + (lift * 0.4);
+            roundedRect(ctx, x - pad, top - pad, capsuleWidth + (pad * 2), capsuleHeight + (pad * 2), Math.min(5 + pad, (capsuleHeight + (pad * 2)) / 2));
+            ctx.fill();
+        }
+        ctx.globalAlpha = alpha;
         roundedRect(ctx, x, top, capsuleWidth, capsuleHeight, Math.min(3, capsuleHeight / 2));
         ctx.fill();
         ctx.globalAlpha = 1;
@@ -565,36 +650,13 @@ function drawParticles(state, ctx, width, laneHeight) {
     ctx.globalAlpha = 1;
 }
 
-/// The karaoke overlay: the singer's own pitch as small dots over the note lane. Pure pixels —
-/// whether the singing is RIGHT is judged elsewhere; this just shows where the voice sits.
-function drawLivePitch(state, ctx, width, laneHeight) {
-    if (state.livePitch.length === 0) {
-        return;
-    }
+function drawChords(state, ctx, width, laneTop, laneHeight, reveal) {
     const model = state.model;
-    const pitchSpan = Math.max(model.maxPitch - model.minPitch + 1, 1);
-    const rowHeight = laneHeight / pitchSpan;
-
-    ctx.fillStyle = state.colours.chordSelected;
-    for (const point of state.livePitch) {
-        if (point.t < state.viewStart || point.t > state.viewEnd) {
-            continue;
-        }
-        const x = timeToX(state, point.t, width);
-        const y = ((model.maxPitch - point.midi) + 0.5) * rowHeight;
-        if (y < 0 || y > laneHeight) {
-            continue;
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, Math.max(Math.min(rowHeight * 0.35, 3), 1.5), 0, Math.PI * 2);
-        ctx.fill();
-    }
-}
-
-function drawChords(state, ctx, width, laneTop, laneHeight) {
-    const model = state.model;
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = 'top';
+    // The backing stem's level brightens the chord under the playhead, the way the vocal's lifts
+    // the sounding note: the block pulses with the band that is playing it.
+    const band = state.reducedMotion ? 0 : (state.stems.backing ?? 0);
 
     let drawn = 0;
     const first = firstIndexFrom(model.chords, state.viewStart - state.maxChordDuration);
@@ -611,12 +673,24 @@ function drawChords(state, ctx, width, laneTop, laneHeight) {
         const blockWidth = Math.max(timeToX(state, chord.endSec, width) - x, 2);
         const selected = index === state.selection;
 
+        // In the reveal each block drops in from above, bar by bar behind the notes.
+        const progress = reveal
+            ? revealProgress(reveal.t, REVEAL.chordDelay + (REVEAL.chordSpread * clamp(x / width, 0, 1)), REVEAL.chordDrop)
+            : 1;
+        const blockHeight = (laneHeight - 6) * spring(progress);
+        ctx.globalAlpha = Math.min(1, progress * 2);
         ctx.fillStyle = selected ? state.colours.chordSelected : state.colours.chordBlock;
-        roundedRect(ctx, x + 1, laneTop + 3, Math.max(blockWidth - 2, 1), laneHeight - 6, 3);
+        roundedRect(ctx, x + 1, laneTop + 3, Math.max(blockWidth - 2, 1), Math.max(blockHeight, 1), 3);
         ctx.fill();
+        if (!selected && band > 0.02 && state.playhead >= chord.startSec && state.playhead < chord.endSec) {
+            ctx.globalAlpha = band * 0.35;
+            ctx.fillStyle = state.colours.chordSelected;
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
         drawn++;
 
-        if (blockWidth < 26) {
+        if (blockWidth < 26 || progress < 1) {
             continue;
         }
         ctx.fillStyle = selected ? state.colours.lane : state.colours.text;
@@ -624,7 +698,7 @@ function drawChords(state, ctx, width, laneTop, laneHeight) {
         if (blockWidth >= 90) {
             ctx.fillStyle = selected ? state.colours.lane : state.colours.muted;
             const tag = chord.modeTag ? `m${chord.measureNumber} · ${chord.modeTag}` : `m${chord.measureNumber}`;
-            ctx.fillText(tag, x + 5, laneTop + 20);
+            ctx.fillText(tag, x + 5, laneTop + 22);
         }
     }
     return drawn;
@@ -656,6 +730,55 @@ function drawWaveform(state, ctx, width, laneHeight) {
     }
     ctx.fill();
     ctx.globalAlpha = 1;
+}
+
+/// The glass chip over the canvas: the chord, the sung note and the section at the playhead, all as
+/// the server labelled them. Written straight into the DOM from here, so following the playhead costs
+/// no Blazor render, and only when one of the three actually changes. Hidden during the reveal and
+/// wherever there is nothing under the playhead.
+function updateChip(state, revealing) {
+    const chip = state.chip;
+    if (!chip) {
+        return;
+    }
+    const model = state.model;
+    const t = state.playhead;
+    let chord = null;
+    let note = null;
+    if (model && !revealing) {
+        const chordIndex = firstIndexFrom(model.chords, t + 1e-6) - 1;
+        if (chordIndex >= 0 && model.chords[chordIndex].endSec > t) {
+            chord = model.chords[chordIndex];
+        }
+        for (let index = firstIndexFrom(model.notes, t - state.maxNoteDuration); index < model.notes.length; index++) {
+            const candidate = model.notes[index];
+            if (candidate.startSec > t) {
+                break;
+            }
+            if (candidate.startSec + candidate.durationSec > t) {
+                note = candidate;
+            }
+        }
+    }
+    const section = model && !revealing ? sectionAt(state, t) : null;
+    const key = `${chord?.symbol ?? ''}|${note?.label ?? ''}|${section?.label ?? ''}`;
+    if (key === state.chipKey) {
+        return;
+    }
+    state.chipKey = key;
+    const set = (part, text) => {
+        const element = chip.querySelector(`[data-part="${part}"]`);
+        if (element) {
+            element.textContent = text;
+            element.hidden = text === '';
+        }
+    };
+    set('chord', chord?.symbol ?? '');
+    set('note', note?.label ?? '');
+    set('section', section?.label ?? '');
+    chip.dataset.nowChord = chord?.symbol ?? '';
+    chip.dataset.nowNote = note?.pitchLabel ?? '';
+    chip.dataset.empty = chord || note || section ? '0' : '1';
 }
 
 /// End-of-song easter egg: the visible note capsules become falling, bouncing bodies for a few
@@ -803,13 +926,18 @@ function onPointerUp(state, event) {
 
 // ---- exports ----
 
-export function init(canvas, dotNetRef) {
+/// `chip` is the optional glass readout element laid over the canvas (see updateChip).
+export function init(canvas, dotNetRef, chip) {
     dispose(canvas);
 
     const state = {
         canvas,
         context: canvas.getContext('2d'),
         dotNet: dotNetRef,
+        chip: chip ?? null,
+        chipKey: null,
+        reveal: null,
+        stems: {},
         model: null,
         maxNoteDuration: 0,
         maxChordDuration: 0,
@@ -817,7 +945,6 @@ export function init(canvas, dotNetRef) {
         viewEnd: FALLBACK_DURATION_SECONDS,
         playhead: 0,
         selection: null,
-        livePitch: [],
         particles: [],
         waveform: null,
         level: 0,
@@ -881,6 +1008,8 @@ export function setModel(canvas, payload) {
     state.maxNoteDuration = 0;
     state.maxChordDuration = 0;
     state.drop = null;
+    state.reveal = null;
+    state.chipKey = null;
     state.waveform = null; // a new job's waveform arrives from mixer.js after its stems decode
     if (payload) {
         for (const note of payload.notes) {
@@ -906,13 +1035,16 @@ export function setModel(canvas, payload) {
     invalidate(state);
 }
 
-export function setPlayhead(canvas, seconds, level = 0) {
+/// `stems` carries the mixer's per-stem levels ({ vocal, backing }, each 0..1) when it meters them;
+/// the sounding note and chord glow with them. Absent, both glows hold still.
+export function setPlayhead(canvas, seconds, level = 0, stems = null) {
     const state = states.get(canvas);
     if (!state) {
         return;
     }
     state.playhead = seconds;
     state.level = level; // drives the playhead's motion trail; 0 when the caller has no analyser
+    state.stems = stems ?? {};
 
     // Auto-follow: when the playhead drifts out of the comfortable middle of the view, ease the
     // view so the playhead sits at 30% — unless the user panned recently (their view wins).
@@ -931,26 +1063,23 @@ export function setPlayhead(canvas, seconds, level = 0) {
     invalidate(state);
 }
 
-/// Appends one sung-pitch sample (song time, fractional MIDI). The trace is capped so an hour of
-/// karaoke cannot grow memory without bound.
-export function addLivePitch(canvas, seconds, midi) {
+/// Plays the result in: every note rises from the lane's middle to its own row in the order it was
+/// sung, and the chord blocks drop in behind them. With `ink` (a hum take, whose melody is the
+/// user's own) the notes land uncoloured and a front in the key colour then sweeps across painting
+/// each one with the role the analysis gave it — the verdict arriving over the take. Everything drawn
+/// is the payload; only its arrival is animated. Skipped outright when effects are off. Mirrored to
+/// data-reveal ('running', 'inking', then 'done').
+export function reveal(canvas, ink) {
     const state = states.get(canvas);
-    if (!state) {
+    if (!state || !state.model) {
         return;
     }
-    state.livePitch.push({ t: seconds, midi });
-    if (state.livePitch.length > 4000) {
-        state.livePitch.splice(0, state.livePitch.length - 4000);
-    }
-    invalidate(state);
-}
-
-export function clearLivePitch(canvas) {
-    const state = states.get(canvas);
-    if (!state) {
+    if (state.reducedMotion || state.model.notes.length === 0) {
+        canvas.dataset.reveal = 'done';
         return;
     }
-    state.livePitch = [];
+    state.reveal = { start: performance.now(), ink: !!ink };
+    canvas.dataset.reveal = ink ? 'inking' : 'running';
     invalidate(state);
 }
 
@@ -1038,7 +1167,8 @@ export function dropNotes(canvas) {
 }
 
 /// Clears transient effects (drop bodies, particles) — playback and seeks call this so the lane
-/// snaps back to the truthful picture instantly.
+/// snaps back to the truthful picture instantly. A reveal is left to finish: it draws the true
+/// picture throughout, and the mixer's first seek lands while it may still be running.
 export function resetFx(canvas) {
     const state = states.get(canvas);
     if (!state) {

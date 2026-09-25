@@ -1,0 +1,44 @@
+.download-menu {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.download-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+}
+
+.download-list {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    z-index: 11;
+    min-width: 13rem;
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    background: var(--pm-surface);
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+    box-shadow: var(--pm-shadow);
+}
+
+.download-list:focus {
+    outline: none;
+}
+
+.download-item {
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.35rem;
+    color: var(--pm-fg);
+    text-decoration: none;
+    font-size: var(--pm-text-sm);
+}
+
+.download-item:hover,
+.download-item:focus-visible {
+    background: var(--pm-accent-soft);
+    outline: none;
+}

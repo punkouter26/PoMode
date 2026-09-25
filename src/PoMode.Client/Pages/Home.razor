@@ -15,113 +15,121 @@
 
    This page used to render a "Basic" and an "Advanced" arrangement of the same job behind a header
    switcher, which meant every result had two layouts, two mixers and two stats panels to keep
-   truthful. The kept view is the compact one: key and mode, the piano roll, the player, the
-   statistics, and the mode HUD under them. *@
+   truthful. The kept view is the compact one: key and mode, the piano roll with the selected window
+   read out under it, the player, and the statistics. *@
 
-@if (_visual is null && _status is null)
+@* Drawn once the demo pointer and the model choosers are known: the card is centred, so a row
+   arriving after it moved the whole card. Both are local reads, a fraction of a second. *@
+@if (_intakeReady && _visual is null && _status is null)
 {
-    <RadzenCard class="intake-card">
-        @* Two ways in: drop a file, or sing into the microphone. (A third arrives on its own — an
-           Android share sheet POSTs to /share-target and the service worker hands the bytes over.) *@
-        <div class="upload-hero">
-            <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
-            <RadzenText TextStyle="TextStyle.H6" Text="Drop a track, get the theory" />
-            <RadzenText class="upload-hero-sub" Text=".mp3 or .wav · up to 100 MB" />
-            @* A plain file input dressed as a Radzen button rather than RadzenUpload: RadzenUpload
-               POSTs the file itself in one request, and the point here is that the bytes go over tus
-               (js/upload/resumable-upload.js) so a dropped connection resumes instead of restarting.
-               The input covers the button, so a click or a dropped file both land on it. *@
-            <label class="rz-button rz-button-md rz-variant-filled rz-primary rz-shade-default upload-choose"
-                   data-upload-state="@(_uploading ? (_uploadResuming ? "resuming" : "uploading") : "idle")">
-                <RadzenIcon Icon="upload_file" />
-                <span>Choose audio file</span>
-                <input type="file" class="upload-input" accept=".mp3,.wav,audio/mpeg,audio/wav"
-                       aria-label="Choose audio file" disabled="@_uploading"
-                       @ref="_fileInput" @onchange="OnFileChosenAsync" />
-            </label>
-
-            <div class="record-row">
-                @if (!_recording)
-                {
-                    <RadzenButton Text="Or record from your microphone" Icon="mic"
-                                  ButtonStyle="ButtonStyle.Light" Click="@OnStartRecording" />
-                }
-                else
-                {
-                    <RadzenButton Text="Stop and analyze" Icon="stop" ButtonStyle="ButtonStyle.Danger"
-                                  Click="@OnStopRecording" />
-                    <RadzenText class="recording-hint" Text="Recording…" />
-                }
-            </div>
-            @if (_recordError is not null)
-            {
-                <RadzenText class="upload-error" Text="@_recordError" />
-            }
-
-            @* First run: a finished analysis is one click away, so the canvas, mixer and stats can be
-               seen in seconds instead of after a multi-minute first upload. Only while the demo is all
-               the library holds — once the user has songs of their own, the Library still lists it. *@
-            @if (_demo is { Origin: { } demoOrigin } demo)
-            {
-                <div class="demo-pointer" data-demo-job="@demo.JobId">
-                    <RadzenButton Text="See a finished example" Icon="play_circle" ButtonStyle="ButtonStyle.Light"
-                                  Click="@(() => OpenDemoAsync(demo.JobId))" />
-                    <RadzenText class="demo-pointer-sub" Text="@demoOrigin.Description" />
-                </div>
-            }
-
-            @if (_executorStages is not null)
-            {
-                @* One chooser per pipeline stage. "Auto" keeps the server's ranked default; a pick
-                   rides along on the upload URL and the planner honours it when available. *@
-                <div class="executor-pickers" role="group" aria-label="Analysis models per stage">
-                    @foreach (var (stageName, choices) in _executorStages)
+    <div class="intake">
+        <RadzenCard class="intake-card">
+            @* Two ways in: drop a file, or sing into the microphone. (A third arrives on its own — an
+               Android share sheet POSTs to /share-target and the service worker hands the bytes over.) *@
+            <div class="upload-hero">
+                <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
+                <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H1" Text="Drop a track, get the theory" />
+                <RadzenText class="upload-hero-sub" Text=".mp3 or .wav · up to 100 MB" />
+                @* A plain file input dressed as a Radzen button rather than RadzenUpload: RadzenUpload
+                   POSTs the file itself in one request, and the point here is that the bytes go over tus
+                   (js/upload/resumable-upload.js) so a dropped connection resumes instead of restarting.
+                   The input covers the button, so a click or a dropped file both land on it. Recording sits
+                   beside it: both ways in on one row. *@
+                <div class="intake-actions">
+                    <label class="rz-button rz-button-md rz-variant-filled rz-primary rz-shade-default upload-choose"
+                           data-upload-state="@(_uploading ? (_uploadResuming ? "resuming" : "uploading") : "idle")">
+                        <RadzenIcon Icon="upload_file" />
+                        <span>Choose audio file</span>
+                        <input type="file" class="upload-input" accept=".mp3,.wav,audio/mpeg,audio/wav"
+                               aria-label="Choose audio file" disabled="@_uploading"
+                               @ref="_fileInput" @onchange="OnFileChosenAsync" />
+                    </label>
+                    @if (!_recording)
                     {
-                        <div class="executor-picker">
-                            <span class="executor-picker-label" id="@($"stage-{stageName}")">@StageLabel(stageName)</span>
-                            @if (choices.Count <= 2)
-                            {
-                                @* One real option: nothing to pick, so say it plainly — a disabled
-                                   control reads as "broken", not as "no choice needed". *@
-                                <span class="executor-picker-single">
-                                    @(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")
-                                </span>
-                            }
-                            else
-                            {
-                                <RadzenDropDown TValue="string" Data="@choices"
-                                                TextProperty="Label" ValueProperty="Value"
-                                                Value="@ExecutorChoiceOf(stageName)"
-                                                Change="@(value => OnExecutorPicked(stageName, value as string))"
-                                                class="executor-select"
-                                                aria-labelledby="@($"stage-{stageName}")" />
-                            }
-                        </div>
+                        <RadzenButton Text="Record" Icon="mic" ButtonStyle="ButtonStyle.Light" Click="@OnStartRecording"
+                                      title="Record from your microphone and analyze it" />
+                    }
+                    else
+                    {
+                        <RadzenButton Text="Stop and analyze" Icon="stop" ButtonStyle="ButtonStyle.Danger"
+                                      Click="@OnStopRecording" />
+                        <RadzenText class="recording-hint" Text="Recording…" />
                     }
                 </div>
-            }
-            @if (_uploading)
-            {
-                <div class="upload-progress">
-                    <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
-                    <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
-                </div>
-            }
-            @if (_uploadError is not null)
-            {
-                <RadzenText class="upload-error" Text="@_uploadError" />
-            }
-        </div>
-        @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
-           declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
-        <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
-    </RadzenCard>
+                @if (_recordError is not null)
+                {
+                    <RadzenText class="upload-error" Text="@_recordError" />
+                }
+
+                @* First run: a finished analysis is one click away, so the canvas, mixer and stats can be
+                   seen in seconds instead of after a multi-minute first upload. Only while the demo is all
+                   the library holds — once the user has songs of their own, the Library still lists it. *@
+                @if (_demo is { Origin: { } demoOrigin } demo)
+                {
+                    <div class="demo-pointer" data-demo-job="@demo.JobId">
+                        <RadzenButton Text="See a finished example" Icon="play_circle" ButtonStyle="ButtonStyle.Light"
+                                      Click="@(() => OpenDemoAsync(demo.JobId))" />
+                        <RadzenText class="demo-pointer-sub" Text="@demoOrigin.Description" />
+                    </div>
+                }
+
+                @if (_executorStages is not null)
+                {
+                    @* One chooser per pipeline stage, folded away: "Auto" keeps the server's ranked default,
+                       and most people never need to open this. A pick rides along on the upload URL and the
+                       planner honours it when available. *@
+                    <details class="executor-details">
+                        <summary>Analysis models · @(_executorChoices.Count == 0 ? "Auto" : $"{_executorChoices.Count} pinned")</summary>
+                        <div class="executor-pickers" role="group" aria-label="Analysis models per stage">
+                            @foreach (var (stageName, choices) in _executorStages)
+                            {
+                                <div class="executor-picker">
+                                    <span class="executor-picker-label" id="@($"stage-{stageName}")">@StageLabel(stageName)</span>
+                                    @if (choices.Count <= 2)
+                                    {
+                                        @* One real option: nothing to pick, so say it plainly — a disabled
+                                           control reads as "broken", not as "no choice needed". *@
+                                        <span class="executor-picker-single">
+                                            @(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <RadzenDropDown TValue="string" Data="@choices"
+                                                        TextProperty="Label" ValueProperty="Value"
+                                                        Value="@ExecutorChoiceOf(stageName)"
+                                                        Change="@(value => OnExecutorPicked(stageName, value as string))"
+                                                        class="executor-select"
+                                                        aria-labelledby="@($"stage-{stageName}")" />
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+                @if (_uploading)
+                {
+                    <div class="upload-progress">
+                        <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
+                        <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
+                    </div>
+                }
+                @if (_uploadError is not null)
+                {
+                    <RadzenText class="upload-error" Text="@_uploadError" />
+                }
+            </div>
+            @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
+               declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
+            <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
+        </RadzenCard>
+    </div>
 }
 
 @* Where this audio came from, when the server knows. A hum take is a melody the user sang over a
    progression this app chose for them, and the mode below is a fact about that melody — without the
    provenance the page reports a mode on an unexplained file. The demo says it was synthesized. *@
-@if (_status?.Origin is { } origin)
+@if (_visual is null && _status?.Origin is { } origin)
 {
     <div class="take-origin" role="note" data-take-origin="@origin.Kind">
         <span class="take-origin-icon" aria-hidden="true">@(origin.Kind == TakeOrigin.Demo ? "🎹" : "🎤")</span>
@@ -151,9 +159,6 @@
                SelectedWindowIndex="_selectedWindow" PlayheadSec="_playheadSec"
                OnSeek="OnSeek"
                OnAnalyzeNew="@ResetForNewUpload" />
-
-    @* Under the player: which mode, where, and how sure — the answer the app exists to give. *@
-    <ModalHud Result="_result" Windows="_visual.Windows" SelectedWindowIndex="_selectedWindow" />
 }
 
 @code {
@@ -263,7 +268,7 @@
                 continue;
             }
             var suffix = option.Available ? "" : " — unavailable";
-            choices.Add(new ExecutorChoice(option.Name, $"{option.Name} ({KindLabel(option.Kind)}){suffix}"));
+            choices.Add(new ExecutorChoice(option.Name, $"{ExecutorNames.Display(option.Name)} ({KindLabel(option.Kind)}){suffix}"));
         }
         return choices;
     }
@@ -282,6 +287,8 @@
             _executorChoices[stage] = name;
         }
     }
+
+    private bool _intakeReady;
 
     /// <summary>The library's demo row, when it is the only row: what the empty state points at.</summary>
     private LibraryEntryDto? _demo;
@@ -342,6 +349,7 @@
             }
         }
         await Task.WhenAll(executorsTask, demoTask);
+        _intakeReady = true;
     }
 
     private async Task LoadExecutorsAsync()
@@ -632,8 +640,9 @@
             }
             if (_result is not null)
             {
-                Notifications.Notify(NotificationSeverity.Success, "Song analyzed",
-                    $"{_result.TonicName} {_result.PrimaryMode?.ToString() ?? ""} · {_result.TempoBpm:0} BPM");
+                // No "Song analyzed" toast: it fired on every finished job opened, not just one that
+                // finished while watched, covered the key badge on a phone, and said what that badge
+                // says. The result arriving is the notice, and a closed tab gets a Web Push.
                 // Tint the chrome with the detected key, then play its tonic (no third — the
                 // arpeggio stays mode-neutral, so no musical decision happens client-side).
                 _themeJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/theme.js");

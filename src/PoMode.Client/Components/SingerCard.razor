@@ -1,0 +1,61 @@
+@using PoMode.Shared.Analysis
+
+@* One reading of a singer's voice, wherever the app has one: a song's vocal on the analysis page, the
+   caller's pooled takes on Practice. Both pages used to carry their own copy of this markup, and the
+   two copies had already drifted — one showed the voice type, the other only its sentences. Every
+   word is the server's (VoiceProfiler); this only lays it out. *@
+
+<div class="singer" id="@Id" data-voice-type="@(Voice.Type?.ToString() ?? "")"
+     data-voice-strongest="@(Voice.StrongestLabel ?? "")">
+    @if (Voice.TypeLabel is { } type)
+    {
+        <div class="singer-head">
+            <span class="singer-type">@(Voice.Leaning is { } leaning ? $"{type} / {leaning}" : type)</span>
+            @if (Voice.StrongestLabel is { } strongest)
+            {
+                <span class="singer-best">Strongest note: @strongest</span>
+            }
+        </div>
+    }
+    <p class="singer-text">@Voice.Summary</p>
+    @if (Voice.StrongestSentence is { } why)
+    {
+        <p class="singer-text">@why</p>
+    }
+    @if (Voice.Map is { } map)
+    {
+        <VoiceMap Map="map" StrongestMidi="Voice.StrongestMidi" StrongestLabel="Voice.StrongestLabel" />
+    }
+    @if (Voice.Notes.Count > 0)
+    {
+        @* The per-note figures behind the "best note" sentence: supporting detail, one click away. *@
+        <details class="singer-notes">
+            <summary>The notes sung most, and how they were held</summary>
+            <table>
+                <thead>
+                    <tr><th scope="col">Note</th><th scope="col">Sung</th><th scope="col">Held</th><th scope="col">Off pitch</th><th scope="col">Wobble</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var note in Voice.Notes)
+                    {
+                        <tr class="@(note.Midi == Voice.StrongestMidi ? "singer-best-row" : "")">
+                            <th scope="row">@note.Label</th>
+                            <td>@($"{note.Count}×")</td>
+                            <td>@($"{note.HeldSec:0.0} s")</td>
+                            <td>@(note.OffCents is { } off ? $"{off:0} ¢" : "—")</td>
+                            <td>@(note.WobbleCents is { } wobble ? $"{wobble:0} ¢" : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+    <p class="singer-how">@Voice.HowJudged</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required VoiceProfileDto Voice { get; set; }
+
+    /// <summary>The element id, so each page keeps its own anchor.</summary>
+    [Parameter] public string? Id { get; set; }
+}

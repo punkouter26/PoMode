@@ -47,9 +47,10 @@ public class StemMixerTests(AppFixture app)
         var page = await ReadyMixerPageAsync(browser, app.BaseUrl);
 
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Play" })).ToBeVisibleAsync(Visible);
-        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Full Mix" })).ToBeVisibleAsync(Visible);
-        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Solo Vocals" })).ToBeVisibleAsync(Visible);
-        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Solo Backing" })).ToBeVisibleAsync(Visible);
+        var sources = page.Locator(".mixer-sources");
+        await Assertions.Expect(sources.GetByText("Full mix", new() { Exact = true })).ToBeVisibleAsync(Visible);
+        await Assertions.Expect(sources.GetByText("Vocals", new() { Exact = true })).ToBeVisibleAsync(Visible);
+        await Assertions.Expect(sources.GetByText("Backing", new() { Exact = true })).ToBeVisibleAsync(Visible);
         await Assertions.Expect(page.Locator(".mixer"))
             .ToHaveAttributeAsync("data-mixer-duration", "8.000");
     }
@@ -105,7 +106,7 @@ public class StemMixerTests(AppFixture app)
             .Not.ToHaveAttributeAsync("data-mixer-time", "0.000", new() { Timeout = AppFixture.ExpectTimeoutMs });
         var before = await MixerTimeAsync(page);
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Solo Vocals" }).ClickAsync();
+        await page.Locator(".mixer-sources").GetByText("Vocals", new() { Exact = true }).ClickAsync();
 
         await Assertions.Expect(page.Locator(".mixer"))
             .ToHaveAttributeAsync("data-mixer-mode", "vocals", new() { Timeout = AppFixture.ExpectTimeoutMs });

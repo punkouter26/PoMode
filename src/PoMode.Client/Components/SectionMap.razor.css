@@ -1,0 +1,70 @@
+.section-map {
+    border-left: 3px solid var(--pm-key-edge);
+    background: var(--pm-surface-alt);
+    border-radius: 0 6px 6px 0;
+    padding: var(--pm-space-2) var(--pm-space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-2);
+}
+
+.section-map-text {
+    margin: 0;
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg);
+}
+
+/* Square matrix, novelty strip underneath on the same width so bar positions line up vertically. */
+.section-map-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-1);
+    width: 100%;
+    max-width: 26rem;
+    min-width: 0;
+}
+
+.section-map-matrix {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid var(--pm-border);
+    border-radius: 4px;
+}
+
+.section-map-novelty {
+    display: block;
+    width: 100%;
+    height: 72px;
+}
+
+.section-map-key {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+}
+
+.section-map-swatch {
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 2px;
+    margin-left: 0.5rem;
+}
+
+.section-map-swatch:first-child {
+    margin-left: 0;
+}
+
+.section-map-swatch.plus { background: var(--pm-info-edge); }
+.section-map-swatch.minus { background: var(--pm-hot-edge); }
+.section-map-swatch.line { background: var(--pm-fg); }
+
+@media (max-width: 640px) {
+    .section-map {
+        padding: var(--pm-space-2);
+    }
+}

@@ -158,3 +158,27 @@ public sealed record VisualizationPayload(
     IReadOnlyList<VisualTempoPoint> Tempo,
     ModeEvidence? Evidence,
     IReadOnlyList<VisualSection> Sections);
+
+/// <summary>
+/// The measurements the section ribbon was cut from, for drawing them: the bar grid, how alike every
+/// pair of bars is in harmony, the novelty curve along the diagonal and the bars that became
+/// boundaries. Served on its own route rather than inside <see cref="VisualizationPayload"/>, because
+/// only the "how were the sections found?" view reads it and a 100-bar song carries ten thousand cells.
+/// </summary>
+/// <param name="BarStarts">Bar edges in seconds, one more than the bar count.</param>
+/// <param name="Similarity">
+/// The bars × bars cosine similarity, row-major, one byte per cell scaled so 255 is identical — base64,
+/// because as JSON numbers the matrix would be five times the size for precision a screen cannot show.
+/// </param>
+/// <param name="Novelty">The checkerboard's score at each bar line, as measured (0 at the song's start).</param>
+/// <param name="Boundaries">The bar lines chosen as section boundaries.</param>
+/// <param name="KernelBars">How many bars the checkerboard spans, so a drawing can show it at true size.</param>
+/// <param name="Explanation">One server-worded sentence saying how to read the picture.</param>
+public sealed record SongStructureDto(
+    IReadOnlyList<double> BarStarts,
+    string Similarity,
+    IReadOnlyList<double> Novelty,
+    IReadOnlyList<int> Boundaries,
+    int KernelBars,
+    IReadOnlyList<VisualSection> Sections,
+    string Explanation);

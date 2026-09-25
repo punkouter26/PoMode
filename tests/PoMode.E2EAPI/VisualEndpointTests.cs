@@ -78,5 +78,17 @@ public sealed class VisualEndpointTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(voice.Summary));
         var missing = await client.GetAsync($"/api/analysis/{new string('0', 32)}/voice");
         Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
+
+        // No chords, so no sections and nothing to explain about them: the structure view is a 404,
+        // like the ribbon's absence. The progress view's waveform sketch still answers, and silence
+        // draws flat.
+        var structure = await client.GetAsync($"/api/analysis/{jobId}/structure");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, structure.StatusCode);
+        var peaks = await client.GetFromJsonAsync<WaveformPeaksDto>($"/api/analysis/{jobId}/peaks");
+        Assert.NotNull(peaks);
+        Assert.Contains(peaks.Source, new[] { "vocals", "mix" });
+        Assert.Equal(1024, peaks.Peaks.Count);
+        Assert.True(peaks.DurationSec > 0);
+        Assert.All(peaks.Peaks, value => Assert.InRange(value, -0.01f, 0.01f));
     }
 }

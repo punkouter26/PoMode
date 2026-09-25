@@ -6,10 +6,12 @@
 
 <PageTitle>PoMode</PageTitle>
 
-<RadzenCard>
+@* One card, a section per question: where it runs, what the pipeline would pick, what the machine
+   has. Four stacked cards spent a border and a padding ring on each heading. *@
+<RadzenCard class="diag">
     <div class="diag-header">
-        <RadzenText TextStyle="TextStyle.H5" Text="Diagnostics" />
-        <RadzenButton Text="Refresh" Click="@LoadAsync" ButtonStyle="ButtonStyle.Secondary" />
+        <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H1" Text="Diagnostics" />
+        <RadzenButton Text="Refresh" Click="@LoadAsync" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" />
     </div>
     @if (_error is not null)
     {
@@ -19,69 +21,69 @@
     {
         <RadzenText Text="Loading…" />
     }
-</RadzenCard>
-
-@if (_report is { } report)
-{
-    <RadzenCard>
-        <RadzenText TextStyle="TextStyle.H6" Text="Environment" />
-        <dl class="diag-grid">
-            <dt>Environment</dt><dd>@report.EnvironmentName</dd>
-            <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
-            <dt>Secret source</dt><dd>@report.SecretSource @(report.SecretFellBack ? "(fell back)" : "")</dd>
-            <dt>Jobs queued</dt><dd>@report.QueueDepth</dd>
-        </dl>
-    </RadzenCard>
-
-    <RadzenCard>
-        <RadzenText TextStyle="TextStyle.H6" Text="Execution plan (defaults)" />
-        @if (report.DefaultPlan is { Count: > 0 } plan)
-        {
-            <ul class="diag-plan">
-                @foreach (var stage in plan)
-                {
-                    <li>
-                        <span class="stage">@stage.Stage</span>
-                        <TierBadge Tier="stage.Tier" />
-                        <span class="executor">@stage.Executor</span>
-                    </li>
-                }
-            </ul>
-        }
-        else
-        {
-            <RadzenText Text="No executor set is available." />
-        }
-    </RadzenCard>
-
-    <RadzenCard>
-        <RadzenText TextStyle="TextStyle.H6" Text="Hardware" />
-        @if (report.Hardware is { } hardware)
-        {
+    else
+    {
+        var report = _report;
+        <section class="diag-section" aria-label="Environment">
+            <h3 class="diag-title">Environment</h3>
             <dl class="diag-grid">
-                <dt>GPU</dt>
-                <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
+                <dt>Environment</dt><dd>@report.EnvironmentName</dd>
+                <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
+                <dt>Secret source</dt><dd>@report.SecretSource @(report.SecretFellBack ? "(fell back)" : "")</dd>
+                <dt>Jobs queued</dt><dd>@report.QueueDepth</dd>
             </dl>
-            <table class="diag-models">
-                <thead><tr><th>Model</th><th>Available</th><th>Size</th></tr></thead>
-                <tbody>
-                    @foreach (var model in hardware.Models)
+        </section>
+
+        <section class="diag-section" aria-label="Execution plan">
+            <h3 class="diag-title">Execution plan (defaults)</h3>
+            @if (report.DefaultPlan is { Count: > 0 } plan)
+            {
+                <ul class="diag-plan">
+                    @foreach (var stage in plan)
                     {
-                        <tr>
-                            <td>@model.Key</td>
-                            <td>@YesNo(model.Available)</td>
-                            <td>@(model.SizeBytes > 0 ? $"{model.SizeBytes / (1024.0 * 1024):0.0} MB" : "—")</td>
-                        </tr>
+                        <li>
+                            <span class="stage">@stage.Stage</span>
+                            <TierBadge Tier="stage.Tier" />
+                            <span class="executor">@stage.Executor</span>
+                        </li>
                     }
-                </tbody>
-            </table>
-        }
-        else
-        {
-            <RadzenText Text="Hardware probe returned nothing." />
-        }
-    </RadzenCard>
-}
+                </ul>
+            }
+            else
+            {
+                <RadzenText Text="No executor set is available." />
+            }
+        </section>
+
+        <section class="diag-section" aria-label="Hardware">
+            <h3 class="diag-title">Hardware</h3>
+            @if (report.Hardware is { } hardware)
+            {
+                <dl class="diag-grid">
+                    <dt>GPU</dt>
+                    <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
+                </dl>
+                <table class="diag-models">
+                    <thead><tr><th>Model</th><th>Available</th><th>Size</th></tr></thead>
+                    <tbody>
+                        @foreach (var model in hardware.Models)
+                        {
+                            <tr>
+                                <td>@model.Key</td>
+                                <td>@YesNo(model.Available)</td>
+                                <td>@(model.SizeBytes > 0 ? $"{model.SizeBytes / (1024.0 * 1024):0.0} MB" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <RadzenText Text="Hardware probe returned nothing." />
+            }
+        </section>
+    }
+</RadzenCard>
 
 @code {
     private DiagnosticsReport? _report;

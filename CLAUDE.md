@@ -70,7 +70,7 @@ These override any default instinct. Where one contradicts a habit, the rule win
 
 ## Architecture
 
-One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the REST endpoints, a SignalR hub (`/hubs/analysis`), and the background analysis worker. `PoMode.Shared` holds DTOs and the source-generated `PoModeJsonContext`, plus — as the one deliberate carve-out from NET_RULES' "zero business logic" — pure, dependency-free lookup extensions over those DTOs that both API and Client need (e.g. `ModalResultExtensions.WindowIndexAt`, `TimelineSearch`); anything with I/O, state, or musical judgment stays out.
+One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the REST endpoints, a SignalR hub (`/hubs/analysis`), and the background analysis worker. `PoMode.Shared` holds DTOs and the source-generated `PoModeJsonContext`, plus — as the one deliberate carve-out from NET_RULES' "zero business logic" — pure, dependency-free lookup extensions over those DTOs that both API and Client need (e.g. `ModalResultExtensions.WindowIndexAt`, `TimelineSearch`, `ExecutorNames.Display` — the page-facing name for a recorded executor class name; `/diag` keeps the raw one); anything with I/O, state, or musical judgment stays out.
 
 ### Analysis pipeline (the core)
 
@@ -82,7 +82,7 @@ Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Sep
 
 Model files come from `ModelCatalog` (URL pinned to a commit, SHA-256, licence noted) and download at runtime into `Models:RootPath`; nothing is committed. The neural front ends use `AudioDecoder.ResampleBandLimited`, not the linear `Resample`, because their top mel bands sit at the new Nyquist.
 
-Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dropdown per stage on the home page (Fake placeholders are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available. A stage with one real option renders as plain text rather than a disabled control, which would read as broken rather than as "no choice needed".
+Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dropdown per stage on the home page, folded under an "Analysis models · Auto" disclosure (Fake placeholders are filtered out — never user-selectable), the pick rides on upload query params (`stemSeparator`/`pitchTracker`/`chordRecognizer`), and the planner honours it only if it is available. A stage with one real option renders as plain text rather than a disabled control, which would read as broken rather than as "no choice needed".
 
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
@@ -208,6 +208,11 @@ answer is "between baritone and tenor", because a pitch track cannot honestly sp
 read carries a sentence saying a teacher would also listen to tone and register changes, which pitch
 cannot hear, and labels name a range, never the person.
 
+`VoiceProfileDto.Map` carries a keyboard drawing's worth of the same read - the span (whole Cs), the
+10th/50th/90th-percentile notes, all six ranges with the matched type and leaning flagged, key labels -
+and `VoiceMap.razor` draws it wherever the profile shows (the stats panel, Practice), with a button
+that plays the strongest note in the lead synth voice.
+
 "Best note" is not the most frequent one. notes.json keeps whole semitones, so `IntonationMeter` goes
 back to the audio and reads YIN's continuous pitch inside each note (`PitchesInside`, middle 60% only —
 the scoop into a note and the fall off it are expression, not tuning). A pitch's score is time held,
@@ -253,7 +258,9 @@ delimiter - and the client labels the answer rather than hiding the refusal.
 `TemplateSongInterpreter` answers by routing the question to the measurement it is about (mode, tempo,
 range, rhythm, harmony, motion, phrasing, tension) and declines anything else, which is honest and
 also tells the reader a local model would get them further. The conversation is held client-side; the
-server stores no transcript, same ruling as the statistics themselves.
+server stores no transcript, same ruling as the statistics themselves. On the page the summary and
+the questions are one transcript: "Summarize this song" is the first starter chip and its write-up
+lands as the first turn, rather than a separate Interpret block with its own heading and controls.
 
 ### Why this mode, and where the sections are
 
@@ -273,9 +280,11 @@ sounded, because that is a fact about the song. Pentatonics have no one-note nei
 readout is the notes they leave out, and only when the line really keeps to five notes. The notes
 flagged `VisualNote.Evidence` are exactly the tones the sentences cite - ringing a note the text never
 mentions sends the reader looking for an explanation that is not there - and `VisualWindow.Evidence`
-gives the HUD one line when a single window settles the headline question on its own. The client's
-"Why this mode?" disclosure sits beside the key badge; opening it rings those notes on the canvas
-(`data-evidence-highlight`) and fades the rest.
+gives the window inspector one line when a single window settles the headline question on its own. The
+client's "Why this mode?" disclosure sits beside the key badge and is the page's one answer to that
+question: `ModeWhyPanel` shows these sentences plus the mode-vote and scale-degree bars from `/stats`
+(one fetch in `BasicView`, shared with the stats panel), and opening it rings the cited notes on the
+canvas (`data-evidence-highlight`) and fades the rest.
 
 `SongSectionBuilder` (its own slice, `Features/SongStructure`) finds the verse/chorus shape from the
 chord track alone: a root-weighted chroma per bar, a cosine self-similarity matrix, a Foote checkerboard
@@ -288,6 +297,15 @@ Mixolydian's ♭VII) only when that chord actually sounds in the section. A song
 section gets no sections: a ribbon reading "A" end to end says nothing. The ribbon's colour is a token
 name (`--pm-mode-{name}`, `--pm-fg-muted` otherwise) resolved against the live theme in `canvas.js`;
 clicking a band seeks to its start, and `data-section-count` / `data-section-letters` mirror it.
+
+"How were the sections found?" under the canvas opens the measurements themselves:
+`GET /api/analysis/{id}/structure` serves `SongSectionBuilder.Analyse` - bar edges, the similarity
+matrix as one byte per cell in base64, the novelty curve, the boundary bars - on its own route because
+only that view reads it, and 404s wherever the ribbon is absent (no sections, or past 256 bars, where
+the matrix grows with the square). `js/player/section-map.js` draws the matrix in one WebGL2 fragment
+pass (2D canvas otherwise) with the checkerboard sliding down the diagonal once on open, weighted by
+the server's own Gaussian taper, then parked on the bar line nearest the analysis canvas's
+`data-playhead`; the novelty curve and section letters sit underneath on the same bar axis.
 
 ### Practice (sing over the chords)
 
@@ -394,9 +412,19 @@ Each of these existed and was removed, with the reason, so nobody rebuilds one b
   two layouts to keep truthful. The analysis page keeps the compact one; the library keeps the table.
 - **Karaoke scoring, the tonic drone, tap tempo and BPM nudge in the mixer** — advanced-only
   controls behind a disclosure inside a view that no longer exists.
+- **The modal HUD card, and every other second statement of one fact** — key, mode, confidence,
+  scale and tempo appeared in the header *and* a HUD card under the player; purity five times on
+  the Mode Lab; the scale three times. Each fact is now stated once: the key badge row is the
+  headline, `WindowInspector` reads out only the clicked window, the Mode Lab has one purity readout
+  and its chord pills sit on the roll's header. The Mode Lab's Stop button went with it (Play/Pause,
+  plus any card or roll restarts from bar one), and its WAV/MIDI links share one `DownloadMenu`.
+  Key / mode / chords / tempo are one `BackingControls` row on both the Mode Lab and Practice (tempo
+  50–180 on both), and the singer's read is one `SingerCard` on both the analysis page and Practice.
 - **Nine of eleven `fx-*` modules and the OpenTelemetry export** — decoration, and instruments with
   no collector configured anywhere. `js/shell/prefs.js` survives because it still governs motion and
   sound; which executor really ran is still recorded, in `StageHistory`, where the UI can show it.
+  The effects that came back afterwards (see "Effects that carry data") are held to a rule these
+  failed: each one draws something the analysis measured.
 
 ### Operational guards
 
@@ -437,8 +465,9 @@ theme* — which is exactly what one hardcoded hex cannot do. The seven modes ge
 - **`--pm-text-xs` (12px) is the floor.** Nothing renders text smaller. A label that does not fit
   gets shortened, wrapped or dropped — not shrunk. The header's nav does this literally: every
   destination carries a long and a short label (`.nav-wide` / `.nav-narrow`), one of which is
-  `display: none` at any width, so six destinations fit a 320px phone on one line without a
-  horizontal scroll strip hiding the last of them.
+  `display: none` at any width, so the destinations fit a 320px phone on one line without a
+  horizontal scroll strip hiding the last of them. Diagnostics is not one of them: it is an
+  operator's page and lives in the ⋯ overflow menu.
 - **Never clip to make something fit.** `overflow: hidden` on a layout container, `white-space:
   nowrap` on a phrase, and a viewport-height box are all ways of hiding content while appearing to
   lay it out; the Mode Lab did all three and hid 885px of its own controls on a phone. Wrap, reflow,
@@ -454,6 +483,45 @@ theme* — which is exactly what one hardcoded hex cannot do. The seven modes ge
   that swaps a rendering is `role="group"` with `aria-pressed`.
 - Popovers close on Escape and on a click outside, and take focus when they open, which is what
   makes the Escape handler reachable at all.
+- **Buttons are `RadzenButton`**, sentence case, and Radzen's own colours (`--rz-primary`,
+  `--rz-on-primary`, danger, notifications, placeholder) are mapped onto the `--pm-*` tokens once in
+  `app.css`. Left to the Material theme, dark mode put white on pale lavender at 2.65:1. One filled
+  Primary per group (the action); everything else `Light`; a toggle that is on is Primary +
+  `Variant.Flat` + `Shade.Lighter`. An either-or choice is a `RadzenSelectBar`, not a row of buttons.
+- **Every page has an `<h1>`** — visible where the page has a title, `.pm-sr-only` where the page is
+  its own heading (Library, Mode Lab, Practice, the analysis page). Section labels are `<h2>`.
+- **Targets are at least 24px tall**; text-sized toggles get padding, not a smaller font. Canvas labels
+  hold the 12px floor too (`canvas.js` `LABEL_FONT`) and are dropped when they do not fit.
+- **Late content reserves its room.** The stats skeleton, the mixer's section and loading slot, and
+  Practice's plot hold their height before they fill, so nothing already on screen moves.
+- A `string` component parameter needs `@` to bind a field: `ProgressionId="_progressionId"` passes
+  the literal text. It kept the Chords dropdown blank on both backing pages.
+
+### Effects that carry data
+
+The background shader, particle field, spectrum bars, page transitions and confetti were deleted as
+decoration. What replaced them follows one rule: an effect animates a fact from an artifact, never a
+mood. Each is gated on `prefs.js` (skipped or drawn still when effects are off) and mirrors its state
+onto `data-*` for Playwright.
+
+- **Result reveal** (`canvas.js` `reveal()`, `AnalysisCanvas Reveal`): notes spring from the lane's
+  middle to their rows in the order they were sung, chords drop in behind; about a second,
+  `data-reveal` goes running → done. For a hum take (`Ink`) the notes land uncoloured and a key-coloured
+  front paints each with its role - the verdict arriving over the singer's own melody.
+- **Live wait** (`JobProgress`, `player/wait-preview.js`): each stage's artifact drawn as it lands -
+  the upload's waveform, then the vocal's, then notes.json, then chords.json - fetched once per
+  SignalR push, never polled. `GET /api/analysis/{id}/peaks` is a streamed 512-slice min/max sketch
+  (`AudioDecoder.TryReadPeaks`) of `vocals.wav` once it exists, the upload before that.
+- **Stem-driven glow** (`mixer.js`): the vocals and instrumental stems are metered before their gains,
+  so the sounding note's halo follows the singer and the chord under the playhead pulses with the band,
+  whichever stem is audible. With the metronome on, a phone buzzes on each downbeat (`sfx.tap`).
+- **Now-playing chip**: frosted glass over the canvas naming the chord, sung note and section at the
+  playhead, written straight into the DOM by `canvas.js` only when one changes.
+- **Home-note view** (Mode Lab, `player/mode-gravity.js`): the mode's notes as spring-held bodies on a
+  chromatic clock around its home note; a card change moves the same bodies to a new home. Bodies
+  light while `modal-player.js` sounds their pitch, and tapping one auditions it.
+- **Voices** (`player/voices.js`): lead, Karplus-Strong pluck and FM electric piano, plus one generated
+  room. The mixer's overlays, the Mode Lab's room, the voice map and the tonal UI cues all use them.
 
 Two documents are deliberately taller than a phone: the finished analysis page and the Mode Lab.
 Both are content that exists to be read and compared, and the alternative to scrolling them is
@@ -462,7 +530,8 @@ hiding part of them. Every other route fits 390×844 and 1440×900 with no scrol
 ### Client conventions
 
 - `wwwroot/js` is grouped by what a module is for, not by what it is made of: `player/` (canvas,
-  mixer, modal-player, click-track, take-plot), `capture/` (the recorders, live-pitch, wav),
+  mixer, modal-player, click-track, take-plot, voices, section-map, wait-preview, mode-gravity,
+  voice-map), `capture/` (the recorders, live-pitch, wav),
   `infer/` (the browser-tier pitch worker and its decoder), `upload/` (the vendored tus client and
   the resumable uploader) and `shell/` (theme, pwa, push, prefs, sfx).
   Imports are relative, so a module that moves folders has to fix its own siblings.

@@ -1,0 +1,56 @@
+@* One "Download" button over a short list of formats, instead of one button per format. Closes on
+   Escape and on a click outside, and takes focus when it opens, which is what makes the Escape
+   handler reachable at all — the same contract as the header's overflow menu. *@
+
+<div class="download-menu">
+    <RadzenButton Text="Download" Icon="download" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                  Click="@Toggle" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+                  title="Download this as a file" />
+    @if (_open)
+    {
+        <div class="download-scrim" @onclick="Close" aria-hidden="true"></div>
+        <div class="download-list" role="menu" tabindex="-1" @ref="_list" @onkeydown="OnKeyDown">
+            @foreach (var item in Items)
+            {
+                <a class="download-item" role="menuitem" href="@item.Href" target="_blank" rel="noopener"
+                   title="@item.Title" @onclick="Close">@item.Label</a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>One format: the label shown, where it downloads from, and a tooltip.</summary>
+    public sealed record Item(string Label, string Href, string Title);
+
+    [Parameter, EditorRequired] public required IReadOnlyList<Item> Items { get; set; }
+
+    private bool _open;
+    private bool _focus;
+    private ElementReference _list;
+
+    private void Toggle()
+    {
+        _open = !_open;
+        _focus = _open;
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus)
+        {
+            _focus = false;
+            await _list.FocusAsync();
+        }
+    }
+}

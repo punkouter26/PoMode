@@ -37,6 +37,7 @@ public class VoiceProfilerTests
         {
             Assert.Null(profile.StrongestMidi);
             Assert.Empty(profile.Notes);
+            Assert.Null(profile.Map);
             return;
         }
         Assert.Contains(profile.TypeLabel!.ToLowerInvariant(), profile.Summary);
@@ -44,5 +45,16 @@ public class VoiceProfilerTests
         Assert.Contains("closest to true pitch", profile.StrongestSentence);
         Assert.Contains("steadiest", profile.StrongestSentence);
         Assert.Contains(profile.Notes, note => note.Midi == tuned && note.OffCents == 4);
+
+        // The keyboard drawing: framed on whole Cs around every range and the singing, the matched
+        // type (and the leaning, when there is one) flagged, and the strongest note labelled.
+        var map = profile.Map!;
+        Assert.Equal(0, map.FromMidi % 12);
+        Assert.Equal(0, map.ToMidi % 12);
+        Assert.True(map.FromMidi <= map.LowMidi && map.LowMidi <= map.MedianMidi && map.MedianMidi <= map.HighMidi && map.HighMidi <= map.ToMidi);
+        Assert.Equal(6, map.Types.Count);
+        Assert.Contains(map.Types, type => type.Matched && type.Type == expected);
+        Assert.Equal(leaning is null ? 1 : 2, map.Types.Count(type => type.Matched));
+        Assert.Contains(map.Labels, label => label.Midi == tuned);
     }
 }

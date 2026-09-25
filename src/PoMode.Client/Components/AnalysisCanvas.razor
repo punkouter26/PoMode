@@ -3,10 +3,21 @@
 @inject IJSRuntime Js
 
 <div class="canvas-wrap">
-    <canvas @ref="_canvas" class="analysis-canvas"
-            role="img"
-            aria-label="Piano roll of detected notes above a timeline of detected chords"
-            title="Scroll to zoom · drag to pan · click to seek"></canvas>
+    <div class="canvas-stage">
+        <canvas @ref="_canvas" class="analysis-canvas"
+                role="img"
+                aria-label="Piano roll of detected notes above a timeline of detected chords"
+                title="Scroll to zoom · drag to pan · click to seek"></canvas>
+        @* What is under the playhead, as the server labelled it: chord, sung note, section. canvas.js
+           writes the text as the playhead moves, so following it costs no render here. Frosted
+           rather than opaque so the notes it sits over stay visible behind it; aria-hidden because
+           it repeats what the canvas already describes. *@
+        <div class="now-chip" @ref="_chip" data-empty="1" aria-hidden="true">
+            <span class="now-chord" data-part="chord" hidden></span>
+            <span class="now-note" data-part="note" hidden></span>
+            <span class="now-section" data-part="section" hidden></span>
+        </div>
+    </div>
     <p class="canvas-legend">
         <span class="swatch chord-tone"></span>chord tone
         <span class="swatch characteristic"></span>modal note
@@ -55,6 +66,15 @@
     /// rest, so the "Why this mode?" sentence can be checked against the notes it is about.</summary>
     [Parameter] public bool HighlightEvidence { get; set; }
 
+    /// <summary>Play each new model in (notes rising to their rows, chords dropping in behind) rather
+    /// than drawing it at once. The analysis page wants it; the Mode Lab, which swaps models on every
+    /// slider move, does not.</summary>
+    [Parameter] public bool Reveal { get; set; }
+
+    /// <summary>With <see cref="Reveal"/>, paint the note colours on in a sweep after the notes land —
+    /// for a hum take, where the melody is the user's and the colours are the verdict on it.</summary>
+    [Parameter] public bool Ink { get; set; }
+
     /// <summary>
     /// Raised once the canvas element exists and its module is initialised, handing the element to the
     /// parent so the mixer can drive the playhead straight from the Web Audio clock (see mixer.js)
@@ -64,6 +84,7 @@
     [Parameter] public EventCallback<ElementReference> OnReady { get; set; }
 
     private ElementReference _canvas;
+    private ElementReference _chip;
     private IJSObjectReference? _module;
     private DotNetObjectReference<AnalysisCanvas>? _self;
 
@@ -81,7 +102,7 @@
         {
             _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/player/canvas.js");
             _self = DotNetObjectReference.Create(this);
-            await _module.InvokeVoidAsync("init", _canvas, _self);
+            await _module.InvokeVoidAsync("init", _canvas, _self, _chip);
         }
         await PushStateAsync();
         if (firstRender)
@@ -104,6 +125,10 @@
             await _module.InvokeVoidAsync("setModel", _canvas, ToCanvasPayload(Model));
             _sentPlayhead = null;
             _sentSelection = null;
+            if (Reveal && Model is not null)
+            {
+                await _module.InvokeVoidAsync("reveal", _canvas, Ink);
+            }
         }
         if (_sentSelection != SelectedWindowIndex)
         {

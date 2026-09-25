@@ -1,0 +1,134 @@
+@using System.Globalization
+@using PoMode.Shared.Analysis
+
+@* "Why this mode?" in one place. The page used to answer it three times — the evidence sentences
+   under the key badge, a mode-vote chart and a scale-degree chart further down in the statistics —
+   so a reader who opened the first never learned the other two existed. Every sentence was worded
+   server-side (ModeEvidenceBuilder) and every figure measured (SongStatsBuilder); this only lays them
+   out. The colours are the canvas's, and its legend is the one key to them. *@
+
+<section id="mode-why" class="why" aria-label="Why this mode" data-mode-evidence="@(Evidence?.Mode ?? "")">
+    @if (Evidence is { } evidence)
+    {
+        <ul class="why-reasons">
+            @foreach (var reason in evidence.Reasons)
+            {
+                <li>@reason</li>
+            }
+        </ul>
+        @if (evidence.CounterEvidence is { } against)
+        {
+            <p class="why-against">@against</p>
+        }
+    }
+
+    @if (Stats is { } stats)
+    {
+        <div class="why-charts">
+            <div class="why-chart">
+                <span class="why-title">Which scale wins each window</span>
+                @if (stats.ModeVotes.Count == 0)
+                {
+                    <p class="why-caption">Not enough of the vocal was clear enough to name a mode.</p>
+                }
+                else
+                {
+                    <p class="why-caption">@ModeVerdict(stats)</p>
+                    <div class="why-rows">
+                        @foreach (var vote in stats.ModeVotes)
+                        {
+                            <div class="why-row @(vote.IsPrimary ? "row-winner" : "")">
+                                <span class="why-label" title="@Fingerprint(vote)">
+                                    @vote.Mode
+                                    @if (vote.IsPrimary)
+                                    {
+                                        <span class="why-crown" aria-label="winner">★</span>
+                                    }
+                                </span>
+                                <div class="bar-track">
+                                    <div class="bar-fill @(vote.IsPrimary ? "winner-fill" : "runner-fill")"
+                                         style="--pm-fill: @(Width(vote.WindowPercent))"></div>
+                                </div>
+                                <span class="why-value">@($"{vote.WindowPercent:0}%")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="why-chart">
+                <span class="why-title">Which notes the vocal sings</span>
+                <p class="why-caption">Every note, counted by its distance from the home note (@stats.TonicName).</p>
+                <div class="why-rows">
+                    @foreach (var degree in stats.ScaleDegrees)
+                    {
+                        <div class="why-row @(degree.NoteCount == 0 ? "row-unsung" : "")">
+                            <span class="why-label">
+                                <span class="swatch @DegreeClass(degree)"></span>
+                                @($"{degree.NoteName} · {degree.DegreeLabel}")
+                            </span>
+                            <div class="bar-track">
+                                <div class="bar-fill @DegreeClass(degree)-fill"
+                                     style="--pm-fill: @(Width(ScaledPercent(stats, degree)))"></div>
+                            </div>
+                            <span class="why-value">@($"{degree.Percent:0}%")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public ModeEvidence? Evidence { get; set; }
+
+    /// <summary>The song's statistics, once loaded; the charts wait for them, the sentences do not.</summary>
+    [Parameter] public SongStats? Stats { get; set; }
+
+    /// <summary>One plain sentence on how decisive the vote was, so a bar chart is not read blind.</summary>
+    private static string ModeVerdict(SongStats stats)
+    {
+        var winner = stats.ModeVotes[0];
+
+        // Counting every mode with a single window would call a nine-way tie out of what is really a
+        // two-horse race with noise. Only genuine contenders are named.
+        const double Contender = 10.0;
+        var contenders = stats.ModeVotes.Count(vote => vote.WindowPercent >= Contender);
+
+        return winner.WindowPercent switch
+        {
+            >= 80 => $"{winner.Mode} wins almost everywhere, so this is a confident answer.",
+            >= 50 => $"{winner.Mode} wins most of the song, with the others turning up in places.",
+            _ when contenders > 1 =>
+                $"{winner.Mode} leads, but no scale takes over — {contenders} of them share the song.",
+            _ => $"{winner.Mode} leads, though only across part of the song.",
+        };
+    }
+
+    /// <summary>The evidence for a mode, shown on hover: the degrees that identify it.</summary>
+    private static string Fingerprint(ModeVote vote)
+        => vote.CharacteristicDegrees.Count == 0
+            ? $"{vote.Mode} won {vote.WindowsWon} windows"
+            : $"{vote.Mode} is identified by its {string.Join(" and ", vote.CharacteristicDegrees)}";
+
+    /// <summary>
+    /// Bars are drawn against the most-sung degree, not against 100%. A melody spread over seven
+    /// degrees peaks near 20%, so absolute widths would render every bar as a sliver and hide the
+    /// shape. The printed number stays the true percentage.
+    /// </summary>
+    private static double ScaledPercent(SongStats stats, DegreeUsage degree)
+    {
+        var peak = stats.ScaleDegrees.Max(entry => entry.Percent);
+        return peak <= 0 ? 0 : degree.Percent / peak * 100.0;
+    }
+
+    private static string Width(double percent)
+        => $"{Math.Clamp(percent, 0, 100).ToString("0.##", CultureInfo.InvariantCulture)}%";
+
+    /// <summary>Reuses the canvas's colour language: characteristic, in-mode, outside.</summary>
+    private static string DegreeClass(DegreeUsage degree)
+        => degree.IsCharacteristic ? "characteristic"
+            : degree.InPrimaryMode ? "in-mode"
+            : "outside";
+}

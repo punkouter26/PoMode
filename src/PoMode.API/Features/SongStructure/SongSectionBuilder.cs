@@ -52,7 +52,30 @@ public static class SongSectionBuilder
 
     private const string UnnamedModeToken = "--pm-fg-muted";
 
+    /// <summary>The full width of the checkerboard in bars, for anything drawing it.</summary>
+    public const int KernelBars = KernelHalfBars * 2;
+
+    /// <summary>
+    /// What the sections were cut from: the bar edges, the bar-by-bar similarity matrix, the novelty
+    /// curve and the bars chosen as boundaries. <see cref="Sections"/> is empty when the harmony did
+    /// not divide, which is a finding about the song; the measurements are still real.
+    /// </summary>
+    public sealed record Analysis(
+        double[] BarEdges,
+        double[,] Similarity,
+        double[] Novelty,
+        IReadOnlyList<int> Boundaries,
+        IReadOnlyList<VisualSection> Sections);
+
     public static IReadOnlyList<VisualSection> Build(
+        IReadOnlyList<ChordSpan> chords,
+        ModalResult result,
+        TempoMapDto? tempoMap = null,
+        BeatGridDto? beats = null)
+        => Analyse(chords, result, tempoMap, beats)?.Sections ?? [];
+
+    /// <summary>The measurements behind <see cref="Build"/>, or null when there is no usable bar grid.</summary>
+    public static Analysis? Analyse(
         IReadOnlyList<ChordSpan> chords,
         ModalResult result,
         TempoMapDto? tempoMap = null,
@@ -61,26 +84,33 @@ public static class SongSectionBuilder
         var duration = chords.Count == 0 ? 0.0 : chords.Max(chord => chord.EndSec);
         if (duration <= 0)
         {
-            return [];
+            return null;
         }
 
         var bars = BarStarts(duration, result, tempoMap, beats);
         var barCount = bars.Length - 1;
         if (barCount < MinSectionBars * 2 || barCount > MaxBars)
         {
-            return [];
+            return null;
         }
 
         var features = BarFeatures(chords, bars);
         var similarity = SelfSimilarity(features);
         var novelty = Novelty(similarity);
         var boundaries = PickBoundaries(novelty, barCount);
-        if (boundaries.Count == 0)
-        {
-            return [];
-        }
+        var sections = boundaries.Count == 0
+            ? []
+            : Sections(chords, result, bars, duration, Letter(features, boundaries, barCount));
+        return new Analysis(bars, similarity, novelty, boundaries, sections);
+    }
 
-        var segments = Letter(features, boundaries, barCount);
+    private static IReadOnlyList<VisualSection> Sections(
+        IReadOnlyList<ChordSpan> chords,
+        ModalResult result,
+        double[] bars,
+        double duration,
+        List<(string Letter, int FromBar, int ToBar)> segments)
+    {
         if (segments.Count < 2)
         {
             return [];

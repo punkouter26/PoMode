@@ -37,13 +37,6 @@
     color: var(--pm-fg);
 }
 
-.stage-detail-hint {
-    margin-top: 0.15rem;
-    font-size: 0.8rem;
-    color: var(--pm-fg-muted);
-    font-style: italic;
-}
-
 .spinner {
     width: 0.75rem;
     height: 0.75rem;
@@ -101,14 +94,23 @@
     color: var(--pm-warn-bg);
 }
 
-.progress-collapsed {
-    justify-content: space-between;
-}
-
-.collapse-toggle {
-    font-size: 1rem;
-    line-height: 1;
-}
-
 /* The stage illustration. A short band rather than a hero panel: the checklist under it is what
    the user is actually reading, and this is the thing to glance at while waiting. */
+.wait-preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-1);
+    margin-top: var(--pm-space-2);
+}
+
+.wait-preview-canvas {
+    display: block;
+    width: 100%;
+    height: 110px;
+    border-radius: 6px;
+}
+
+.wait-preview-caption {
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+}

@@ -24,6 +24,8 @@ public class ShellSmokeTests(AppFixture app)
         var hiddenOptions = new LocatorAssertionsToBeHiddenOptions { Timeout = AppFixture.ExpectTimeoutMs };
         await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeHiddenAsync(hiddenOptions);
         await Assertions.Expect(page.GetByText("PoMode").First).ToBeVisibleAsync(expectOptions);
-        await Assertions.Expect(page.GetByRole(AriaRole.Link, new() { Name = "Diagnostics" })).ToBeVisibleAsync(expectOptions);
+        // Diagnostics is an operator's page: it sits in the overflow menu, not in the main nav.
+        await page.GetByRole(AriaRole.Button, new() { Name = "More" }).ClickAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Menuitem, new() { Name = "Diagnostics" })).ToBeVisibleAsync(expectOptions);
     }
 }

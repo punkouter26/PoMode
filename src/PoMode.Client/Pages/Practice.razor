@@ -9,6 +9,8 @@
 
 <PageTitle>PoMode</PageTitle>
 
+<h1 class="pm-sr-only">Practice: sing over the chords</h1>
+
 @* Sing your own melody over someone else's chords, then let the analyzer tell you what mode you
    actually sang.
 
@@ -23,45 +25,16 @@
    narrower door onto that — the Mode Lab is a studio, and this is the one exercise. *@
 
 <RadzenCard class="practice-setup">
-    <RadzenText TextStyle="TextStyle.H5" Text="Practice" />
     <RadzenText class="practice-description"
-                Text="Pick a set of chords, sing whatever melody you like over them, and the analyzer will tell you which mode your melody turned out to be in. Nothing is scored — the reading is the point." />
+                Text="Sing any melody over these chords and the analyzer tells you which mode it turned out to be in. Nothing is scored." />
 
-    @* Radzen controls rather than native <select>/<input type=range>. The Mode Lab and the Analyze
-       page next door are built from RadzenDropDown and RadzenSlider, and an OS-chrome dropdown beside
-       them reads as a different application — which is the whole of the complaint about this app
-       having two visual vocabularies. *@
-    <div class="practice-controls">
-        <div class="practice-field">
-            <span class="practice-field-label" id="practice-mode-label">Mode</span>
-            <RadzenDropDown TValue="ScaleMode" Data="@ScaleModes.All" Value="@_mode"
-                            Change="@(async value => { _mode = (ScaleMode)value; await OnModeChangedAsync(); })"
-                            Disabled="@Busy" aria-labelledby="practice-mode-label" />
-        </div>
-        <div class="practice-field">
-            @* "Key", as the Mode Lab labels it: the value is the parent key, and the chords are
-               rooted on the mode's own note inside it (Dorian in D is E Dorian). "Tonic" named
-               a note the backing does not treat as home. *@
-            <span class="practice-field-label" id="practice-tonic-label">Key</span>
-            <RadzenDropDown TValue="int" Data="@TonicOptions" TextProperty="Name" ValueProperty="PitchClass"
-                            Value="@_tonic"
-                            Change="@(async value => { _tonic = (int)value; await ReloadAsync(); })"
-                            Disabled="@Busy" aria-labelledby="practice-tonic-label" />
-        </div>
-        <div class="practice-field practice-field-wide">
-            <span class="practice-field-label" id="practice-chords-label">Chords</span>
-            <RadzenDropDown TValue="string" Data="@_progressions" TextProperty="Name" ValueProperty="Id"
-                            Value="@_progressionId"
-                            Change="@(async value => { _progressionId = (string)value; await ReloadAsync(); })"
-                            Disabled="@Busy" aria-labelledby="practice-chords-label" />
-        </div>
-        <div class="practice-field">
-            <span class="practice-field-label" id="practice-tempo-label">Tempo @(_bpm.ToString("0")) BPM</span>
-            <RadzenSlider TValue="double" @bind-Value="_bpm" Min="50" Max="140" Step="2"
-                          Change="@(_ => ReloadAsync())" Disabled="@Busy"
-                          aria-labelledby="practice-tempo-label" />
-        </div>
-    </div>
+    @* The same backing row as the Mode Lab's, so the two pages cannot drift on range or wording. *@
+    <BackingControls ShowMode="true" Mode="_mode" ModeChanged="OnModePickedAsync"
+                     Tonic="_tonic" TonicChanged="OnTonicPickedAsync"
+                     ProgressionId="@_progressionId" ProgressionIdChanged="OnProgressionPickedAsync"
+                     Progressions="_progressions"
+                     Bpm="_bpm" BpmChanged="OnTempoPickedAsync"
+                     Disabled="@Busy" />
 
     @* The singer's range, pooled from their own finished takes, and a key that sits the chosen mode
        inside it. Both sentences and the key are the server's: choosing where a mode's home note
@@ -73,7 +46,7 @@
             @if (FitForMode is { } fit)
             {
                 <RadzenButton Text="@(fit.TonicPitchClass == _tonic ? "Fitted to your voice" : "Fit to my voice")"
-                              Icon="tune" ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                              Icon="tune" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
                               Disabled="@(Busy || fit.TonicPitchClass == _tonic)"
                               Click="@FitToVoiceAsync" id="practice-fit" title="@fit.Explanation" />
             }
@@ -82,15 +55,7 @@
            the range is: both are read from the same pool of notes. *@
         @if (voice.Voice is { TypeLabel: not null } singer)
         {
-            <div class="practice-singer" id="practice-singer" data-voice-type="@singer.Type"
-                 data-voice-strongest="@(singer.StrongestLabel ?? "")">
-                <p class="practice-voice-why">@singer.Summary</p>
-                @if (singer.StrongestSentence is { } strongest)
-                {
-                    <p class="practice-voice-why">@strongest</p>
-                }
-                <p class="practice-singer-how">@singer.HowJudged</p>
-            </div>
+            <SingerCard Voice="singer" Id="practice-singer" />
         }
         @* The reason is shown once it applies rather than before: until then it would be a sentence
            about a key the page is not playing. *@
@@ -105,7 +70,7 @@
 {
     <RadzenCard class="practice-take" data-practice-state="@_state">
         <div class="take-head">
-            <RadzenText TextStyle="TextStyle.H6" Text="@melody.ProgressionName" />
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H2" Text="@melody.ProgressionName" />
             @* The chord symbols the server wrote. Naming a chord is a musical statement, so these
                are read from the generated progression rather than spelled here. *@
             <div class="chord-row" aria-label="The chords you will sing over">
@@ -119,7 +84,9 @@
         @* Chord tones as bands, your line drawn over them as you sing it. It reports no verdict:
            the lit segments mean "this note is in the chord underneath", which is a set membership
            test against notes the server voiced, not an opinion about the mode. *@
-        <div class="take-plot-wrap @(_plotOn ? "" : "hidden")">
+        @* Its room is held from the first render and given up only if the plot declines, so the buttons
+           and the history under it do not jump down when it comes up. *@
+        <div class="take-plot-wrap @(_plotChecked && !_plotOn ? "hidden" : "")">
             <canvas class="take-plot" @ref="_plotCanvas" aria-hidden="true" data-testid="practice-plot"></canvas>
             <span class="take-plot-legend">chord tones · your line</span>
         </div>
@@ -129,7 +96,7 @@
             {
                 case TakeState.Idle:
                     <RadzenButton Text="@(_previewing ? "Stop chords" : "Hear the chords")" Icon="volume_up"
-                                  ButtonStyle="ButtonStyle.Secondary" Click="@TogglePreviewAsync"
+                                  ButtonStyle="ButtonStyle.Light" Click="@TogglePreviewAsync"
                                   id="practice-hear" />
                     <RadzenButton Text="Sing over them" Icon="mic" ButtonStyle="ButtonStyle.Primary"
                                   Click="@StartTakeAsync" id="practice-sing" />
@@ -152,7 +119,7 @@
                 case TakeState.Captured:
                     <span class="take-length">Take: @($"{_takeSec:0.0}s")</span>
                     <RadzenButton Text="@(_reviewing ? "Stop" : "Hear it back")" Icon="replay"
-                                  ButtonStyle="ButtonStyle.Secondary" Disabled="@_sending"
+                                  ButtonStyle="ButtonStyle.Light" Disabled="@_sending"
                                   Click="@ToggleReviewAsync" id="practice-review"
                                   title="Your take against the chords it was sung over" />
                     <RadzenButton Text="@(_sending ? "Analyzing…" : "What mode did I sing? →")"
@@ -184,7 +151,7 @@ else if (_loadError is { } loadError)
 @if (_history is { } history)
 {
     <RadzenCard class="practice-history" data-take-count="@history.Takes.Count">
-        <RadzenText TextStyle="TextStyle.H6" Text="Your takes over these chords" />
+        <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H2" Text="Your takes over these chords" />
         <p class="history-summary">@history.Summary</p>
         @if (history.Takes.Count > 0)
         {
@@ -222,13 +189,7 @@ else if (_loadError is { } loadError)
     private DotNetObjectReference<Practice>? _selfRef;
     private ElementReference _plotCanvas;
     private bool _plotOn;
-
-    /// <summary>The twelve tonics as a bindable list. A dropdown needs rows with a label and a
-    /// value; the pitch class on its own is a number the control cannot name.</summary>
-    private sealed record TonicOption(int PitchClass, string Name);
-
-    private static readonly IReadOnlyList<TonicOption> TonicOptions =
-        [.. Enumerable.Range(0, 12).Select(pc => new TonicOption(pc, ScaleModes.NoteName(pc)))];
+    private bool _plotChecked;
 
     private List<ChordProgressionDefinition> _progressions = [];
     private GeneratedMelodyDto? _melody;
@@ -293,6 +254,30 @@ else if (_loadError is { } loadError)
     /// choosing one here by name would be the client making that call itself.
     /// </remarks>
     private string? SignatureIdFor(ScaleMode mode) => _progressions.SignatureFor(mode)?.Id;
+
+    private async Task OnModePickedAsync(ScaleMode mode)
+    {
+        _mode = mode;
+        await OnModeChangedAsync();
+    }
+
+    private async Task OnTonicPickedAsync(int tonic)
+    {
+        _tonic = tonic;
+        await ReloadAsync();
+    }
+
+    private async Task OnProgressionPickedAsync(string id)
+    {
+        _progressionId = id;
+        await ReloadAsync();
+    }
+
+    private async Task OnTempoPickedAsync(double bpm)
+    {
+        _bpm = bpm;
+        await ReloadAsync();
+    }
 
     /// <summary>A different mode brings its own signature cadence with it, matching the Mode Lab's
     /// "Match to mode" default — otherwise picking Phrygian would leave Dorian's chords playing.</summary>
@@ -663,9 +648,11 @@ else if (_loadError is { } loadError)
         try
         {
             _plot ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/take-plot.js");
-            _plotOn = await _plot.InvokeAsync<bool>("init", _plotCanvas);
-            if (_plotOn)
+            var on = await _plot.InvokeAsync<bool>("init", _plotCanvas);
+            if (on != _plotOn || !_plotChecked)
             {
+                _plotOn = on;
+                _plotChecked = true;
                 StateHasChanged();
             }
         }

@@ -1,0 +1,93 @@
+@using PoMode.Shared.Analysis
+
+@* The settings that choose a generated backing: key, chords, tempo, and on Practice the mode. The
+   Mode Lab and Practice each used to build this row themselves, and the copies had drifted — tempo
+   ran to 180 on one page and 140 on the other, and the same dropdown was "Progression" on one and
+   "Chords" on the other. Anything page-specific (the Mode Lab's style and purity) goes in as child
+   content, after the shared fields. *@
+
+<div class="backing" role="group" aria-label="Backing settings">
+    @if (ShowMode)
+    {
+        <div class="backing-field">
+            <span class="backing-label" id="mode-label">Mode</span>
+            <RadzenDropDown TValue="ScaleMode" Data="@ScaleModes.All" Value="@Mode" Disabled="@Disabled"
+                            Change="@(value => ModeChanged.InvokeAsync((ScaleMode)value))"
+                            class="backing-dd backing-mode" id="mode-select" aria-labelledby="mode-label" />
+        </div>
+    }
+    @* "Key" rather than "Tonic": the value is the parent key, and the chords are rooted on the mode's
+       own note inside it (Dorian in D is E Dorian). *@
+    <div class="backing-field">
+        <span class="backing-label" id="key-label">Key</span>
+        <RadzenDropDown TValue="int" Data="@TonicOptions" TextProperty="Name" ValueProperty="PitchClass"
+                        Value="@Tonic" Disabled="@Disabled"
+                        Change="@(value => TonicChanged.InvokeAsync((int)value))"
+                        class="backing-dd backing-key" id="tonic-select" aria-labelledby="key-label" />
+    </div>
+    @if (Between is not null)
+    {
+        @Between
+    }
+    <div class="backing-field backing-field-wide">
+        <span class="backing-label" id="chords-label">Chords</span>
+        <RadzenDropDown TValue="string" Data="@Progressions" TextProperty="Name" ValueProperty="Id"
+                        Value="@ProgressionId" Disabled="@Disabled"
+                        Change="@(value => ProgressionIdChanged.InvokeAsync((string)value))"
+                        class="backing-dd backing-chords" id="prog-select" aria-labelledby="chords-label" />
+    </div>
+    <div class="backing-field backing-field-slider">
+        <span class="backing-label" id="tempo-label">@($"{_shownBpm ?? Bpm:0} BPM")</span>
+        @* The label follows the thumb while it is dragged; the page hears only the release, because
+           each change regenerates the backing. *@
+        <RadzenSlider TValue="double" Value="@Bpm" Min="MinBpm" Max="MaxBpm" Step="2" Disabled="@Disabled"
+                      ValueChanged="@(value => _shownBpm = value)"
+                      Change="@(value => BpmChanged.InvokeAsync(value))"
+                      class="backing-slider" id="tempo-slider" aria-labelledby="tempo-label" />
+    </div>
+    @ChildContent
+</div>
+
+@code {
+    /// <summary>One tempo range for every backing, whichever page generates it.</summary>
+    public const int MinBpm = 50;
+    public const int MaxBpm = 180;
+
+    private sealed record TonicOption(int PitchClass, string Name);
+
+    private static readonly IReadOnlyList<TonicOption> TonicOptions =
+    [
+        new(0, "C"), new(1, "C# / Db"), new(2, "D"), new(3, "D# / Eb"),
+        new(4, "E"), new(5, "F"), new(6, "F# / Gb"), new(7, "G"),
+        new(8, "G# / Ab"), new(9, "A"), new(10, "A# / Bb"), new(11, "B"),
+    ];
+
+    [Parameter] public int Tonic { get; set; }
+    [Parameter] public EventCallback<int> TonicChanged { get; set; }
+
+    [Parameter] public string ProgressionId { get; set; } = "";
+    [Parameter] public EventCallback<string> ProgressionIdChanged { get; set; }
+    [Parameter, EditorRequired] public required IReadOnlyList<ChordProgressionDefinition> Progressions { get; set; }
+
+    [Parameter] public double Bpm { get; set; }
+    [Parameter] public EventCallback<double> BpmChanged { get; set; }
+
+    /// <summary>Practice picks its mode here; the Mode Lab picks it from the card strip instead.</summary>
+    [Parameter] public bool ShowMode { get; set; }
+    [Parameter] public ScaleMode Mode { get; set; }
+    [Parameter] public EventCallback<ScaleMode> ModeChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>The tempo under the thumb mid-drag; cleared whenever the page hands down its own.</summary>
+    private double? _shownBpm;
+
+    protected override void OnParametersSet() => _shownBpm = null;
+
+    /// <summary>Page-specific settings rendered between the key and the chords (the Mode Lab's
+    /// "Match to mode", which decides what the chords dropdown holds).</summary>
+    [Parameter] public RenderFragment? Between { get; set; }
+
+    /// <summary>Page-specific settings rendered after the shared ones.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

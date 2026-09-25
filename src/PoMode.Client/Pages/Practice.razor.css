@@ -4,49 +4,8 @@
 
 .practice-description {
     color: var(--pm-fg-muted);
-    margin: 0.25rem 0 1rem;
-    max-width: 64ch;
-}
-
-.practice-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.practice-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    /* min-width: 0 rather than 9rem. A flex item's default minimum is its content, and a dropdown's
-       content is its longest option — which is what let this row push past a phone's width. The
-       flex-basis still asks for 9rem when there is room. */
-    min-width: 0;
-    flex: 1 1 9rem;
-}
-
-/* The progression names are full phrases, so this one gets room rather than ellipsing every option. */
-.practice-field-wide {
-    flex: 2 1 16rem;
-}
-
-.practice-field-label {
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--pm-fg-muted);
-}
-
-/* The Radzen controls size themselves to the column rather than to their widest option. */
-.practice-field ::deep .rz-dropdown,
-.practice-field ::deep .rz-slider {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-}
-
-.practice-field ::deep .rz-slider {
-    margin: 0.55rem 0;
+    margin: 0 0 var(--pm-space-2);
+    max-width: 72ch;
 }
 
 /* ---- Your voice ---- */
@@ -56,7 +15,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--pm-space-2) var(--pm-space-3);
-    margin-top: var(--pm-space-3);
+    margin-top: var(--pm-space-2);
 }
 
 .practice-voice-range {
@@ -71,17 +30,8 @@
     max-width: 64ch;
 }
 
-/* The type and strongest note read as the voice's own lines, a shade stronger than the fit's
-   explanation; the caveat about what a pitch track can hear stays quiet beneath them. */
-.practice-singer .practice-voice-why {
-    color: var(--pm-fg);
-}
-
-.practice-singer-how {
-    margin: var(--pm-space-1) 0 0;
-    font-size: var(--pm-text-xs);
-    color: var(--pm-fg-muted);
-    max-width: 64ch;
+.practice-setup ::deep .singer {
+    margin-top: var(--pm-space-2);
 }
 
 /* ---- Earlier takes over these chords ---- */
@@ -162,7 +112,7 @@
 }
 
 /* Hidden rather than absent when the canvas declined, so turning effects back on picks it up on the
-   next render without remounting the page. */
+   next render without remounting the page. Shown until then, so its room is already held. */
 .take-plot-wrap.hidden {
     display: none;
 }
@@ -230,23 +180,6 @@
    This file had no width breakpoint. Nothing overflowed, but four full-width control rows stacked
    above a chord row, a plot and three buttons spent more height than a phone has. */
 @media (max-width: 640px) {
-    /* Mode and Tonic are one word and one note name; they share a row. Chords and Tempo keep the
-       full width — one holds a sentence, the other a slider that needs the travel. */
-    .practice-controls {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.6rem;
-    }
-
-    .practice-field-wide,
-    .practice-field:last-child {
-        grid-column: 1 / -1;
-    }
-
-    .practice-description {
-        margin-bottom: 0.75rem;
-    }
-
     .take-plot {
         height: 110px;
     }

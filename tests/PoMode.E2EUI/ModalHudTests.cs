@@ -81,16 +81,17 @@ public class ModalHudTests(AppFixture app)
         await using var browser = await playwright.Chromium.LaunchAsync();
         var page = await AnalysedPageAsync(browser, app.BaseUrl, ProgressionWithMelody());
 
-        await Assertions.Expect(page.GetByText("Primary mode")).ToBeVisibleAsync(Visible);
+        // The key badge is the one headline now; the old HUD card repeated it under the player.
+        await Assertions.Expect(page.GetByText("Key & Mode")).ToBeVisibleAsync(Visible);
         // Tonic C with a C-Am-F-G progression; the engine names Ionian from the sung material —
         // real melody notes in the fixture, really transcribed (YIN in this no-model host).
-        await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("C");
-        await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("Ionian");
+        await Assertions.Expect(page.Locator(".basic-badge-value").First).ToContainTextAsync("C");
+        await Assertions.Expect(page.Locator(".basic-badge-value").First).ToContainTextAsync("Ionian");
         await Assertions.Expect(page.GetByText("confidence")).ToBeVisibleAsync(Visible);
     }
 
     [Fact]
-    public async Task Before_any_click_the_window_cards_invite_a_selection_rather_than_inventing_one()
+    public async Task Before_any_click_the_inspector_invites_a_selection_rather_than_inventing_one()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
@@ -141,16 +142,14 @@ public class ModalHudTests(AppFixture app)
     /// say "mode unclear" rather than invent one, and the MIDI link must still be offered.
     /// </summary>
     [Fact]
-    public async Task A_track_with_no_detected_chords_still_renders_an_honest_hud()
+    public async Task A_track_with_no_detected_chords_still_renders_an_honest_headline()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync();
         var page = await AnalysedPageAsync(browser, app.BaseUrl, TestAudio.MakeWav(seconds: 0.5));
 
-        await Assertions.Expect(page.GetByText("Primary mode")).ToBeVisibleAsync(Visible);
-        await Assertions.Expect(page.Locator(".hud-headline").First).ToContainTextAsync("mode unclear");
-        await Assertions.Expect(page.GetByText("No window had enough sung material to name a mode."))
-            .ToBeVisibleAsync(Visible);
+        await Assertions.Expect(page.GetByText("Key & Mode")).ToBeVisibleAsync(Visible);
+        await Assertions.Expect(page.Locator(".basic-badge-value").First).ToContainTextAsync("mode unclear");
         await Assertions.Expect(page.GetByText("(estimated)")).ToBeVisibleAsync(Visible);
         // The one export left, and it is a plain link in the header rather than a dropdown item.
         await Assertions.Expect(page.Locator("a[href$='/midi']")).ToBeVisibleAsync(Visible);

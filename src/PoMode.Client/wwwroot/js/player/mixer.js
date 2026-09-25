@@ -7,10 +7,11 @@
 // keyboard-driven play/pause so the button label can follow).
 
 import {
-    setPlayhead, addLivePitch, clearLivePitch, setOverlay as canvasSetOverlay,
+    setPlayhead, setOverlay as canvasSetOverlay,
     setWaveform, dropNotes, resetFx,
 } from './canvas.js';
-import { detectPitch, openMicrophone } from '../capture/live-pitch.js';
+import { VOICES, bus } from './voices.js';
+import { tap } from '../shell/sfx.js';
 
 const states = new Map();
 
@@ -27,14 +28,19 @@ const MODE_GAINS = {
 /// others, so vocal, backing and chord layers only ever add or remove their own notes.
 const NOTE_SOURCE_NAMES = ['vocal', 'backing', 'chords'];
 
-/// Per-source synth timbre, same table idiom as MODE_GAINS: the lead is bright and centred
-/// slightly right, the backing pad mellower and left, the chord pad darkest and quietest in the
-/// middle. A new source gets an explicit row here, never a silent fallthrough.
+/// Per-source voice, same table idiom as MODE_GAINS: the sung melody gets the vocal-like lead,
+/// centred slightly right; the transcribed backing a plucked string, left; the server-voiced chord
+/// pad an electric piano in the middle, quietest so a sustained triad sits under everything. A new
+/// source gets an explicit row here, never a silent fallthrough.
 const VOICE_TIMBRES = {
-    vocal: { wave: 'sawtooth', level: 1, cutoff: 3200, pan: 0.12 },
-    backing: { wave: 'triangle', level: 0.5, cutoff: 2000, pan: -0.12 },
-    chords: { wave: 'triangle', level: 0.4, cutoff: 1600, pan: 0 },
+    vocal: { voice: 'lead', level: 0.55, pan: 0.12 },
+    backing: { voice: 'pluck', level: 0.5, pan: -0.12 },
+    chords: { voice: 'epiano', level: 0.28, pan: 0 },
 };
+
+/// Stems whose level the canvas reacts to, mapped to the name the canvas knows them by. The mix is
+/// not here: it is both at once, and the point is to tell them apart.
+const METERED_STEMS = { vocals: 'vocal', instrumental: 'backing' };
 
 /// One `{ vocal: v, backing: v, chords: v }` object per call, derived from NOTE_SOURCE_NAMES so
 /// adding a source is a one-line change, not a hunt for every reset literal.
@@ -124,61 +130,29 @@ function stopSynthVoices(state, source) {
     state.synthVoices = kept;
 }
 
-/// One synthesized note: a detuned oscillator pair through a lowpass and an ADSR envelope (the
-/// timbre is borrowed from PoModeMm's midiPlayer.js). Vocal notes get a bright sawtooth lead;
-/// backing notes get a mellower, quieter triangle so the melody stays in front when both play;
-/// chord-pad notes get the darkest, quietest triangle so a sustained triad sits under everything.
-/// Envelope times are ordered even for very short notes.
+/// One synthesized note in its source's voice (see voices.js), panned a touch per pitch so a
+/// repeated note sits in the same place. Every scheduled node is tagged with its source so pause,
+/// seek and a layer's toggle can silence it, and drops out of the list when it ends on its own.
 function scheduleVoice(state, note, when, source) {
     const ctx = state.context;
     const timbre = VOICE_TIMBRES[source];
-    const freq = 440 * Math.pow(2, (note.midiPitch - 69) / 12);
-    const duration = Math.max(0.05, note.durationSec);
     const velocity = ((note.velocity ?? 90) / 127) * timbre.level;
 
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    osc1.type = timbre.wave;
-    osc2.type = timbre.wave;
-    osc1.frequency.value = freq;
-    osc2.frequency.value = freq * 1.001; // gentle detune for warmth
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = timbre.cutoff;
-    filter.Q.value = 0.7;
-
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, when);
-    env.gain.exponentialRampToValueAtTime(0.6 * velocity, when + 0.01);
-    env.gain.exponentialRampToValueAtTime(0.35 * velocity, when + Math.min(0.15, Math.max(0.03, duration * 0.5)));
-    env.gain.exponentialRampToValueAtTime(0.0001, when + duration + 0.05);
-
-    osc1.connect(filter);
-    osc2.connect(filter);
-    filter.connect(env);
-    // A touch of stereo width, deterministic per pitch so a repeated note sits in the same place.
+    let out = state.synthGain;
+    let pan = null;
     if (ctx.createStereoPanner) {
-        const pan = ctx.createStereoPanner();
+        pan = ctx.createStereoPanner();
         pan.pan.value = timbre.pan + (((note.midiPitch % 5) - 2) * 0.05);
-        env.connect(pan);
         pan.connect(state.synthGain);
-    } else {
-        env.connect(state.synthGain);
+        out = pan;
     }
-
-    for (const osc of [osc1, osc2]) {
-        osc.pmSource = source;
-        osc.start(when);
-        osc.stop(when + duration + 0.1);
-        osc.onended = () => {
-            const index = state.synthVoices.indexOf(osc);
-            if (index >= 0) {
-                state.synthVoices.splice(index, 1);
-            }
-            osc.disconnect();
-        };
-        state.synthVoices.push(osc);
+    const nodes = VOICES[timbre.voice](ctx, out, note.midiPitch, when, note.durationSec, velocity, ended => {
+        state.synthVoices = state.synthVoices.filter(node => !ended.includes(node));
+        pan?.disconnect();
+    });
+    for (const node of nodes) {
+        node.pmSource = source;
+        state.synthVoices.push(node);
     }
 }
 
@@ -332,7 +306,7 @@ function reportTempo(state) {
 }
 
 /// The shared output bus: everything routes through one master gain with an analyser tap, so the
-/// reactive background and the spectrum wall can read levels without touching the audio path.
+/// playhead trail can read the overall level without touching the audio path.
 function ensureMasterGraph(state) {
     if (state.master) {
         return;
@@ -361,24 +335,6 @@ function createSoftClip(ctx) {
     return shaper;
 }
 
-/// A generated stereo impulse response (decaying noise) — a small room, no asset to ship.
-function buildImpulse(ctx) {
-    const seconds = 1.8;
-    const length = Math.floor(ctx.sampleRate * seconds);
-    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
-    for (let channel = 0; channel < 2; channel++) {
-        const data = impulse.getChannelData(channel);
-        let seed = channel === 0 ? 1234567 : 7654321;
-        for (let i = 0; i < length; i++) {
-            // A tiny deterministic PRNG: identical reverb every load, nothing to cache.
-            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-            const noise = (seed / 0x3fffffff) - 1;
-            data[i] = noise * Math.pow(1 - (i / length), 2.4);
-        }
-    }
-    return impulse;
-}
-
 /// AudioBufferSourceNodes are single-use, so every play and every seek builds a fresh set. They are
 /// all started with the same `when`, which is what keeps the three stems sample-synchronised.
 function startSources(state, offsetSeconds) {
@@ -400,6 +356,11 @@ function startSources(state, offsetSeconds) {
         const source = state.context.createBufferSource();
         source.buffer = buffer;
         source.connect(state.gains[stem]);
+        // Metered before the stem's gain, so the canvas hears what each stem is doing even while
+        // the mode has it silenced — the glow says where the voice is, not what is audible.
+        if (state.stemMeters[stem]) {
+            source.connect(state.stemMeters[stem].analyser);
+        }
         source.start(when, Math.min(offsetSeconds, buffer.duration));
         state.sources[stem] = source;
     }
@@ -407,18 +368,58 @@ function startSources(state, offsetSeconds) {
     state.offset = offsetSeconds;
 }
 
-/// 0..1 RMS of this mixer's own output, for the canvas playhead trail. Cheap: one analyser read.
-function levelOf(state) {
-    if (!state.analyser) {
-        return 0;
-    }
-    state.analyser.getByteTimeDomainData(state.levelData);
+/// 0..1 RMS of one analyser's current block. Cheap: one read of a 256-sample buffer.
+function rms(analyser, data) {
+    analyser.getByteTimeDomainData(data);
     let sum = 0;
-    for (let i = 0; i < state.levelData.length; i++) {
-        const v = (state.levelData[i] - 128) / 128;
+    for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
         sum += v * v;
     }
-    return Math.sqrt(sum / state.levelData.length);
+    return Math.sqrt(sum / data.length);
+}
+
+/// 0..1 RMS of this mixer's own output, for the canvas playhead trail.
+function levelOf(state) {
+    return state.analyser ? rms(state.analyser, state.levelData) : 0;
+}
+
+/// Each metered stem's loudness, scaled so a sung phrase at a normal mix level lands near the top
+/// of 0..1 — an RMS of 0.3 is already loud. Keyed by the canvas's names ('vocal', 'backing').
+function stemLevelsOf(state) {
+    const levels = {};
+    for (const [stem, meter] of Object.entries(state.stemMeters)) {
+        levels[METERED_STEMS[stem]] = Math.min(1, rms(meter.analyser, meter.data) * 3.2);
+    }
+    return levels;
+}
+
+/// A felt downbeat on a phone while the metronome is on: sfx.tap(), which already honours the
+/// effects level. Downbeats come from the same two sources the clicks do, so the buzz lands on the
+/// bar line the click accents. Only the stretch the playhead crossed since the last frame is looked at.
+function hapticDownbeats(state, from, to) {
+    if (!state.metronome || to <= from || to - from > 0.5) {
+        return;
+    }
+    if (state.tempoBeats) {
+        for (const beat of state.tempoBeats) {
+            if (beat.at > to) {
+                break;
+            }
+            if (beat.accent && beat.at > from) {
+                tap();
+                return;
+            }
+        }
+        return;
+    }
+    const grid = state.beatGrid;
+    if (grid && to >= grid.firstBeatSec) {
+        const bar = 4 * 60 / grid.bpm;
+        if (Math.floor((to - grid.firstBeatSec) / bar) > Math.floor((from - grid.firstBeatSec) / bar)) {
+            tap();
+        }
+    }
 }
 
 function tick(state) {
@@ -427,7 +428,9 @@ function tick(state) {
     }
     if (state.playing) {
         const seconds = currentSeconds(state);
-        setPlayhead(state.canvas, seconds, levelOf(state));
+        setPlayhead(state.canvas, seconds, levelOf(state), stemLevelsOf(state));
+        hapticDownbeats(state, state.lastTickSeconds, seconds);
+        state.lastTickSeconds = seconds;
         state.root.dataset.mixerTime = seconds.toFixed(3);
         if (seconds >= state.duration) {
             pauseInternal(state, state.duration);
@@ -473,6 +476,7 @@ function seekInternal(state, seconds) {
         return;
     }
     const target = Math.min(Math.max(seconds, 0), state.duration);
+    state.lastTickSeconds = target; // a jump is not a crossing: no buzz for the bar lines skipped
     if (state.playing) {
         startSources(state, target);
     } else {
@@ -586,8 +590,9 @@ export function init(root, canvas, dotNetRef) {
         master: null,
         analyser: null,
         levelData: null,
+        stemMeters: {},
+        lastTickSeconds: 0,
         synthShaper: null,
-        reverb: null,
     };
     state.onKeyDown = event => onKeyDown(state, event);
     document.addEventListener('keydown', state.onKeyDown);
@@ -635,6 +640,7 @@ export async function load(root, urls) {
     ensureMasterGraph(state);
     state.buffers = {};
     state.gains = {};
+    state.stemMeters = {};
     for (const [stem, buffer] of loaded) {
         if (!buffer) {
             continue;
@@ -644,26 +650,22 @@ export async function load(root, urls) {
         gain.gain.value = 0;
         gain.connect(state.master);
         state.gains[stem] = gain;
+        if (stem in METERED_STEMS) {
+            // A dead-end tap: an analyser measures what reaches it without being connected onward.
+            const analyser = state.context.createAnalyser();
+            analyser.fftSize = 256;
+            state.stemMeters[stem] = { analyser, data: new Uint8Array(analyser.fftSize) };
+        }
     }
 
     if (!state.synthGain) {
         const ctx = state.context;
         state.synthGain = ctx.createGain();
         state.synthGain.gain.value = 0.35; // master synth level, below the stems' full-scale audio
-        // Synth bus: soft-clip warmth, then a dry path and a generated-impulse reverb send.
+        // Synth bus: soft-clip warmth, then the shared generated room (voices.js) to the master.
         state.synthShaper = createSoftClip(ctx);
         state.synthGain.connect(state.synthShaper);
-        const dry = ctx.createGain();
-        dry.gain.value = 0.85;
-        state.synthShaper.connect(dry);
-        dry.connect(state.master);
-        state.reverb = ctx.createConvolver();
-        state.reverb.buffer = buildImpulse(ctx);
-        const wet = ctx.createGain();
-        wet.gain.value = 0.25;
-        state.synthShaper.connect(state.reverb);
-        state.reverb.connect(wet);
-        wet.connect(state.master);
+        state.synthShaper.connect(bus(ctx, state.master, 0.25));
     }
     if (!state.clickGain) {
         state.clickGain = state.context.createGain();

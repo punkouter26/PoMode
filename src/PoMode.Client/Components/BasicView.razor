@@ -1,8 +1,13 @@
 @using PoMode.Shared.Analysis
+@inject AnalysisClient Client
 
 <div class="basic-container">
     <RadzenCard class="basic-main-card">
-        <!-- Compact Header: Stats + Actions on a single row -->
+        @* The page's heading for assistive tech: which song this is. Sighted readers get it from the
+           link or upload that brought them here, and the key badge row stays the visible headline. *@
+        <h1 class="pm-sr-only">@($"Analysis of {Status.FileName ?? "this recording"}")</h1>
+        @* The one headline: key, mode, confidence, tempo, length. A second "HUD" card under the player
+           used to repeat every one of these; now this row is the only place they are stated. *@
         <div class="basic-header-row">
             <div class="basic-meta-group">
                 <div class="basic-badge-key">
@@ -15,9 +20,9 @@
                     }
                     @if (Result.PrimaryMode is not null)
                     {
-                        <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0}")</span>
+                        <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0} confidence")</span>
                     }
-                    @if (Visual.Evidence is not null)
+                    @if (Visual.Evidence is not null || _stats is not null)
                     {
                         <button class="basic-why-toggle" type="button" @onclick="ToggleWhy"
                                 aria-expanded="@(_whyOpen ? "true" : "false")" aria-controls="mode-why">
@@ -34,6 +39,10 @@
                         @* Only while a tempo map is driving it, so a steady song does not gain a
                            badge that says nothing. *@
                         <span class="basic-badge-sub">live · this bar</span>
+                    }
+                    else if (Result.TempoEstimated)
+                    {
+                        <span class="basic-badge-sub">(estimated)</span>
                     }
                 </div>
 
@@ -54,49 +63,95 @@
                 }
                 <a class="basic-btn-secondary" href="@($"api/analysis/{Status.JobId}/midi")" target="_blank" rel="noopener"
                    title="Download melody as standard MIDI file">
-                    📥 MIDI
+                    Download MIDI
                 </a>
             </div>
         </div>
 
-        @if (_whyOpen && Visual.Evidence is { } evidence)
+        @* Where the audio came from and how it was tuned, as chips under the headline rather than two
+           full-width banners above it. Both sentences are the server's. *@
+        @if (Status.Origin is not null || Math.Abs(Result.TuningOffsetCents) >= 0.5)
         {
-            @* Every sentence was worded server-side from measured figures (ModeEvidenceBuilder); this
-               only lays them out. The canvas rings the cited notes for as long as this is open. *@
-            <section id="mode-why" class="basic-why" aria-label="Why this mode" data-mode-evidence="@evidence.Mode">
-                <ul class="basic-why-reasons">
-                    @foreach (var reason in evidence.Reasons)
-                    {
-                        <li>@reason</li>
-                    }
-                </ul>
-                @if (evidence.CounterEvidence is { } against)
+            <div class="basic-chips">
+                @if (Status.Origin is { } take)
                 {
-                    <p class="basic-why-against">@against</p>
+                    <span class="take-origin" role="note" data-take-origin="@take.Kind">
+                        <span aria-hidden="true">@(take.Kind == TakeOrigin.Demo ? "🎹" : "🎤")</span>
+                        @take.Description
+                    </span>
                 }
-            </section>
-        }
-
-        <TuningNotice Cents="Result.TuningOffsetCents" />
-
-        <!-- Compact Piano Roll -->
-        <div class="basic-canvas-section">
-            <AnalysisCanvas Model="Visual" SelectedWindowIndex="SelectedWindowIndex"
-                            PlayheadSec="PlayheadSec" OnSeek="OnSeek" HighlightEvidence="_whyOpen"
-                            OnReady="@(element => _canvasElement = element)" />
-        </div>
-
-        <!-- Streamlined Stem Player Bar -->
-        @if (_canvasElement is { } canvasElement)
-        {
-            <div class="basic-player-section">
-                <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
-                           OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
+                <TuningNotice Cents="Result.TuningOffsetCents" />
             </div>
         }
 
-        @* Last on the card, under the player: the statistics and their written interpretation. *@
-        <SongStatsPanel JobId="@Status.JobId" />
+        @if (_whyOpen)
+        {
+            @* The canvas rings the cited notes for as long as this is open. *@
+            <ModeWhyPanel Evidence="Visual.Evidence" Stats="_stats" />
+        }
+
+        <div class="basic-canvas-section">
+            @* Played in on arrival. A hum take's colours are then inked on in a sweep: the melody is
+               the singer's own, and the colours are the verdict on it. *@
+            <AnalysisCanvas Model="Visual" SelectedWindowIndex="SelectedWindowIndex"
+                            PlayheadSec="PlayheadSec" OnSeek="OnSeek" HighlightEvidence="_whyOpen"
+                            Reveal="true" Ink="@(Status.Origin?.Kind == TakeOrigin.HumTake)"
+                            OnReady="@(element => _canvasElement = element)" />
+            <div class="basic-canvas-foot">
+                <WindowInspector Windows="Visual.Windows" SelectedWindowIndex="SelectedWindowIndex" />
+                @if (Visual.Sections.Count > 0)
+                {
+                    <button class="basic-why-toggle" type="button" @onclick="ToggleSections"
+                            aria-expanded="@(_sectionsOpen ? "true" : "false")" aria-controls="section-map">
+                        How were the sections found?
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (_sectionsOpen && Visual.Sections.Count > 0)
+        {
+            <div id="section-map">
+                <SectionMap JobId="@Status.JobId" PlayheadSource="_canvasElement" />
+            </div>
+        }
+
+        @* The section is there from the start and the mixer mounts into it once the canvas it drives is
+           ready: appearing a moment later, it used to push everything under it down the page. *@
+        <div class="basic-player-section">
+            @if (_canvasElement is { } canvasElement)
+            {
+                <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
+                           HasTempoMap="@(Visual.Tempo.Count > 0)"
+                           OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
+            }
+        </div>
+
+        @* Last on the card, under the player: the statistics and the conversation about them. Room is
+           held while they load, so the player and everything under it do not jump when they land. *@
+        @if (_statsLoading)
+        {
+            <div class="pm-skeleton stats-skeleton" aria-hidden="true"></div>
+        }
+        <SongStatsPanel JobId="@Status.JobId" Stats="_stats" />
+
+        @* Which executor really did each stage, from StageHistory — rewritten after any fallback, so a
+           local model that failed and handed over to DSP is named here rather than hidden. The
+           progress card that used to carry this is gone by the time a result is on screen. *@
+        @if (Executors.Count > 0)
+        {
+            <p class="basic-analyzed-with" data-analyzed-with="@string.Join(",", Executors.Select(e => e.Executor))">
+                Analyzed with
+                @foreach (var (tier, executor) in Executors)
+                {
+                    <span class="basic-executor"><TierBadge Tier="tier" /> @ExecutorNames.Display(executor)</span>
+                }
+                @if (TotalSeconds > 0)
+                {
+                    <span>@($"in {TotalSeconds:0.0}s")</span>
+                }
+            </p>
+        }
     </RadzenCard>
 </div>
 
@@ -111,10 +166,46 @@
 
     private ElementReference? _canvasElement;
 
-    /// <summary>The "Why this mode?" disclosure; it also drives the canvas's evidence rings.</summary>
+    /// <summary>The song's statistics, fetched once here and shared by the Why panel and the stats
+    /// panel, which both read from them.</summary>
+    private SongStats? _stats;
+    private string? _statsFor;
+    private bool _statsLoading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_statsFor == Status.JobId)
+        {
+            return;
+        }
+        _statsFor = Status.JobId;
+        _stats = null;
+        _statsLoading = true;
+        _whyOpen = false;
+        _sectionsOpen = false;
+        try
+        {
+            _stats = await Client.GetStatsAsync(Status.JobId);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            // The canvas and player stand without them; the charts and figures simply do not appear.
+        }
+        finally
+        {
+            _statsLoading = false;
+        }
+    }
+
+    /// <summary>The "Why this mode?" panel; it also drives the canvas's evidence rings.</summary>
     private bool _whyOpen;
 
     private void ToggleWhy() => _whyOpen = !_whyOpen;
+
+    /// <summary>The "How were the sections found?" disclosure, which loads the similarity matrix.</summary>
+    private bool _sectionsOpen;
+
+    private void ToggleSections() => _sectionsOpen = !_sectionsOpen;
 
     /// <summary>Tempo of the measure the playhead is in, pushed up by the mixer as it changes.</summary>
     private double _liveBpm;
@@ -127,6 +218,16 @@
     private double DisplayBpm => _liveBpm > 0 ? _liveBpm : Result.TempoBpm;
 
     private string PrimaryHeadline => Result.PrimaryMode is null
-        ? $"{Result.TonicName} (Mode unclear)"
+        ? $"{Result.TonicName} · mode unclear"
         : $"{Result.TonicName} {Result.PrimaryMode}";
+
+    /// <summary>Per planned stage, the executor that last ran it, else the one that was planned.</summary>
+    private List<(ExecutionTier Tier, string Executor)> Executors => [.. Status.Plan.Select(stage =>
+        Status.StageHistory?.LastOrDefault(record => record.Stage == stage.Stage) is { } ran
+            ? (ran.Tier, ran.Executor)
+            : (stage.Tier, stage.Executor))];
+
+    private double TotalSeconds => (Status.StageHistory ?? [])
+        .Where(record => record.CompletedAt is not null)
+        .Sum(record => (record.CompletedAt!.Value - record.StartedAt).TotalSeconds);
 }

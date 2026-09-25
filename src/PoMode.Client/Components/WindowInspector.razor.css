@@ -1,0 +1,108 @@
+.inspect-hint {
+    margin: 0;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+}
+
+/* Three readouts side by side where there is room, stacked on a phone. */
+.inspect {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    align-items: start;
+    gap: var(--pm-space-2) var(--pm-space-3);
+    padding: var(--pm-space-2) var(--pm-space-3);
+    border: 1px solid var(--pm-border);
+    border-radius: 6px;
+    background: var(--pm-lane-bg);
+    font-size: var(--pm-text-sm);
+}
+
+.inspect-label {
+    display: block;
+    font-size: var(--pm-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--pm-fg-muted);
+}
+
+.inspect-key {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+}
+
+.inspect-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.1rem 0.75rem;
+    margin: 0;
+}
+
+.inspect-facts dt {
+    color: var(--pm-fg-muted);
+}
+
+.inspect-facts dd {
+    margin: 0;
+}
+
+.hud-chord,
+.inspect-mode {
+    font-weight: 700;
+}
+
+.hud-mask {
+    font-family: var(--pm-font-mono);
+}
+
+.inspect-note {
+    margin: 0.15rem 0 0;
+    color: var(--pm-fg-muted);
+}
+
+.degree-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.2rem;
+    margin-top: 0.25rem;
+}
+
+.degree {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.1rem 0;
+    border: 1px solid var(--pm-border);
+    border-radius: 4px;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+    background: var(--pm-surface);
+}
+
+.degree.in-mode {
+    color: var(--pm-fg);
+    border-color: var(--pm-note-in-mode);
+}
+
+.degree.characteristic {
+    color: var(--pm-fg);
+    border-color: var(--pm-note-characteristic);
+    border-width: 2px;
+}
+
+/* Tinted rather than solid: the foreground stays --pm-fg, which clears 4.5:1 on a light tint in
+   either theme, where white on a solid note colour would not. */
+.degree.sung {
+    background: color-mix(in srgb, var(--pm-note-in-mode) 30%, transparent);
+    color: var(--pm-fg);
+    font-weight: 700;
+}
+
+.degree.sung.characteristic {
+    background: color-mix(in srgb, var(--pm-note-characteristic) 35%, transparent);
+}
+
+.degree.sung:not(.in-mode):not(.characteristic) {
+    background: color-mix(in srgb, var(--pm-note-outside) 30%, transparent);
+}

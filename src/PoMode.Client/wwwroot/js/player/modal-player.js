@@ -2,6 +2,9 @@
 // - Acoustic Grand Piano for the chord progression (hammer percussive attack, detuned unison strings, soundboard filter decay)
 // - Concert Flute for the melody (pure sine/triangle fundamental with breath air noise chiff)
 // - Real-time mode morphing, loop scheduling, and 7-mode comparative tour playback.
+// Both play into the shared generated room from voices.js, so the Mode Lab is no longer dry.
+
+import { bus, epiano } from './voices.js';
 
 let audioCtx = null;
 let masterGain = null;
@@ -62,6 +65,10 @@ function ensureContext() {
         // on the path means it sees exactly what reaches the speakers.
         masterGain.connect(analyser);
         analyser.connect(audioCtx.destination);
+        // Every voice connects to masterGain; routing it through a room bus puts the whole Mode Lab
+        // in one space without touching the instruments.
+        masterGain.disconnect();
+        masterGain.connect(bus(audioCtx, analyser, 0.2));
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => { });
@@ -101,6 +108,35 @@ export function playbackLevel() {
         sum += v * v;
     }
     return Math.sqrt(sum / levelData.length);
+}
+
+/// MIDI pitches sounding at this instant, melody first, each with the part it belongs to. The Mode
+/// Lab's home-note view lights the matching bodies from this; reading it is a scan of the current
+/// arrangement against the playhead, nothing more.
+export function soundingPitches() {
+    if (!isPlaying || !audioCtx || loopDuration <= 0) {
+        return [];
+    }
+    const position = (audioCtx.currentTime - playbackStartTime) % loopDuration;
+    const sounding = [];
+    const collect = (notes, part) => {
+        for (const note of notes) {
+            if (note.startSec <= position && note.startSec + note.durationSec > position) {
+                sounding.push({ midi: note.midiPitch, part });
+            }
+        }
+    };
+    collect(currentMelodyNotes, 'melody');
+    collect(currentBackingNotes, 'chord');
+    return sounding;
+}
+
+/// Sounds one reference note through the player's own bus, so an audition shares the loop's room and
+/// level: the home-note view plays a body's pitch when it is tapped.
+export function audition(midiPitch) {
+    const ctx = ensureContext();
+    if (!ctx) return;
+    epiano(ctx, masterGain, midiPitch, ctx.currentTime + 0.01, 0.9, 0.3);
 }
 
 /// Concert Flute Synthesizer: simulates a wooden/silver concert flute

@@ -3,17 +3,8 @@
 @implements IAsyncDisposable
 
 <RadzenCard class="job-progress">
-    @* Once complete, the checklist folds to one calm line; the toggle brings the detail back. *@
-    @if (Status.Stage == JobStage.Complete && _completedCollapsed)
-    {
-        <div class="progress-header progress-collapsed">
-            <RadzenText class="complete-text" Text="@CompletedSummary" />
-            <button class="icon-button collapse-toggle" type="button" @onclick="() => _completedCollapsed = false"
-                    aria-expanded="false" title="Show per-stage detail">▸</button>
-        </div>
-    }
-    else
-    {
+    @* Only ever on screen while a job runs, or in the moment between Complete and the result loading:
+       the analysis view replaces it, and names the executors that ran in its own footer. *@
     <div class="progress-header">
         <RadzenText TextStyle="TextStyle.H6" Text="Analysis progress" />
         <span class="percent">@($"{Status.Progress * 100:0}%")</span>
@@ -22,23 +13,16 @@
             <RadzenButton class="cancel-button" Text="Cancel" Size="ButtonSize.ExtraSmall"
                           ButtonStyle="ButtonStyle.Light" Click="@(() => OnCancel.InvokeAsync())" />
         }
-        @if (Status.Stage == JobStage.Complete)
-        {
-            <button class="icon-button collapse-toggle" type="button" @onclick="() => _completedCollapsed = true"
-                    aria-expanded="true" title="Collapse to one line">▾</button>
-        }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
-    @if (CurrentStepText is { } step)
+    @* What the active stage is doing, in one line; the list below already says which step it is and
+       how long it has taken. *@
+    @if (ActiveStageDetail is { } detail)
     {
         <div class="current-step-wrap">
             <span class="active-pulse" aria-hidden="true"></span>
-            <RadzenText class="current-step" Text="@step" />
+            <RadzenText class="current-step" Text="@detail" />
         </div>
-        @if (ActiveStageDetail is { } detail)
-        {
-            <RadzenText class="stage-detail-hint" Text="@detail" />
-        }
     }
     <ul class="stages">
         @foreach (var stage in Status.Plan)
@@ -46,7 +30,7 @@
             <li class="@StageClass(stage)">
                 <span class="tier"><TierBadge Tier="stage.Tier" /></span>
                 <span class="name">@FriendlyName(stage.Stage)</span>
-                <span class="executor">@stage.Executor</span>
+                <span class="executor">@ExecutorNames.Display(stage.Executor)</span>
                 @if (DurationText(stage) is { } duration)
                 {
                     <span class="duration">@duration</span>
@@ -62,6 +46,17 @@
             </li>
         }
     </ul>
+    @if (IsRunning)
+    {
+        @* What the finished stages have produced so far, drawn as each lands: the upload's waveform,
+           then the separated vocal's, the transcribed notes, the chord blocks. Real artifacts only;
+           js/player/wait-preview.js fetches each once, when its stage's push arrives. *@
+        <div class="wait-preview">
+            <canvas @ref="_preview" class="wait-preview-canvas" role="img"
+                    aria-label="What the analysis has found so far: waveform, then notes, then chords"></canvas>
+            <span class="wait-preview-caption">@PreviewCaption</span>
+        </div>
+    }
     @if (Status.Stage == JobStage.Complete)
     {
         <RadzenText class="complete-text" Text="Analysis complete" />
@@ -78,7 +73,6 @@
     {
         <RadzenText class="awaiting-client-text" Text="Transcribing the vocals in your browser…" />
     }
-    }
 </RadzenCard>
 
 @code {
@@ -90,24 +84,84 @@
 
     private Timer? _elapsedTimer;
     private IJSObjectReference? _sfx;
+    private IJSObjectReference? _waitModule;
+    private ElementReference _preview;
+
+    /// <summary>The preview canvas the module was last initialised on, and the completed-stage count
+    /// it was last refreshed for — so the once-a-second timer render refetches nothing.</summary>
+    private ElementReference? _previewInitialised;
+    private int _previewRefreshedAt = -1;
+    private DotNetObjectReference<JobProgress>? _self;
+
+    /// <summary>Which waveform the preview is showing, as wait-preview.js reports it: "mix" for the
+    /// upload, "vocals" once a separated vocal stem exists. Null until the first sketch lands.</summary>
+    private string? _previewSource;
+
+    [JSInvokable]
+    public void OnPreviewSource(string source)
+    {
+        _previewSource = source;
+        StateHasChanged();
+    }
 
     /// <summary>How many stages had finished the last time this component looked, so a stage
     /// completing sounds once. Starts at -1 rather than 0 so a job resumed from disk with stages
     /// already behind it does not fire a burst of earcons for work the user never watched.</summary>
     private int _soundedStages = -1;
 
-    /// <summary>Completed jobs fold to one line by default; the toggle reopens the checklist.</summary>
-    private bool _completedCollapsed = true;
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
         {
             await SoundStageChangeAsync();
+            await RefreshPreviewAsync();
         }
         catch (JSDisconnectedException)
         {
             // Torn down mid-update.
+        }
+    }
+
+    /// <summary>
+    /// Hands the preview the stages that have finished, once per change in that count. The module
+    /// fetches only what a newly finished stage made available; the first call draws the upload.
+    /// </summary>
+    private async Task RefreshPreviewAsync()
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+        _waitModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/wait-preview.js");
+        if (_previewInitialised is not { } element || !element.Equals(_preview))
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            await _waitModule.InvokeVoidAsync("init", _preview, _self);
+            _previewInitialised = _preview;
+            _previewRefreshedAt = -1;
+        }
+        var completed = Status.CompletedStages?.Count ?? 0;
+        if (completed == _previewRefreshedAt)
+        {
+            return;
+        }
+        _previewRefreshedAt = completed;
+        await _waitModule.InvokeVoidAsync("refresh", _preview, Status.JobId, Status.CompletedStages ?? []);
+    }
+
+    /// <summary>Names the layers that are on the preview, so the picture is never unexplained.</summary>
+    private string PreviewCaption
+    {
+        get
+        {
+            var done = Status.CompletedStages ?? [];
+            var layers = new List<string>
+            {
+                _previewSource == "vocals" ? "the separated vocal's waveform" : "your upload's waveform",
+            };
+            if (done.Contains(StageNames.PitchTracking)) layers.Add("the transcribed notes");
+            if (done.Contains(StageNames.ChordDetecting)) layers.Add("the chords");
+            return "So far: " + (layers.Count == 1 ? layers[0] : $"{string.Join(", ", layers[..^1])} and {layers[^1]}") + ".";
         }
     }
 
@@ -145,22 +199,6 @@
 
     private bool IsRunning => !Status.Stage.IsTerminal();
 
-    private string CompletedSummary
-    {
-        get
-        {
-            var total = 0.0;
-            foreach (var record in Status.StageHistory ?? [])
-            {
-                if (record.CompletedAt is { } end)
-                {
-                    total += (end - record.StartedAt).TotalSeconds;
-                }
-            }
-            return total > 0 ? $"Analysis complete ✓ · {total:0.0}s" : "Analysis complete ✓";
-        }
-    }
-
     protected override void OnInitialized()
         // Repaint once a second so the active stage's elapsed time counts up live.
         => _elapsedTimer = new Timer(_ =>
@@ -180,6 +218,15 @@
             {
                 await _sfx.DisposeAsync();
             }
+            if (_waitModule is not null)
+            {
+                if (_previewInitialised is { } element)
+                {
+                    await _waitModule.InvokeVoidAsync("dispose", element);
+                }
+                await _waitModule.DisposeAsync();
+            }
+            _self?.Dispose();
         }
         catch (JSDisconnectedException)
         {
@@ -218,28 +265,6 @@
                 }
             }
             return null;
-        }
-    }
-
-    private string? CurrentStepText
-    {
-        get
-        {
-            if (!IsRunning)
-            {
-                return null;
-            }
-            for (var index = 0; index < Status.Plan.Count; index++)
-            {
-                if (IsActive(Status.Plan[index]))
-                {
-                    var stage = Status.Plan[index];
-                    var dur = DurationText(stage);
-                    var durNote = dur is not null ? $" ({dur})" : "";
-                    return $"Step {index + 1} of {Status.Plan.Count}: {FriendlyName(stage.Stage)}{durNote}";
-                }
-            }
-            return "Waiting to start…";
         }
     }
 

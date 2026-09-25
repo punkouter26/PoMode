@@ -1,0 +1,95 @@
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Client
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* How the section ribbon was found: the bar-by-bar similarity matrix and the novelty curve it was
+   cut from, with the checkerboard that scored each bar line sliding along the diagonal. Every figure
+   and the sentence are the server's (SongSectionBuilder); js/player/section-map.js only draws them. *@
+
+<section class="section-map" aria-label="How the sections were found" data-section-map="@_state">
+    @if (_structure is { } structure)
+    {
+        <p class="section-map-text">@structure.Explanation</p>
+        <div class="section-map-body">
+            <canvas @ref="_matrix" class="section-map-matrix" role="img"
+                    aria-label="@($"Similarity of every bar's harmony to every other bar, {structure.Novelty.Count} bars, with the section boundaries marked")"></canvas>
+            <canvas @ref="_novelty" class="section-map-novelty" aria-hidden="true"></canvas>
+        </div>
+        <p class="section-map-key">
+            <span class="section-map-swatch plus"></span>kernel: same side of the line
+            <span class="section-map-swatch minus"></span>across the line
+            <span class="section-map-swatch line"></span>boundary
+        </p>
+    }
+    else if (_state == "loading")
+    {
+        <p class="section-map-text">Loading the measurements…</p>
+    }
+    else
+    {
+        <p class="section-map-text">The measurements behind the sections could not be loaded.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public required string JobId { get; set; }
+
+    /// <summary>The analysis canvas, whose <c>data-playhead</c> the kernel follows once it has slid.</summary>
+    [Parameter] public ElementReference? PlayheadSource { get; set; }
+
+    private SongStructureDto? _structure;
+    private string _state = "loading";
+    private ElementReference _matrix;
+    private ElementReference _novelty;
+    private IJSObjectReference? _module;
+    private bool _drawn;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _structure = await Client.GetStructureAsync(JobId);
+        }
+        catch (HttpRequestException)
+        {
+            _structure = null;
+        }
+        _state = _structure is null ? "missing" : "ready";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_structure is null || _drawn)
+        {
+            return;
+        }
+        _drawn = true;
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/section-map.js");
+            await _module.InvokeAsync<bool>("init", _matrix, _novelty, _structure, PlayheadSource);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Closed before it drew.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+        {
+            return;
+        }
+        try
+        {
+            await _module.InvokeVoidAsync("dispose", _matrix);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone during teardown.
+        }
+    }
+}

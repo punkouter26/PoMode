@@ -2,6 +2,22 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--pm-space-2);
+}
+
+.diag-section {
+    padding-top: var(--pm-space-2);
+    margin-top: var(--pm-space-2);
+    border-top: 1px solid var(--pm-border);
+    min-width: 0;
+}
+
+.diag-title {
+    margin: 0;
+    font-size: var(--pm-text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pm-fg-muted);
 }
 
 .diag-error {
