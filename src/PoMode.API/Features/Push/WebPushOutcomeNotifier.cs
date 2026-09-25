@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Lib.Net.Http.WebPush;
 using Lib.Net.Http.WebPush.Authentication;
 using PoMode.API.Features.Analysis;
@@ -14,7 +13,7 @@ namespace PoMode.API.Features.Push;
 /// from. The job's owner only: the id on the job is the whole of the targeting, so nobody else's
 /// browser can learn a song name from it. Nobody subscribed, nothing sent.
 /// </summary>
-public sealed partial class WebPushOutcomeNotifier(
+public sealed class WebPushOutcomeNotifier(
     PushSettings settings,
     PushSubscriptionStore subscriptions,
     IHttpClientFactory httpClients,
@@ -98,7 +97,7 @@ public sealed partial class WebPushOutcomeNotifier(
         var facts = new List<string>(2);
         if (state.TonicName is { Length: > 0 } tonic)
         {
-            facts.Add(state.PrimaryMode is { Length: > 0 } mode ? $"{tonic} {Spaced(mode)}" : $"Key of {tonic}");
+            facts.Add(state.PrimaryMode is { Length: > 0 } mode ? $"{tonic} {ScaleModes.DisplayName(mode)}" : $"Key of {tonic}");
         }
         if (state.TempoBpm is { } bpm && bpm > 0)
         {
@@ -107,12 +106,6 @@ public sealed partial class WebPushOutcomeNotifier(
         var lead = facts.Count == 0 ? "" : string.Join(", ", facts) + ". ";
         return ($"'{name}' is ready", $"{lead}Tap to open the analysis.");
     }
-
-    /// <summary>"MinorPentatonic" → "Minor Pentatonic": the enum name, readable.</summary>
-    private static string Spaced(string mode) => WordBoundary().Replace(mode, " ");
-
-    [GeneratedRegex("(?<=[a-z])(?=[A-Z])")]
-    private static partial Regex WordBoundary();
 
     /// <summary>What service-worker.js's push handler reads.</summary>
     private sealed record PushPayload(string Title, string Body, string Url, string Tag);

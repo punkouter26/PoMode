@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PoMode.API.Infrastructure;
 using PoMode.Shared.Analysis;
@@ -28,11 +30,33 @@ public sealed class OllamaSongInterpreter(
     private const string DefaultEndpoint = "http://localhost:11434";
 
     /// <summary>
-    /// Preferred when it happens to be installed: small, fast, and ample for a task that is short and
-    /// entirely grounded in its prompt. Only a preference — see <see cref="ResolveModelAsync"/>, which
-    /// falls back to whatever the user actually has rather than insisting on this name.
+    /// Preferred when it happens to be installed, on the numbers: in the interpreter report
+    /// (<c>test-reports/interpreter-report.html</c>, 2026-09-25) gemma3:4b passed all five tasks —
+    /// schema, no invented figures, declining the unanswerable question — on both runs, before and
+    /// after the prompts were restructured for prefix reuse. llama3.2 passed three on the first (it
+    /// looped past the length cap on the summary and invented a figure in an answer) and five on the
+    /// second, a little faster; consistency won. Only a preference — see
+    /// <see cref="ResolveModelAsync"/>, which falls back to whatever the user actually has rather than
+    /// insisting on this name.
     /// </summary>
-    private const string PreferredModel = "llama3.2";
+    public const string PreferredModel = "gemma3";
+
+    /// <summary>
+    /// The context window asked for. Set explicitly because Ollama's default is smaller than a
+    /// question prompt can grow (the full statistics block restated, plus six exchanges), and Ollama
+    /// does not refuse an overlong prompt: it drops the <em>front</em> of it — which is exactly where
+    /// the measurements sit. <see cref="ReplyAsync"/> logs a warning when a prompt fills it anyway.
+    /// </summary>
+    private const int ContextTokens = 8192;
+
+    /// <summary>
+    /// The longest reply allowed, in tokens. A summary is six short paragraphs, well under half of
+    /// this. The cap exists for the failure it stops: under a JSON constraint a small model can fall
+    /// into repeating its last sentences and never close the string — llama3.2 wrote 12,000
+    /// characters of theory that way and ran into the five-minute timeout. A reply that hits the cap
+    /// is treated as failed, so the selector falls through in a minute instead of five.
+    /// </summary>
+    private const int MaxReplyTokens = 1536;
 
     /// <summary>
     /// The probe must not stall a page load, but it must survive the process's first HTTP request:
@@ -45,11 +69,16 @@ public sealed class OllamaSongInterpreter(
     /// <summary>Generation on a local model over a short prompt; generous, but not unbounded.</summary>
     private static readonly TimeSpan GenerateTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>How often a probe may ask Ollama to load the model ahead of a request.</summary>
+    private static readonly TimeSpan WarmInterval = TimeSpan.FromMinutes(10);
+
     /// <summary>
-    /// The model the last probe settled on. Cached so <see cref="InterpretAsync"/> runs the same model
+    /// The model the last probe settled on. Cached so <see cref="ReplyAsync"/> runs the same model
     /// the availability check approved instead of listing tags a second time.
     /// </summary>
     private string? _resolvedModel;
+
+    private long _warmedAt;
 
     public string Name => nameof(OllamaSongInterpreter);
 
@@ -104,28 +133,35 @@ public sealed class OllamaSongInterpreter(
             if (installed.Count == 0)
             {
                 logger.LogInformation(
-                    "Ollama is running but has no models installed; run 'ollama pull {Preferred}' to "
+                    "Ollama is running but has no models installed; run 'ollama pull {Preferred}:4b' to "
                     + "enable the local interpreter.", PreferredModel);
                 return _resolvedModel = null;
             }
 
+            string? chosen;
             if (ConfiguredModel is { } pinned)
             {
-                var match = installed.FirstOrDefault(model => SameModel(model, pinned));
-                if (match is null)
+                chosen = installed.FirstOrDefault(model => SameModel(model, pinned));
+                if (chosen is null)
                 {
                     logger.LogInformation(
                         "Ollama does not have the pinned model '{Model}' (installed: {Installed}). Run "
                         + "'ollama pull {Model}', or clear Llm:Ollama:Model to use whatever is installed.",
                         pinned, string.Join(", ", installed), pinned);
                 }
-                return _resolvedModel = match;
+            }
+            else
+            {
+                chosen = installed.FirstOrDefault(model => SameModel(model, PreferredModel)) ?? installed[0];
+                if (!string.Equals(_resolvedModel, chosen, StringComparison.Ordinal))
+                {
+                    logger.LogInformation("Local interpreter will use Ollama model {Model}.", chosen);
+                }
             }
 
-            var chosen = installed.FirstOrDefault(model => SameModel(model, PreferredModel)) ?? installed[0];
-            if (!string.Equals(_resolvedModel, chosen, StringComparison.Ordinal))
+            if (chosen is not null)
             {
-                logger.LogInformation("Local interpreter will use Ollama model {Model}.", chosen);
+                Warm(chosen);
             }
             return _resolvedModel = chosen;
         }
@@ -136,31 +172,56 @@ public sealed class OllamaSongInterpreter(
         }
     }
 
-    public async Task<string> InterpretAsync(SongStats stats, CancellationToken ct)
+    /// <summary>
+    /// Asks Ollama to load the model now, in the background. A probe runs when the analysis page
+    /// lists its interpreters, which is the moment someone may be about to ask; loading a few GB of
+    /// weights then rather than on the first question takes seconds off the first answer. Throttled,
+    /// because a probe also runs before every request.
+    ///
+    /// <para>How long the model then stays resident is left to Ollama's own default (five minutes)
+    /// on purpose. A 3–4 GB model held longer competes with stem separation's 5.7 GB peak on a
+    /// 16 GB machine: a 30-minute keep-alive once left three models resident and HTDemucs failed to
+    /// allocate.</para>
+    /// </summary>
+    private void Warm(string model)
     {
-        var text = await ChatAsync(InterpretationPrompt.System, InterpretationPrompt.User(stats), ct);
-        logger.LogInformation("Interpreted song statistics locally with Ollama model {Model}.", _resolvedModel);
-        return text;
-    }
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _warmedAt);
+        if (last != 0 && now - last < WarmInterval.TotalMilliseconds
+            || Interlocked.CompareExchange(ref _warmedAt, now, last) != last)
+        {
+            return;
+        }
 
-    public async Task<string> AnswerAsync(
-        SongStats stats, IReadOnlyList<InterpretationTurn>? history, string question, CancellationToken ct)
-    {
-        // The whole conversation is rebuilt into one user message rather than sent as an Ollama
-        // multi-turn exchange. The measurements have to lead every turn — a model asked to recall a
-        // figure from six messages back approximates it — and one flat message is the only shape
-        // that guarantees they do.
-        var text = await ChatAsync(QuestionPrompt.System, QuestionPrompt.User(stats, history, question), ct);
-        logger.LogInformation("Answered a song question locally with Ollama model {Model}.", _resolvedModel);
-        return text;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var client = httpClientFactory.CreateClient(nameof(OllamaSongInterpreter));
+                client.Timeout = GenerateTimeout;
+                // A generate request with no prompt only loads the model — at the same context size
+                // the real requests ask for. Loaded at Ollama's default instead, the first question
+                // made it reload the model (87 s to the first word), and a request arriving
+                // mid-reload got a 500.
+                using var response = await client.PostAsync(
+                    $"{Endpoint}/api/generate", JsonContent.Create(new { model, options = new { num_ctx = ContextTokens } }));
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Best effort: the real request loads the model anyway.
+            }
+        });
     }
 
     /// <summary>
-    /// One non-streamed chat completion. Shared by the summary and the follow-up answer so both go
-    /// through the same model resolution, the same timeout, and — importantly — the same
-    /// <c>think:false</c>, which is the setting that decides whether a reasoning model replies at all.
+    /// One streamed, schema-constrained chat completion.
+    ///
+    /// <para>The whole conversation arrives as the prompt's messages — a question's measurements
+    /// and transcript are already one flat user message, because the measurements have to lead every
+    /// turn and one message is the only shape that guarantees they do.</para>
     /// </summary>
-    private async Task<string> ChatAsync(string system, string user, CancellationToken ct)
+    public async IAsyncEnumerable<string> ReplyAsync(
+        InterpretationRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         // Normally already settled by the selector's availability probe; resolved here as well so a
         // direct caller cannot reach the request with no model name.
@@ -173,48 +234,116 @@ public sealed class OllamaSongInterpreter(
         using var client = httpClientFactory.CreateClient(nameof(OllamaSongInterpreter));
         client.Timeout = GenerateTimeout;
 
+        var prompt = request.Prompt;
+        using var schema = JsonDocument.Parse(prompt.Schema);
         var body = new
         {
             model,
-            stream = false,
+            stream = true,
             // Reasoning models (gemma4, deepseek-r1, qwen3 ...) otherwise spend their whole output
             // budget on the "thinking" field and return an EMPTY "content" — observed with
             // gemma4:26b, which failed this call every time until thinking was switched off. The task
             // needs no reasoning: the arithmetic is done and the prompt states every fact. Ollama
             // accepts think:false on models without thinking support, so this is safe to send always.
             think = false,
-            messages = new[]
-            {
-                new { role = "system", content = system },
-                new { role = "user", content = user },
-            },
+            // Constrains decoding to the reply schema, so the output is always the two fields.
+            format = schema.RootElement,
+            messages = prompt.Messages
+                .Select(message => new { role = message.Role, content = message.Content })
+                .Prepend(new { role = "system", content = prompt.System }),
             // Low but not zero: the wording may vary, the facts come from the prompt either way.
-            options = new { temperature = 0.4 },
+            options = new { temperature = 0.4, num_ctx = ContextTokens, num_predict = MaxReplyTokens },
         };
 
-        using var response = await client.PostAsync(
-            $"{Endpoint}/api/chat", JsonContent.Create(body), timeout.Token);
-
+        var clock = Stopwatch.StartNew();
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"{Endpoint}/api/chat")
+        {
+            Content = JsonContent.Create(body),
+        };
+        using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"Ollama refused the request ({(int)response.StatusCode}) for model '{model}'.");
+                $"Ollama refused the request ({(int)response.StatusCode}) for model '{model}': "
+                + await response.Content.ReadAsStringAsync(timeout.Token));
         }
 
-        var payload = await response.Content.ReadAsStringAsync(timeout.Token);
-        var text = ReadContent(payload);
-        if (string.IsNullOrWhiteSpace(text))
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        var firstToken = TimeSpan.Zero;
+        var wrote = false;
+        var thought = false;
+        while (await reader.ReadLineAsync(timeout.Token) is { } line)
+        {
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+            if (root.TryGetProperty("error", out var error))
+            {
+                throw new InvalidOperationException($"Ollama failed for model '{model}': {error.GetString()}");
+            }
+
+            if (root.TryGetProperty("message", out var reply))
+            {
+                thought |= reply.TryGetProperty("thinking", out var thinking)
+                    && !string.IsNullOrWhiteSpace(thinking.GetString());
+                if (reply.TryGetProperty("content", out var content) && content.GetString() is { Length: > 0 } text)
+                {
+                    if (!wrote)
+                    {
+                        firstToken = clock.Elapsed;
+                        wrote = true;
+                    }
+                    yield return text;
+                }
+            }
+
+            if (root.TryGetProperty("done", out var done) && done.GetBoolean())
+            {
+                LogUsage(root, model, firstToken, clock.Elapsed);
+                if (root.TryGetProperty("done_reason", out var reason) && reason.GetString() == "length")
+                {
+                    throw new InvalidOperationException(
+                        $"Ollama model '{model}' ran past {MaxReplyTokens} tokens without finishing its reply; "
+                        + "it was most likely repeating itself.");
+                }
+            }
+        }
+
+        if (!wrote)
         {
             // Naming the likely cause: an empty answer from a reasoning model almost always means it
             // reasoned instead of replying, which points at a model choice rather than a bug here.
             throw new InvalidOperationException(
                 $"Ollama returned an empty response for model '{model}'"
-                + (HasThinking(payload)
-                    ? " — it produced reasoning but no answer. Try a non-reasoning model, e.g. 'ollama pull llama3.2'."
+                + (thought
+                    ? " — it produced reasoning but no answer. Try a non-reasoning model, e.g. 'ollama pull gemma3:4b'."
                     : "."));
         }
+    }
 
-        return text.Trim();
+    /// <summary>
+    /// Timing and token counts from the final stream line. The prompt count is also the only way to
+    /// see a silent truncation: a prompt that fills the context window has lost its beginning.
+    /// </summary>
+    private void LogUsage(JsonElement final, string model, TimeSpan firstToken, TimeSpan total)
+    {
+        var promptTokens = final.TryGetProperty("prompt_eval_count", out var p) ? p.GetInt32() : 0;
+        var replyTokens = final.TryGetProperty("eval_count", out var e) ? e.GetInt32() : 0;
+        logger.LogInformation(
+            "Ollama {Model}: first token {FirstMs} ms, done in {TotalMs} ms, {PromptTokens} prompt + "
+            + "{ReplyTokens} reply tokens.",
+            model, (int)firstToken.TotalMilliseconds, (int)total.TotalMilliseconds, promptTokens, replyTokens);
+        if (promptTokens >= ContextTokens)
+        {
+            logger.LogWarning(
+                "Ollama {Model}: the prompt filled the {Context}-token context window, so Ollama dropped "
+                + "its start — where the measurements are. The answer may not be grounded in them.",
+                model, ContextTokens);
+        }
     }
 
     /// <summary>Installed model names from <c>/api/tags</c>, tags included ("gemma4:26b").</summary>
@@ -233,7 +362,7 @@ public sealed class OllamaSongInterpreter(
     }
 
     /// <summary>
-    /// "llama3.2" and "llama3.2:latest" name the same model to a user, so a pin without a tag matches
+    /// "gemma3" and "gemma3:latest" name the same model to a user, so a pin without a tag matches
     /// any tag. A pin that does carry a tag is matched exactly — the point of writing one is to choose.
     /// </summary>
     private static bool SameModel(string installed, string wanted)
@@ -245,23 +374,5 @@ public sealed class OllamaSongInterpreter(
     {
         var separator = model.IndexOf(':', StringComparison.Ordinal);
         return separator < 0 ? model : model[..separator];
-    }
-
-    private static string? ReadContent(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        return document.RootElement.TryGetProperty("message", out var message)
-            && message.TryGetProperty("content", out var content)
-                ? content.GetString()
-                : null;
-    }
-
-    /// <summary>True when the reply carried chain-of-thought — used only to explain an empty answer.</summary>
-    private static bool HasThinking(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        return document.RootElement.TryGetProperty("message", out var message)
-            && message.TryGetProperty("thinking", out var thinking)
-            && !string.IsNullOrWhiteSpace(thinking.GetString());
     }
 }

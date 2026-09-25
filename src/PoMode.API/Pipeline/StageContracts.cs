@@ -40,6 +40,12 @@ public sealed record StageContext(string JobId, string JobDir, string InputPath,
 
     public void ReleaseAnalysisAudio() => _decodedAnalysisAudio = null;
 
+    /// <summary>
+    /// The beats the beat tracker heard, set before chord recognition runs so chord changes are cut
+    /// on them; null when no tracker produced a usable grid, and recognizers then estimate their own.
+    /// </summary>
+    public IReadOnlyList<double>? Beats { get; set; }
+
     private double? _tuningOffsetCents;
 
     /// <summary>

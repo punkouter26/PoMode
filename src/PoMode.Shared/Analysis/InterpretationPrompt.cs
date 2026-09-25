@@ -1,43 +1,74 @@
 using System.Globalization;
 using System.Text;
-using PoMode.Shared.Analysis;
 
-namespace PoMode.API.Features.SongStatistics;
+namespace PoMode.Shared.Analysis;
 
 /// <summary>
-/// Builds the one prompt every LLM interpreter sends, so the local and the cloud model are asked
-/// exactly the same question and their answers stay comparable.
+/// Builds the one prompt every LLM interpreter is sent — Ollama on the server and the model built
+/// into the browser alike — so their answers stay comparable. In Shared rather than the API for that
+/// second reader: the browser tier builds the same prompt from the <see cref="SongStats"/> it already
+/// holds, instead of asking the server for it.
 ///
 /// <para>The user message is a flat list of measured facts and nothing else — no audio, no title, no
 /// lyrics, no artist. A model cannot report what it was never given, so the most likely failure mode
 /// (confidently naming a genre or an artist it "recognises") is designed out rather than instructed
-/// away. The system message then forbids adding numbers, which is the remaining risk.</para>
+/// away. The system message then forbids adding numbers, and <see cref="GroundingCheck"/> catches the
+/// ones a model adds anyway.</para>
 /// </summary>
 public static class InterpretationPrompt
 {
-    /// <summary>
-    /// The line an interpreter puts between its two audiences. Distinctive enough that no ordinary
-    /// prose produces it by accident, so <see cref="Split"/> can never cut a paragraph in half.
-    /// </summary>
-    public const string Delimiter = "===FOR MUSICIANS===";
+    public const string PlainField = "plain";
+    public const string TheoryField = "theory";
 
     /// <summary>
-    /// Asks for both audiences in a single response.
+    /// The reply's shape, handed to the runtime as a constraint rather than described in prose. This
+    /// replaced a delimiter line between the two halves, which models reproduced as
+    /// <c>===FOR MUSICIating===</c> or a bare <c>===</c> often enough to need a tolerant parser of its
+    /// own; a schema-constrained decoder cannot write anything but the two fields.
+    /// </summary>
+    public const string Schema =
+        """{"type":"object","properties":{"plain":{"type":"string"},"theory":{"type":"string"}},"required":["plain","theory"]}""";
+
+    /// <summary>
+    /// The one system message every request about a song is sent — the summary and every question
+    /// alike — carrying only the rules that hold for all of them.
     ///
-    /// <para>One call, not two, and the reason is latency: a local model takes tens of seconds, and
-    /// two calls would double a wait the user is already sitting through. Writing both halves at once
-    /// also keeps them consistent — the theory section explains the same reading of the song the plain
-    /// section gave, rather than a second independent take on it.</para>
+    /// <para>Shared, and the measurements lead the user message with the task after them, for
+    /// latency: Ollama (llama.cpp) reuses the processed prefix of its previous request, so once any
+    /// request about a song has run, the next one only processes what follows the statistics. With a
+    /// system prompt per task the prefixes never matched, and on a CPU every question paid the whole
+    /// ~1,200-token statistics block again — close to a minute before its first word.</para>
     ///
-    /// <para>The grounding rules apply to both halves and are what stop a model naming an artist or a
-    /// genre it thinks it recognises. The plain half additionally forbids numbers, because the
-    /// fingerprint paragraph directly above it in the UI already states every figure exactly.</para>
+    /// <para>The rules are what stop a model naming an artist or a genre it thinks it recognises,
+    /// and what <see cref="GroundingCheck"/> then enforces for figures.</para>
     /// </summary>
     public const string System =
-        "You will be given measurements taken from one song's audio. Write TWO summaries of it, one "
-        + "after the other, separated by a line containing only " + Delimiter + "\n"
+        "You write about one song using only measurements taken from its audio. The measurements come "
+        + "first, then what to write.\n"
         + "\n"
-        + "PART 1 — for a curious listener who loves music but has never studied music theory.\n"
+        + "Rules you must not break:\n"
+        + "- Use ONLY the measurements provided, and what general music theory says about them. Never "
+        + "invent a statistic, a section, a lyric, a genre presented as fact, an artist, or a song title "
+        + "- you were not given any of those and cannot know them.\n"
+        + "- Never compute a new figure from the given ones: no sums, differences, ratios or unit "
+        + "conversions. Quote a figure exactly as given or put it in words.\n"
+        + "- If something is not in the data, do not mention it. Do not list the measurements back: "
+        + "say what they mean.\n"
+        + "- Be confident. Do not hedge about data you were given.\n"
+        + "- Plain prose only. No headings, no bullet points, no markdown.";
+
+    /// <summary>
+    /// What the summary asks for: both audiences in a single response. One call, not two, and the
+    /// reason is latency — a local model takes tens of seconds, and two calls would double a wait
+    /// the user is already sitting through. Writing both halves at once also keeps them consistent.
+    /// The plain half forbids numbers, because the fingerprint paragraph directly above it in the UI
+    /// already states every figure exactly.
+    /// </summary>
+    public const string Task =
+        "Write TWO summaries of this song and reply with a JSON object: \"plain\" holds PART 1 and "
+        + "\"theory\" holds PART 2. Inside each, separate paragraphs with a blank line; no part labels.\n"
+        + "\n"
+        + "PART 1 - for a curious listener who loves music but has never studied music theory.\n"
         + "- Say what the measurements mean for how the song sounds, how it feels, and what it would "
         + "be like to sing.\n"
         + "- Warm, plain, everyday English. Short sentences.\n"
@@ -45,98 +76,23 @@ public static class InterpretationPrompt
         + "sentence.\n"
         + "- Use very few numbers. Pick the two or three that matter most and turn the rest into "
         + "words: 'almost every note', 'about half the time', 'now and then'.\n"
-        + "- Never make the reader do arithmetic. 'Two thirds of the time' beats '66.7%'.\n"
+        + "- Never make the reader do arithmetic. 'Two thirds of the time' beats a percentage.\n"
         + "- Three short paragraphs.\n"
         + "\n"
-        + "PART 2 — for a trained musician.\n"
+        + "PART 2 - for a trained musician.\n"
         + "- Assume full command of theory. Use the proper terms without explaining them: mode, "
         + "characteristic degree, tessitura, harmonic rhythm, chord tone, syncopation.\n"
-        + "- Be precise and quantitative here. Cite the actual figures.\n"
+        + "- Be precise and quantitative here. Cite the actual figures exactly as given.\n"
         + "- Discuss the modal evidence: which degrees the melody emphasises, whether they support the "
         + "named mode, and what the mode changes imply.\n"
-        + "- Discuss how the melody sits against the harmony — which chord degrees it lands on, and "
+        + "- Discuss how the melody sits against the harmony - which chord degrees it lands on, and "
         + "what the tension proportion means for the writing.\n"
         + "- Note anything a musician would find unusual or contradictory in the data.\n"
-        + "- Two or three paragraphs.\n"
-        + "\n"
-        + "Rules you must not break, in BOTH parts:\n"
-        + "- Use ONLY the measurements provided. Never invent a statistic, a section, a lyric, a "
-        + "genre presented as fact, an artist, or a song title.\n"
-        + "- If something is not in the data, do not mention it.\n"
-        + "- Do not list the measurements back. Say what they mean.\n"
-        + "- Be confident. Do not hedge about data you were given.\n"
-        + "- Plain prose only. No headings, no bullet points, no markdown, no part labels.";
+        + "- Two or three paragraphs.";
 
-    /// <summary>
-    /// Splits a raw interpretation into its plain-English and theory halves at the first delimiter
-    /// line.
-    ///
-    /// <para>Matching is deliberately tolerant rather than exact. A model asked to reproduce a
-    /// literal token sometimes mangles it — gemma4:26b emitted <c>===FOR MUSICIating===</c>, having
-    /// written both halves perfectly — and an exact match would have thrown the entire theory
-    /// section into the plain summary, delimiter and all, in front of the reader. So a line counts
-    /// as the delimiter when its letters begin "FOR MUSIC", provided it is punctuated or short
-    /// enough to be a marker rather than a sentence that happens to open "For musicians, ...".</para>
-    ///
-    /// <para>A response with no delimiter at all is treated as a single plain-English summary and the
-    /// theory half comes back null; the UI then omits that section. Everything after the first
-    /// delimiter is the theory half, so a repeated marker cannot fragment the output.</para>
-    /// </summary>
-    public static (string Plain, string? Theory) Split(string raw)
-    {
-        var lines = raw.Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            if (!IsDelimiterLine(lines[i]))
-            {
-                continue;
-            }
-
-            var plain = string.Join("\n", lines[..i]).Trim();
-            var theory = string.Join("\n", lines[(i + 1)..]).Trim();
-
-            // A delimiter with nothing on one side of it is not two summaries.
-            return (plain.Length == 0 ? theory : plain,
-                plain.Length == 0 || theory.Length == 0 ? null : theory);
-        }
-
-        return (raw.Trim(), null);
-    }
-
-    /// <summary>Longest a delimiter line can be before it is more plausibly a sentence.</summary>
-    private const int MaxDelimiterLength = 40;
-
-    /// <summary>Rule characters a model might use to draw a separator on its own line.</summary>
-    private static readonly char[] RuleCharacters = ['=', '-', '_', '*', '#'];
-
-    private static bool IsDelimiterLine(string line)
-    {
-        var trimmed = line.Trim();
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        // A line of nothing but rule characters is a separator and cannot be anything else — the
-        // prompt forbids markdown, so no horizontal rule belongs in the prose. gpt-5.4-nano wrote a
-        // bare "===" where the full marker was asked for, having produced both halves correctly;
-        // without this the entire theory section, delimiter included, reached the reader as one blob.
-        if (trimmed.Length >= 3 && trimmed.All(character => RuleCharacters.Contains(character)))
-        {
-            return true;
-        }
-
-        var letters = string.Concat(trimmed.Where(char.IsLetter)).ToUpperInvariant();
-        if (!letters.StartsWith("FORMUSIC", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        // Either it is decorated like a marker, or it is too short to be prose. Both guards exist so
-        // a theory paragraph opening "For musicians the notable feature is ..." is never eaten.
-        return trimmed.Contains('=', StringComparison.Ordinal)
-            || trimmed.Length <= MaxDelimiterLength;
-    }
+    /// <summary>The whole request for a summary of <paramref name="stats"/>: the statistics, then the task.</summary>
+    public static ChatPrompt For(SongStats stats)
+        => new(System, [new ChatMessage("user", $"{User(stats)}\n{Task}")], Schema);
 
     /// <summary>The measured facts, one per line. Deliberately terse — this is data, not prose.</summary>
     public static string User(SongStats stats)

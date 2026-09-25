@@ -219,7 +219,7 @@
 
     private string PrimaryHeadline => Result.PrimaryMode is null
         ? $"{Result.TonicName} · mode unclear"
-        : $"{Result.TonicName} {Result.PrimaryMode}";
+        : $"{Result.TonicName} {ScaleModes.DisplayName(Result.PrimaryMode.ToString())}";
 
     /// <summary>Per planned stage, the executor that last ran it, else the one that was planned.</summary>
     private List<(ExecutionTier Tier, string Executor)> Executors => [.. Status.Plan.Select(stage =>

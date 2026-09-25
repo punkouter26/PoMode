@@ -2,9 +2,13 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.ServerSentEvents;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
+using PoMode.Shared.Serialization;
 
 namespace PoMode.Client.Services;
 
@@ -59,37 +63,58 @@ public sealed class AnalysisClient(HttpClient http)
         => http.GetFromJsonAsync<List<InterpreterOptionDto>>("api/analysis/interpreters");
 
     /// <summary>
-    /// A written interpretation of the statistics. <paramref name="interpreter"/> names one
-    /// explicitly — the only way to reach a paid cloud model; omitting it takes the free default.
-    /// Returns null when the job has no result yet rather than throwing, so a caller racing the
-    /// pipeline degrades to "not ready" instead of an error toast.
+    /// The written summary of the statistics, streamed as it is written. <paramref name="interpreter"/>
+    /// names one explicitly; omitting it takes the server's default. The last event carries the
+    /// finished, checked summary.
     /// </summary>
-    public async Task<SongInterpretationDto?> GetInterpretationAsync(string jobId, string? interpreter = null)
-    {
-        var url = $"api/analysis/{jobId}/interpretation"
-            + (string.IsNullOrWhiteSpace(interpreter) ? "" : $"?interpreter={Uri.EscapeDataString(interpreter)}");
-        var response = await http.GetAsync(url);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<SongInterpretationDto>()
-            : null;
-    }
+    public IAsyncEnumerable<InterpretationEvent> StreamInterpretationAsync(
+        string jobId, string? interpreter, CancellationToken ct = default)
+        => StreamAsync(new HttpRequestMessage(HttpMethod.Get, $"api/analysis/{jobId}/interpretation"
+            + (string.IsNullOrWhiteSpace(interpreter) ? "" : $"?interpreter={Uri.EscapeDataString(interpreter)}")), ct);
 
     /// <summary>
-    /// Asks a follow-up about the same measurements. <paramref name="history"/> is the conversation
-    /// so far — the server keeps none, so the client is what makes it a conversation at all.
-    ///
-    /// <para>Returns null when the server refused (no analysis yet, or the per-minute limit on model
-    /// calls was reached), so a caller degrades to a message rather than an exception.</para>
+    /// Asks a follow-up about the same measurements, streamed like the summary.
+    /// <paramref name="history"/> is the conversation so far — the server keeps none, so the client is
+    /// what makes it a conversation at all.
     /// </summary>
-    public async Task<SongAnswerDto?> AskAboutSongAsync(
-        string jobId, string question, IReadOnlyList<InterpretationTurn> history, string? interpreter = null)
+    public IAsyncEnumerable<InterpretationEvent> StreamAnswerAsync(
+        string jobId, string question, IReadOnlyList<InterpretationTurn> history, string? interpreter,
+        CancellationToken ct = default)
+        => StreamAsync(new HttpRequestMessage(HttpMethod.Post, $"api/analysis/{jobId}/interpretation/ask")
+        {
+            Content = JsonContent.Create(new SongQuestionRequest(question, history, interpreter),
+                PoModeJsonContext.Default.SongQuestionRequest),
+        }, ct);
+
+    /// <summary>
+    /// Reads server-sent events as they arrive. Response streaming has to be switched on per request
+    /// in the browser, or the fetch buffers the whole body and the words arrive all at once.
+    /// </summary>
+    private async IAsyncEnumerable<InterpretationEvent> StreamAsync(
+        HttpRequestMessage request, [EnumeratorCancellation] CancellationToken ct)
     {
-        var response = await http.PostAsJsonAsync(
-            $"api/analysis/{jobId}/interpretation/ask",
-            new SongQuestionRequest(question, history, interpreter));
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<SongAnswerDto>()
-            : null;
+        using var _ = request;
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        request.SetBrowserResponseStreamingEnabled(true);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(response.StatusCode switch
+            {
+                HttpStatusCode.NotFound => "the analysis for this job is no longer available.",
+                HttpStatusCode.TooManyRequests => "that is more requests than the server takes in a minute. Wait a moment and try again.",
+                var status => $"the server answered {(int)status}.",
+            });
+        }
+
+        await using var body = await response.Content.ReadAsStreamAsync(ct);
+        await foreach (var item in SseParser.Create(body).EnumerateAsync(ct))
+        {
+            if (JsonSerializer.Deserialize(item.Data, PoModeJsonContext.Default.InterpretationEvent) is { } parsed)
+            {
+                yield return parsed;
+            }
+        }
     }
 
     public Task<DiagnosticsReport?> GetDiagnosticsAsync()

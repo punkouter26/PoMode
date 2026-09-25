@@ -55,7 +55,7 @@ else
                     }
                     else
                     {
-                        <text>Close: @string.Join(" · ", Selected.Alternatives.Select(a => $"{a.Mode} {a.Confidence:P0}"))</text>
+                        <text>Close: @string.Join(" · ", Selected.Alternatives.Select(a => $"{ScaleModes.DisplayName(a.Mode.ToString())} {a.Confidence:P0}"))</text>
                     }
                 </p>
             }

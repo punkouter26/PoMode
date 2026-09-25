@@ -35,6 +35,7 @@ public static class ExecutorNames
     private static readonly Dictionary<string, string> Names = new()
     {
         ["OnnxStemSeparator"] = "HTDemucs",
+        ["ClientDelegatedStemSeparator"] = "UVR MDX-Net, in your browser",
         ["FakeStemSeparator"] = "Placeholder separation",
         ["SkippedDryVocal"] = "Skipped (solo voice)",
         ["RmvpePitchTracker"] = "RMVPE",
@@ -42,6 +43,7 @@ public static class ExecutorNames
         ["ClientDelegatedPitchTracker"] = "Basic Pitch (your browser)",
         ["YinPitchTracker"] = "YIN",
         ["FakePitchTracker"] = "Placeholder melody",
+        ["ChordMiniChordRecognizer"] = "ChordMini",
         ["ChromaChordRecognizer"] = "Chroma matching",
         ["ViterbiChordRecognizer"] = "Viterbi decoding",
         ["FakeChordRecognizer"] = "Placeholder chords",
@@ -52,7 +54,34 @@ public static class ExecutorNames
         ["ModalAnalysisEngine"] = "Modal analysis",
         ["OllamaSongInterpreter"] = "Ollama",
         ["TemplateSongInterpreter"] = "Built-in writer",
+        ["BrowserSongInterpreter"] = "Browser's built-in model",
+    };
+
+    /// <summary>
+    /// 0–10 for the pickers, so the best choice reads at a glance. Taken from test-reports: pitch mean
+    /// F1 (RMVPE 0.94, Basic Pitch 0.65; YIN is perfect on clean tones but weakest on a real mix),
+    /// chord frame accuracy (ChordMini 99–100%, Chroma 40–100%, Viterbi 0–75%), MDX-Net's 0.935
+    /// correlation with HTDemucs, Ollama 5/5 interpreter tasks. The browser model is unmeasured.
+    /// </summary>
+    private static readonly Dictionary<string, int> Scores = new()
+    {
+        ["OnnxStemSeparator"] = 9,
+        ["ClientDelegatedStemSeparator"] = 8,
+        ["RmvpePitchTracker"] = 9,
+        ["OnnxPitchTracker"] = 6,
+        ["ClientDelegatedPitchTracker"] = 6,
+        ["YinPitchTracker"] = 4,
+        ["ChordMiniChordRecognizer"] = 9,
+        ["ChromaChordRecognizer"] = 6,
+        ["ViterbiChordRecognizer"] = 3,
+        ["OllamaSongInterpreter"] = 9,
+        ["BrowserSongInterpreter"] = 6,
+        ["TemplateSongInterpreter"] = 4,
     };
 
     public static string Display(string name) => Names.GetValueOrDefault(name, name);
+
+    /// <summary>The display name with its score, "RMVPE · 9/10", for dropdown rows.</summary>
+    public static string Rated(string name)
+        => Scores.TryGetValue(name, out var score) ? $"{Display(name)} · {score}/10" : Display(name);
 }

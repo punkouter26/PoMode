@@ -263,9 +263,7 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
         return new VoiceFitDto(mode, parentKey, explanation);
     }
 
-    private static string ModeName(ScaleMode mode) => ModeName(mode.ToString());
+    private static string ModeName(ScaleMode mode) => ScaleModes.DisplayName(mode.ToString());
 
-    /// <summary>"MinorPentatonic" as a reader would write it. The analyzer stamps the enum name.</summary>
-    private static string ModeName(string mode)
-        => string.Concat(mode.Select((c, i) => i > 0 && char.IsUpper(c) ? $" {c}" : $"{c}"));
+    private static string ModeName(string mode) => ScaleModes.DisplayName(mode);
 }

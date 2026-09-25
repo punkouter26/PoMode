@@ -7,9 +7,10 @@
 // records while the page is playing a backing track out of the speakers.
 // What they had no business duplicating was this header, which they each carried a copy of.
 
-/// Encodes `chunks` (any iterable of Float32Array) totalling `frameCount` samples at `sampleRate`.
-export function encodeWav(chunks, frameCount, sampleRate) {
-    const dataBytes = frameCount * 2;
+/// Encodes `chunks` (any iterable of Float32Array) totalling `frameCount` frames at `sampleRate`,
+/// samples interleaved when `channels` is more than one (the browser separator's stereo vocal stem).
+export function encodeWav(chunks, frameCount, sampleRate, channels = 1) {
+    const dataBytes = frameCount * channels * 2;
     const view = new DataView(new ArrayBuffer(44 + dataBytes));
     const writeText = (offset, text) => {
         for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
@@ -21,10 +22,10 @@ export function encodeWav(chunks, frameCount, sampleRate) {
     writeText(12, 'fmt ');
     view.setUint32(16, 16, true);             // fmt chunk size
     view.setUint16(20, 1, true);              // PCM, uncompressed
-    view.setUint16(22, 1, true);              // mono
+    view.setUint16(22, channels, true);
     view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true); // byte rate
-    view.setUint16(32, 2, true);              // block align
+    view.setUint32(28, sampleRate * channels * 2, true); // byte rate
+    view.setUint16(32, channels * 2, true);              // block align
     view.setUint16(34, 16, true);             // bits per sample
     writeText(36, 'data');
     view.setUint32(40, dataBytes, true);

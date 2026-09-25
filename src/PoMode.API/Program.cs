@@ -63,6 +63,7 @@ builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<AnalysisIntake>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
+builder.Services.AddSingleton<IStemSeparator, ClientDelegatedStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
 // RMVPE and Basic Pitch share a rank (both local models), so registration order decides the default:
 // RMVPE first, on the accuracy numbers in CLAUDE.md. Basic Pitch still transcribes the backing stem.
@@ -72,6 +73,9 @@ builder.Services.AddSingleton<IPitchTracker>(sp => sp.GetRequiredService<OnnxPit
 builder.Services.AddSingleton<IPitchTracker, ClientDelegatedPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker, YinPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
+// ChordMini before Chroma so it wins their shared local rank, on the numbers: 99% vs 40% of frames
+// on the demo vamp, a tie on the plain triad pad (test-reports/model-accuracy.html).
+builder.Services.AddSingleton<IChordRecognizer, ChordMiniChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, ViterbiChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
@@ -85,7 +89,8 @@ builder.Services.AddSingleton<HumTakeHistory>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
-builder.Services.AddSingleton<ClientWorkRegistry>();
+builder.Services.AddSingleton<ClientWorkRegistry<IReadOnlyList<PoMode.Shared.Analysis.NoteEvent>>>();
+builder.Services.AddSingleton<ClientWorkRegistry<ClientStems>>();
 builder.Services.AddSingleton<ExecutionPlanner>();
 builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 // The notice for a closed tab: Web Push to the job's owner when it finishes. Off unless a VAPID pair

@@ -26,8 +26,9 @@ public sealed class ViterbiChordRecognizer : IChordRecognizer
         // Same beat-grid snapping as the default recognizer; the Viterbi path is already smooth,
         // so the segmenter's median window has little left to do and is kept at its default only
         // for consistency between the two recognizers' outputs.
-        var grid = TempoEstimator.EstimateGrid(buffer);
-        IReadOnlyList<ChordSpan> spans = ChordSegmenter.Segment(frames, chromaGram.FramesPerSecond, grid);
+        var grid = context.Beats is null ? TempoEstimator.EstimateGrid(buffer) : null;
+        IReadOnlyList<ChordSpan> spans = ChordSegmenter.Segment(
+            frames, chromaGram.FramesPerSecond, grid, beats: context.Beats);
         return Task.FromResult(spans);
     }
 }

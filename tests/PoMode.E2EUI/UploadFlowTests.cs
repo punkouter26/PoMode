@@ -32,7 +32,7 @@ public class UploadFlowTests(AppFixture app)
             // (ChromaChordRecognizer) in this no-model test host, and the uploaded fixture is
             // silence — so zero notes is the true output, not a regression.
             // (Before the classic-DSP fallbacks existed, FakePitchTracker's canned 8 notes showed here.)
-            await Assertions.Expect(page.GetByText("0 notes")).ToBeVisibleAsync(visible);
+            await Assertions.Expect(page.GetByText("0 notes", new() { Exact = true })).ToBeVisibleAsync(visible);
             // Separating still lands on FakeStemSeparator here, because AppFixture deliberately
             // sets Models:AutoDownload=false and isolates Models:RootPath so these browser tests
             // stay fast, deterministic, and network-free (see AppFixture's comment). With one

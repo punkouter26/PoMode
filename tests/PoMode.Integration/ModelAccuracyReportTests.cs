@@ -8,6 +8,9 @@ using NAudio.MediaFoundation;
 using NAudio.Wave;
 using PoMode.API.Features.BeatTracking;
 using PoMode.API.Features.ChordRecognition;
+using PoMode.API.Features.Demo;
+using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Features.ModalMelodies;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
@@ -69,7 +72,7 @@ public sealed class ModelAccuracyReportTests : IDisposable
 
     private const double BeatToleranceSec = 0.07;
 
-    private sealed record ChordRow(string Name, string Kind, int Rank,
+    private sealed record ChordRow(string Scenario, string Name, string Kind, int Rank,
         int ChordsFound, double Accuracy, long Milliseconds);
 
     // ---- Real-song section ----
@@ -170,11 +173,37 @@ public sealed class ModelAccuracyReportTests : IDisposable
         }
 
         // ---- 3. Run every free chord recognizer on the mix ----
-        var chordRows = new List<ChordRow>
+        // Two scenarios: the triad pad under a sine melody, and the demo's vamp as the server renders
+        // it — piano chords and a flute melody that leans on the chords' non-chord tones, which is
+        // what separates a recognizer that hears the harmony from one that matches the loudest notes.
+        // List order is DI order again, which breaks ties between executors of one rank.
+        var demo = DemoSong.Compose(new ModalMelodyGenerator());
+        var demoDir = Path.Combine(_dir, "demo");
+        Directory.CreateDirectory(demoDir);
+        var demoPath = Path.Combine(demoDir, "mix.wav");
+        File.WriteAllBytes(demoPath, demo.Mix);
+        var chordMini = new ChordMiniChordRecognizer(registry, NullLogger<ChordMiniChordRecognizer>.Instance);
+        var recognizers = new List<(IChordRecognizer Recognizer, string Kind)> { (chordMini, "model"), (new ChromaChordRecognizer(), "method") };
+        if (!await chordMini.IsAvailableAsync(CancellationToken.None))
         {
-            await ScoreChordsAsync(new ChromaChordRecognizer(), "method", inputPath),
-            await ScoreChordsAsync(new ViterbiChordRecognizer(), "method", inputPath),
-        };
+            recognizers.RemoveAt(0);
+        }
+        recognizers.Add((new ViterbiChordRecognizer(), "method"));
+        var sineTruth = TruthChords
+            .Select(c => new ChordSpan(c.Symbol, c.Symbol.TrimEnd('m'), c.Symbol.EndsWith('m') ? "min" : "maj", c.StartSec, c.EndSec))
+            .ToList();
+        var chordRows = new List<ChordRow>();
+        foreach (var (scenario, path, truth) in new[]
+        {
+            ("Triad pad + sine melody", inputPath, (IReadOnlyList<ChordSpan>)sineTruth),
+            ($"Demo vamp ({demo.FileName[7..^4]}), full mix", demoPath, demo.Chords),
+        })
+        {
+            foreach (var (recognizer, kind) in recognizers)
+            {
+                chordRows.Add(await ScoreChordsAsync(scenario, recognizer, kind, path, truth));
+            }
+        }
 
         // ---- 3b. Run every beat tracker on the grooves ----
         var beatTrackers = new List<(IBeatTracker Tracker, string Kind)>
@@ -192,7 +221,7 @@ public sealed class ModelAccuracyReportTests : IDisposable
         }
 
         // ---- 4. Run the same executors over a real recording (no truth: agreement, not accuracy) ----
-        var realSong = await AnalyseRealSongAsync(pitchTrackers, beatTrackers);
+        var realSong = await AnalyseRealSongAsync(pitchTrackers, beatTrackers, chordMini);
 
         // ---- 5. Deploy the HTML report ----
         var reportPath = WriteReport(inputFormat, pitchRows, chordRows, beatRows, realSong);
@@ -202,7 +231,7 @@ public sealed class ModelAccuracyReportTests : IDisposable
         Assert.True(File.Exists(reportPath));
         var yin = pitchRows.First(r => r.Name == nameof(YinPitchTracker));
         Assert.True(yin.F1 >= 0.5, $"YIN F1 was {yin.F1:0.00} on a clean sine melody");
-        Assert.All(chordRows, row =>
+        Assert.All(chordRows.Where(row => row.Scenario == chordRows[0].Scenario), row =>
             Assert.True(row.Accuracy >= 0.5, $"{row.Name} chord accuracy was {row.Accuracy:P0}"));
 
         // The default must BE the best model, not merely be ranked first. Ranking is a hand-written
@@ -226,7 +255,8 @@ public sealed class ModelAccuracyReportTests : IDisposable
                     Model: g.First().Kind == "model", Classic: classic.Contains(g.Key)))]);
         AssertDefaultIsTheWinner(
             StageNames.ChordDetecting,
-            [.. chordRows.Select(r => (r.Name, r.Rank, Score: r.Accuracy, Model: false, Classic: false))]);
+            [.. chordRows.GroupBy(r => r.Name)
+                .Select(g => (g.Key, g.First().Rank, Score: g.Average(r => r.Accuracy), Model: false, Classic: false))]);
     }
 
     /// <summary>
@@ -425,32 +455,39 @@ public sealed class ModelAccuracyReportTests : IDisposable
             notes.Count, precision, recall, f1, stopwatch.ElapsedMilliseconds);
     }
 
-    private async Task<ChordRow> ScoreChordsAsync(IChordRecognizer recognizer, string kind, string inputPath)
+    private static async Task<ChordRow> ScoreChordsAsync(
+        string scenario, IChordRecognizer recognizer, string kind, string inputPath, IReadOnlyList<ChordSpan> truth)
     {
-        var context = new StageContext("accuracy", _dir, inputPath);
+        var context = new StageContext("accuracy", Path.GetDirectoryName(inputPath)!, inputPath);
         var stopwatch = Stopwatch.StartNew();
         var spans = await recognizer.RecognizeAsync(context, CancellationToken.None);
         stopwatch.Stop();
 
-        // Frame accuracy: sample the timeline every 100 ms and compare symbols, using the app's
-        // own half-open covering-span search so the boundary convention cannot drift from it.
+        // Frame accuracy: sample the timeline every 100 ms and compare root and major/minor, using
+        // the app's own half-open covering-span search so the boundary convention cannot drift from
+        // it. Triad level, because the DSP recognizers can only name triads and a maj7 heard as its
+        // major triad is right about everything the modal analysis reads.
         var samples = 0;
         var correct = 0;
-        for (var t = 0.05; t < SongSeconds; t += 0.1)
+        for (var t = 0.05; t < truth[^1].EndSec; t += 0.1)
         {
+            if (TimelineSearch.IndexCovering(truth, t, c => c.StartSec, c => c.EndSec) is not { } truthIndex)
+            {
+                continue;
+            }
             samples++;
-            var truthIndex = TimelineSearch.IndexCovering(TruthChords, t, c => c.StartSec, c => c.EndSec);
             var predictedIndex = TimelineSearch.IndexCovering(spans, t, s => s.StartSec, s => s.EndSec);
-            var truth = TruthChords[truthIndex!.Value].Symbol;
-            var predicted = predictedIndex is null ? "N" : spans[predictedIndex.Value].Symbol;
-            if (predicted == truth)
+            if (predictedIndex is { } index && Triad(spans[index]) == Triad(truth[truthIndex]))
             {
                 correct++;
             }
         }
-        return new ChordRow(recognizer.Name, kind, ExecutionPlanner.EffectiveRank(recognizer),
-            spans.Count, correct / (double)samples, stopwatch.ElapsedMilliseconds);
+        return new ChordRow(scenario, recognizer.Name, kind, ExecutionPlanner.EffectiveRank(recognizer),
+            spans.Count, samples == 0 ? 0 : correct / (double)samples, stopwatch.ElapsedMilliseconds);
     }
+
+    private static (int Root, bool Minor) Triad(ChordSpan chord)
+        => (PitchNames.TryParseRoot(chord.Root, out var root) ? root : -1, chord.Quality.StartsWith("min", StringComparison.Ordinal));
 
     /// <summary>
     /// Runs every free executor over a real recording. Nothing here is scored against a truth —
@@ -461,7 +498,8 @@ public sealed class ModelAccuracyReportTests : IDisposable
     /// </summary>
     private async Task<RealSongReport> AnalyseRealSongAsync(
         IReadOnlyList<(IPitchTracker Tracker, string Kind, bool Available)> pitchTrackers,
-        IReadOnlyList<(IBeatTracker Tracker, string Kind)> beatTrackers)
+        IReadOnlyList<(IBeatTracker Tracker, string Kind)> beatTrackers,
+        ChordMiniChordRecognizer chordMini)
     {
         var path = RealSongPath;
         if (!File.Exists(path))
@@ -531,6 +569,12 @@ public sealed class ModelAccuracyReportTests : IDisposable
             RealChordRowFor(new ChromaChordRecognizer().Name, chromaChords, chordStopwatch.ElapsedMilliseconds),
             RealChordRowFor(new ViterbiChordRecognizer().Name, viterbiChords, viterbiStopwatch.ElapsedMilliseconds),
         };
+        if (await chordMini.IsAvailableAsync(CancellationToken.None))
+        {
+            var modelStopwatch = Stopwatch.StartNew();
+            var modelChords = await chordMini.RecognizeAsync(context, CancellationToken.None);
+            chordRows.Add(RealChordRowFor(chordMini.Name, modelChords, modelStopwatch.ElapsedMilliseconds) with { Kind = "model" });
+        }
 
         return new RealSongReport(
             Present: true,
@@ -665,17 +709,21 @@ public sealed class ModelAccuracyReportTests : IDisposable
             $"<p><strong>Mean F1 over both stems:</strong> {string.Join(" · ", means)}</p>");
 
         html.Append("<h2>Chords (ChordDetecting)</h2><table><tr>" +
-            "<th>Executor</th><th>Kind</th><th>Runs by default</th><th>Chords found</th><th>Frame accuracy</th><th>Runtime</th></tr>");
-        var bestAccuracy = chordRows.Select(r => r.Accuracy).DefaultIfEmpty(0).Max();
+            "<th>Scenario</th><th>Executor</th><th>Kind</th><th>Runs by default</th><th>Chords found</th><th>Frame accuracy</th><th>Runtime</th></tr>");
         var defaultChord = chordRows.MinBy(r => r.Rank)?.Name;
-        foreach (var row in chordRows)
+        foreach (var scenario in chordRows.GroupBy(r => r.Scenario))
         {
-            var css = row.Accuracy >= bestAccuracy && bestAccuracy > 0 ? " class=\"best\"" : "";
-            html.Append(CultureInfo.InvariantCulture,
-                $"<tr{css}><td>{row.Name}</td><td>{row.Kind}</td><td>{(row.Name == defaultChord ? "✓ default" : "")}</td><td>{row.ChordsFound}</td><td>{row.Accuracy:P0}</td><td>{row.Milliseconds} ms</td></tr>");
+            var bestAccuracy = scenario.Max(r => r.Accuracy);
+            foreach (var row in scenario)
+            {
+                var css = row.Accuracy >= bestAccuracy && bestAccuracy > 0 ? " class=\"best\"" : "";
+                html.Append(CultureInfo.InvariantCulture,
+                    $"<tr{css}><td>{row.Scenario}</td><td>{row.Name}</td><td>{row.Kind}</td><td>{(row.Name == defaultChord ? "✓ default" : "")}</td><td>{row.ChordsFound}</td><td>{row.Accuracy:P0}</td><td>{row.Milliseconds} ms</td></tr>");
+            }
         }
-        html.Append("</table><p class=\"note\">Truth: C · G · Am · F, 2s each. Accuracy is the share of " +
-            "100ms timeline samples whose predicted symbol equals the truth. Recognizers read the full mix.</p>");
+        html.Append("</table><p class=\"note\">Truth: the pad is C · G · Am · F, 2s each; the demo vamp's chords are the ones " +
+            "the server wrote. Accuracy is the share of 100ms timeline samples whose predicted root and major/minor " +
+            "match the truth. Recognizers read the full mix, melody included.</p>");
 
         // ---- Beats ----
         html.Append("<h2>Beats and bars (beat tracking)</h2><table><tr>" +

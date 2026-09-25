@@ -131,8 +131,10 @@ public class ClientDelegatedFlowTests(ClientDelegatedAppFixture app)
             }
             catch (PlaywrightException ex)
             {
+                using var probe = new HttpClient { BaseAddress = new Uri(app.BaseUrl) };
+                var stuck = await probe.GetStringAsync($"/api/analysis/{jobId}");
                 throw new Xunit.Sdk.XunitException(
-                    $"Job did not complete. Browser console:\n{string.Join("\n", console)}\n\n{ex.Message}");
+                    $"Job did not complete. Status: {stuck}\nBrowser console:\n{string.Join("\n", console)}\n\n{ex.Message}");
             }
         }
         finally
@@ -153,7 +155,7 @@ public class ClientDelegatedFlowTests(ClientDelegatedAppFixture app)
         var notes = await http.GetFromJsonAsync<NoteEvent[]>(
             $"/api/analysis/{jobId}/notes", new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.NotNull(notes);
-        Assert.NotEmpty(notes);
-        Assert.Contains(notes, n => n.MidiPitch == 69);
+        Assert.True(notes.Any(n => n.MidiPitch == 69),
+            $"No A4 in {notes.Length} notes. Browser console:{Environment.NewLine}{string.Join(Environment.NewLine, console)}");
     }
 }

@@ -17,8 +17,7 @@
   ],
   "shortcuts": [
     { "name": "Practice", "short_name": "Practice", "url": "/practice" },
-    { "name": "Mode Lab", "short_name": "Mode Lab", "url": "/modes" },
-    { "name": "Live", "short_name": "Live", "url": "/live" }
+    { "name": "Mode Lab", "short_name": "Mode Lab", "url": "/modes" }
   ],
   "share_target": {
     "action": "/share-target",

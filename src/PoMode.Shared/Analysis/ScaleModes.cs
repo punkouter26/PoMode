@@ -25,6 +25,10 @@ public static class ScaleModes
 
     public static IReadOnlyList<ScaleMode> All { get; } = [.. IntervalSets.Keys];
 
+    /// <summary>"MajorPentatonic" as a reader writes it. Results carry the enum name; every label shows this.</summary>
+    public static string DisplayName(string? mode)
+        => string.Concat((mode ?? "").Select((c, i) => i > 0 && char.IsUpper(c) ? $" {c}" : $"{c}"));
+
     /// <summary>Semitone offsets above the tonic, ascending, tonic (0) first.</summary>
     /// <summary>
     /// The degrees that separate a mode from its nearest neighbours, most telling first. Lives here

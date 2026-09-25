@@ -28,22 +28,9 @@ public static class WebRuntimeEndpoints
                 return TypedResults.NotFound();
             }
 
-            string path;
-            if (registry.IsDownloaded(descriptor))
-            {
-                path = Path.Combine(registry.RootPath, descriptor.FileName);
-            }
-            else if (EnvironmentDetector.IsAzureHosted())
-            {
-                // EnsureAsync refuses to download in Azure mode. Serving a file already on disk is
-                // fine (that is Tier 2's whole point there), so Azure needs the assets deployed
-                // alongside the app; when they are missing the tier is honestly absent.
-                return TypedResults.NotFound();
-            }
-            else
-            {
-                path = await registry.EnsureAsync(descriptor, ct);
-            }
+            // Downloaded on first request and SHA-256-verified, Azure included: these files run in
+            // the browser, which is Tier 2's whole point on a host that cannot run models itself.
+            var path = await registry.EnsureAsync(descriptor, ct, servedToBrowser: true);
 
             var contentType = Path.GetExtension(descriptor.FileName) switch
             {

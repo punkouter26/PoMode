@@ -104,7 +104,7 @@
                             }
                             else
                             {
-                                <span><strong>@entry.TonicName</strong> @entry.PrimaryMode</span>
+                                <span><strong>@entry.TonicName</strong> @ScaleModes.DisplayName(entry.PrimaryMode)</span>
                             }
                         </Template>
                     </RadzenDataGridColumn>
@@ -134,7 +134,7 @@
                 <div class="compare-card">
                     <div class="compare-title">@entry.FileName</div>
                     <div class="compare-facts">
-                        <span>@result.TonicName @(result.PrimaryMode?.ToString() ?? "unclear")</span>
+                        <span>@result.TonicName @(result.PrimaryMode is { } primary ? ScaleModes.DisplayName(primary.ToString()) : "unclear")</span>
                         <span>@($"{result.TempoBpm:0} BPM")</span>
                         <span>@result.Windows.Count windows</span>
                     </div>
@@ -193,7 +193,7 @@
         .Select(e => e.TonicName).OfType<string>().Distinct().OrderBy(k => k).ToList() ?? [];
 
     private List<string> ModeChoices => _entries?
-        .Select(e => e.PrimaryMode).Where(m => !string.IsNullOrEmpty(m)).Cast<string>()
+        .Where(e => !string.IsNullOrEmpty(e.PrimaryMode)).Select(e => ScaleModes.DisplayName(e.PrimaryMode))
         .Distinct().OrderBy(m => m).ToList() ?? [];
 
     /// <summary>
@@ -225,7 +225,7 @@
                 .Where(e => string.IsNullOrWhiteSpace(_search)
                     || e.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase))
                 .Where(e => _keyFilter is null || e.TonicName == _keyFilter)
-                .Where(e => _modeFilter is null || e.PrimaryMode == _modeFilter)
+                .Where(e => _modeFilter is null || ScaleModes.DisplayName(e.PrimaryMode) == _modeFilter)
                 .ToList();
             _filteredKey = key;
             return _filteredCache;

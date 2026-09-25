@@ -29,7 +29,7 @@ public sealed class ClientResultTests : IDisposable
 
     private static Task<IReadOnlyList<NoteEvent>> ParkAsync(WebApplicationFactory<Program> factory)
     {
-        var registry = factory.Services.GetRequiredService<ClientWorkRegistry>();
+        var registry = factory.Services.GetRequiredService<ClientWorkRegistry<IReadOnlyList<NoteEvent>>>();
         return registry.WaitAsync(JobId, TimeSpan.FromMinutes(5), CancellationToken.None);
     }
 

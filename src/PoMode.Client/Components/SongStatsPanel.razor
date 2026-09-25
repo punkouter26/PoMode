@@ -1,7 +1,10 @@
 @using System.Globalization
+@using System.Text.Json.Nodes
 @using PoMode.Shared.Analysis
 @using PoMode.Client.Services
 @inject AnalysisClient Client
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 @* Song statistics and the conversation about them.
 
@@ -189,26 +192,32 @@
                     }
                 </div>
 
-                @if (_interpretation is { } interpretation)
+                @* The summary turn, shown as it is written and replaced by the checked result when it lands. *@
+                @if (_interpretation is not null || (_busy && _draft.Count > 0))
                 {
+                    var plain = _interpretation?.Text ?? _draft.GetValueOrDefault(InterpretationPrompt.PlainField) ?? "";
+                    var theory = _interpretation is { } done ? done.TheoryText : _draft.GetValueOrDefault(InterpretationPrompt.TheoryField);
                     <div class="ask-turn">
                         <p class="ask-question">@SummaryStarter</p>
-                        <div class="ask-answer">
-                            <p class="interpretation-source">
-                                @($"Written by {ExecutorNames.Display(interpretation.Interpreter)}")
-                                @* Not a model, when it is not one. Saying so beats letting the prose imply one. *@
-                                <span class="interpretation-tag @(interpretation.UsedLlm ? "tag-local" : "")">
-                                    @(interpretation.UsedLlm ? "local model" : "rule-based, no model")
-                                </span>
-                            </p>
+                        <div class="ask-answer" aria-busy="@(_interpretation is null ? "true" : "false")">
+                            @if (_interpretation is { } interpretation)
+                            {
+                                <p class="interpretation-source">
+                                    @($"Written by {ExecutorNames.Display(interpretation.Interpreter)}")
+                                    @* Not a model, when it is not one. Saying so beats letting the prose imply one. *@
+                                    <span class="interpretation-tag @(interpretation.UsedLlm ? "tag-local" : "")">
+                                        @Kind(interpretation.UsedLlm, interpretation.Tier)
+                                    </span>
+                                </p>
+                            }
                             <span class="summary-label">In plain English</span>
-                            @foreach (var paragraph in Paragraphs(interpretation.Text))
+                            @foreach (var paragraph in Paragraphs(plain))
                             {
                                 <p class="interpretation-text">@paragraph</p>
                             }
                             @* Only when a second half was actually written — a heading over nothing would
                                read as a failure rather than as an absence. *@
-                            @if (interpretation.TheoryText is { } theory)
+                            @if (!string.IsNullOrWhiteSpace(theory))
                             {
                                 <span class="summary-label">For musicians</span>
                                 @foreach (var paragraph in Paragraphs(theory))
@@ -227,6 +236,14 @@
                         <p class="ask-answer @(_ungrounded.Contains(turn.Question) ? "ungrounded" : "")">
                             @turn.Answer
                         </p>
+                    </div>
+                }
+
+                @if (_asking && _pendingQuestion is { } pending)
+                {
+                    <div class="ask-turn">
+                        <p class="ask-question">@pending</p>
+                        <p class="ask-answer" aria-busy="true">@(_draft.GetValueOrDefault(QuestionPrompt.AnswerField) ?? "…")</p>
                     </div>
                 }
 
@@ -314,8 +331,16 @@
         // component instance and reused across jobs.
         if (_interpreters is null)
         {
-            _interpreters = await Client.GetInterpretersAsync();
-            _chosen = _interpreters?.FirstOrDefault(option => option.IsDefault)?.Name;
+            try
+            {
+                _interpreters = await Client.GetInterpretersAsync();
+                _chosen = _interpreters?.FirstOrDefault(option => option.IsDefault)?.Name;
+                await OfferBrowserModelAsync();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+            {
+                // Same filter as the sibling fetches: a missing chooser must not take the page down.
+            }
         }
     }
 
@@ -352,10 +377,16 @@
         _error = null;
         try
         {
-            _interpretation = await Client.GetInterpretationAsync(JobId, _chosen);
+            var result = _chosen == BrowserInterpreter && Stats is { } stats
+                ? await BrowserAsync(InterpretationPrompt.For(stats), null)
+                : null;
+            // The browser model failing or inventing a figure falls back to the server's default, as
+            // a failing Ollama falls back to the template there.
+            result ??= await ConsumeAsync(Client.StreamInterpretationAsync(JobId, ServerInterpreter));
+            _interpretation = result?.Summary;
             if (_interpretation is null)
             {
-                _error = "The analysis for this job is no longer available.";
+                _error = "No summary came back. Try again.";
             }
         }
         catch (Exception ex)
@@ -366,6 +397,150 @@
         finally
         {
             _busy = false;
+            _draft.Clear();
+        }
+    }
+
+    /// <summary>The reply being written, field by field, until the checked result replaces it.</summary>
+    private readonly Dictionary<string, string> _draft = [];
+
+    /// <summary>Shows each piece of a streamed reply as it arrives; returns the finished result.</summary>
+    private async Task<InterpretationEvent?> ConsumeAsync(IAsyncEnumerable<InterpretationEvent> events)
+    {
+        _draft.Clear();
+        await foreach (var item in events)
+        {
+            if (item.Summary is not null || item.Answer is not null)
+            {
+                return item;
+            }
+            if (item.Restart)
+            {
+                _draft.Clear();
+            }
+            else if (item.Field is { } field)
+            {
+                _draft[field] = _draft.GetValueOrDefault(field) + item.Text;
+            }
+            StateHasChanged();
+        }
+        return null;
+    }
+
+    // ---- The browser's own model ----
+    // Ranks where the planner puts a browser tier: after a real local model, before the template.
+    // The page builds the same prompt the server sends Ollama (both live in Shared) and runs the same
+    // GroundingCheck on the reply, so a figure it invents is caught here exactly as it is there.
+
+    private const string BrowserInterpreter = "BrowserSongInterpreter";
+
+    /// <summary>The Prompt API's answer: available, downloadable, downloading or unavailable.</summary>
+    private string _browserLlm = "unavailable";
+
+    private IJSObjectReference? _llmModule;
+    private DotNetObjectReference<SongStatsPanel>? _self;
+    private ReplyReader? _browserReply;
+
+    /// <summary>The server-side interpreter to ask: the one picked, unless the pick is the browser's.</summary>
+    private string? ServerInterpreter => _chosen == BrowserInterpreter ? null : _chosen;
+
+    private async Task OfferBrowserModelAsync()
+    {
+        try
+        {
+            _llmModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/browser-llm.js");
+            _browserLlm = await _llmModule.InvokeAsync<string>("availability");
+        }
+        catch (JSException)
+        {
+            return;
+        }
+        if (_interpreters is null || _browserLlm == "unavailable")
+        {
+            return;
+        }
+
+        var template = _interpreters.FindIndex(option => !option.UsesLlm);
+        _interpreters.Insert(template < 0 ? _interpreters.Count : template, new InterpreterOptionDto(
+            BrowserInterpreter, ExecutionTier.ClientDelegated, Available: true, IsDefault: false, UsesLlm: true));
+        // Ready to run and the server has no model: the browser's beats the template. One that still
+        // has to download gigabytes waits to be picked.
+        if (_browserLlm == "available" && _interpreters.FirstOrDefault(option => option.IsDefault) is { UsesLlm: false })
+        {
+            _chosen = BrowserInterpreter;
+        }
+    }
+
+    /// <summary>
+    /// Runs a prompt on the browser's own model, showing the reply as it is written. Null — and the
+    /// caller asks the server instead — when it fails, leaves a field empty, or writes a figure the
+    /// measurements do not contain.
+    /// </summary>
+    private async Task<InterpretationEvent?> BrowserAsync(ChatPrompt prompt, string? question)
+    {
+        _draft.Clear();
+        var reply = _browserReply = new ReplyReader();
+        try
+        {
+            _llmModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/browser-llm.js");
+            _self ??= DotNetObjectReference.Create(this);
+            var messages = new JsonArray([.. prompt.Messages.Select(message =>
+                (JsonNode)new JsonObject { ["role"] = message.Role, ["content"] = message.Content })]);
+            await _llmModule.InvokeVoidAsync("reply", prompt.System, messages.ToJsonString(), prompt.Schema, _self);
+        }
+        catch (JSException)
+        {
+            return null;
+        }
+        finally
+        {
+            _browserReply = null;
+        }
+
+        var written = question is null ? reply[InterpretationPrompt.PlainField] : reply[QuestionPrompt.AnswerField];
+        var theory = question is null ? reply[InterpretationPrompt.TheoryField] : null;
+        if (string.IsNullOrWhiteSpace(written)
+            || GroundingCheck.Unsupported($"{written}\n{theory}", prompt.Shown).Count > 0)
+        {
+            return null;
+        }
+
+        return question is null
+            ? new InterpretationEvent(Summary: new SongInterpretationDto(
+                BrowserInterpreter, ExecutionTier.ClientDelegated, true, written.Trim(),
+                string.IsNullOrWhiteSpace(theory) ? null : theory.Trim()))
+            : new InterpretationEvent(Answer: new SongAnswerDto(
+                question, written.Trim(), BrowserInterpreter, ExecutionTier.ClientDelegated, true,
+                Grounded: !bool.TryParse(reply[QuestionPrompt.InDataField], out var inData) || inData));
+    }
+
+    [JSInvokable]
+    public void OnBrowserChunk(string chunk)
+    {
+        if (_browserReply is null)
+        {
+            return;
+        }
+        foreach (var (field, text) in _browserReply.Push(chunk))
+        {
+            _draft[field] = _draft.GetValueOrDefault(field) + text;
+        }
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _self?.Dispose();
+        if (_llmModule is not null)
+        {
+            try
+            {
+                await _llmModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // The page is going away; nothing left to release.
+            }
         }
     }
 
@@ -381,6 +556,7 @@
     private readonly HashSet<string> _ungrounded = [];
 
     private string? _question;
+    private string? _pendingQuestion;
     private string? _askError;
     private bool _asking;
 
@@ -407,15 +583,18 @@
         _asking = true;
         _askError = null;
         _question = null;
+        _pendingQuestion = asked;
         try
         {
             // The history goes with the question because the server holds none; it is trimmed there,
             // so a long conversation costs the prompt rather than the measurements.
-            var answer = await Client.AskAboutSongAsync(JobId, asked, _conversation, _chosen);
-            if (answer is null)
+            var result = _chosen == BrowserInterpreter && Stats is { } stats
+                ? await BrowserAsync(QuestionPrompt.For(stats, _conversation, asked), asked)
+                : null;
+            result ??= await ConsumeAsync(Client.StreamAnswerAsync(JobId, asked, _conversation, ServerInterpreter));
+            if (result?.Answer is not { } answer)
             {
-                _askError = "No answer came back. If you have asked a lot of questions in the last "
-                    + "minute, wait a moment and try again.";
+                _askError = "No answer came back. Try asking again.";
                 return;
             }
 
@@ -432,6 +611,8 @@
         finally
         {
             _asking = false;
+            _pendingQuestion = null;
+            _draft.Clear();
         }
     }
 
@@ -443,11 +624,18 @@
         }
     }
 
-    private static string Label(InterpreterOptionDto option)
+    private static string Kind(bool usedLlm, ExecutionTier tier)
+        => !usedLlm ? "rule-based, no model"
+            : tier == ExecutionTier.ClientDelegated ? "model in this browser"
+            : "local model";
+
+    private string Label(InterpreterOptionDto option)
     {
         var kind = !option.UsesLlm ? "rule-based"
-            : "local model";
-        var name = ExecutorNames.Display(option.Name);
+            : option.Tier != ExecutionTier.ClientDelegated ? "local model"
+            : _browserLlm == "available" ? "in this browser"
+            : "in this browser, downloads first";
+        var name = ExecutorNames.Rated(option.Name);
         return option.Available ? $"{name} ({kind})" : $"{name} — unavailable";
     }
 

@@ -6,9 +6,9 @@ using PoMode.Shared.Analysis;
 namespace PoMode.API.Features.SongStatistics;
 
 /// <summary>
-/// Song statistics and their written interpretation. Both are derived on demand from the stored
-/// artifacts and never persisted — the same ruling as <c>/visual</c> and the chord chart: one
-/// request instead of four, and every musical decision stays server-side.
+/// Song statistics and their written interpretation, derived on demand from the stored
+/// artifacts — the same ruling as <c>/visual</c>: one request instead of four, and every musical
+/// decision stays server-side. Only the written summary is kept, because it costs a model run.
 /// </summary>
 public static class SongStatsEndpoints
 {
@@ -29,31 +29,40 @@ public static class SongStatsEndpoints
             SongInterpreterSelector selector, CancellationToken ct) =>
             TypedResults.Ok(await selector.ListAsync(ct)));
 
-        // GET, not POST: the same job and the same interpreter is the same question, so a browser
-        // reload should be cacheable rather than a second model run.
-        group.MapGet("/{jobId}/interpretation", async Task<Results<Ok<SongInterpretationDto>, NotFound>> (
-            string jobId,
-            string? interpreter,
-            JobStore store,
-            SongInterpreterSelector selector,
-            CancellationToken ct) =>
+        // GET, not POST: the same job and the same interpreter is the same question, and the
+        // selector caches the summary per job, so a reload is a file read rather than a model run.
+        // Still rate-limited: the first request for each song and interpreter does run a model.
+        group.MapGet("/{jobId}/interpretation",
+            async Task<Results<ServerSentEventsResult<InterpretationEvent>, Ok<SongInterpretationDto>, NotFound>> (
+                string jobId,
+                string? interpreter,
+                HttpContext http,
+                JobStore store,
+                SongInterpreterSelector selector,
+                CancellationToken ct) =>
         {
             var stats = await BuildAsync(jobId, store, ct);
-            return stats is null
-                ? TypedResults.NotFound()
-                : TypedResults.Ok(await selector.InterpretAsync(stats, interpreter, ct));
-        }).AddEndpointFilter<JobIdEndpointFilter>();
+            if (stats is null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            var events = selector.StreamAsync(jobId, stats, null, null, interpreter, ct);
+            return WantsStream(http)
+                ? TypedResults.ServerSentEvents(events)
+                : TypedResults.Ok((await LastAsync(events)).Summary!);
+        })
+        .AddEndpointFilter<JobIdEndpointFilter>()
+        .RequireRateLimiting(PoRateLimits.InterpretPolicy);
 
         // POST, unlike the summary above, for three reasons: the question is the request rather than
         // an address, the conversation so far rides with it, and asking the same question twice is a
         // deliberate act rather than a browser reload to be served from cache.
-        //
-        // Rate-limited because this is the one endpoint on the server that can be made to run a
-        // language model on demand, over and over, from a text box.
         group.MapPost("/{jobId}/interpretation/ask",
-            async Task<Results<Ok<SongAnswerDto>, NotFound, BadRequest<string>>> (
+            async Task<Results<ServerSentEventsResult<InterpretationEvent>, Ok<SongAnswerDto>, NotFound, BadRequest<string>>> (
                 string jobId,
                 SongQuestionRequest request,
+                HttpContext http,
                 JobStore store,
                 SongInterpreterSelector selector,
                 CancellationToken ct) =>
@@ -64,16 +73,40 @@ public static class SongStatsEndpoints
             }
 
             var stats = await BuildAsync(jobId, store, ct);
-            return stats is null
-                ? TypedResults.NotFound()
-                : TypedResults.Ok(await selector.AnswerAsync(
-                    stats, request.Question.Trim(), request.History, request.Interpreter, ct));
+            if (stats is null)
+            {
+                return TypedResults.NotFound();
+            }
+
+            var events = selector.StreamAsync(
+                jobId, stats, request.Question.Trim(), request.History, request.Interpreter, ct);
+            return WantsStream(http)
+                ? TypedResults.ServerSentEvents(events)
+                : TypedResults.Ok((await LastAsync(events)).Answer!);
         })
         .AddEndpointFilter<JobIdEndpointFilter>()
         .RequireRateLimiting(PoRateLimits.InterpretPolicy)
         .RequireAuthorization();
 
         return app;
+    }
+
+    /// <summary>
+    /// One route per operation, two representations: a page that shows the words as they are written
+    /// asks for <c>text/event-stream</c>; anything else gets the finished result as JSON, from the
+    /// same events.
+    /// </summary>
+    private static bool WantsStream(HttpContext http)
+        => http.Request.Headers.Accept.ToString().Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<InterpretationEvent> LastAsync(IAsyncEnumerable<InterpretationEvent> events)
+    {
+        InterpretationEvent? last = null;
+        await foreach (var item in events)
+        {
+            last = item;
+        }
+        return last!;
     }
 
     /// <summary>

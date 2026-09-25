@@ -56,10 +56,15 @@ public sealed class ModelRegistry(
     ///
     /// Concurrent callers for the same <see cref="ModelDescriptor.Key"/> are serialized on a per-key
     /// gate: only the first caller downloads; the rest wait for it and then no-op once the file exists.
+    ///
+    /// <para><paramref name="servedToBrowser"/> exempts the browser tier's own files from the Azure
+    /// refusal. The rule is about running models on a host that cannot, and a file the server only
+    /// hands to a browser runs there; refusing it left the hosted app with no browser tier at all.
+    /// </para>
     /// </summary>
-    public async Task<string> EnsureAsync(ModelDescriptor descriptor, CancellationToken ct)
+    public async Task<string> EnsureAsync(ModelDescriptor descriptor, CancellationToken ct, bool servedToBrowser = false)
     {
-        if (EnvironmentDetector.IsAzureHosted())
+        if (EnvironmentDetector.IsAzureHosted() && !servedToBrowser)
         {
             throw new InvalidOperationException("Local models are disabled in Azure mode.");
         }

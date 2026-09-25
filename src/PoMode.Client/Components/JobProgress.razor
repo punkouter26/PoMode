@@ -71,7 +71,8 @@
     }
     else if (Status.Stage == JobStage.AwaitingClient)
     {
-        <RadzenText class="awaiting-client-text" Text="Transcribing the vocals in your browser…" />
+        <RadzenText class="awaiting-client-text"
+                    Text="@(Status.CompletedStages.Contains(StageNames.Separating) ? "Transcribing the vocals in your browser…" : "Separating the vocals in your browser…")" />
     }
 </RadzenCard>
 

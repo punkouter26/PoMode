@@ -69,14 +69,16 @@ public sealed class AnalysisPipeline(
 
             var backingTask = Task.CompletedTask;
 
-            // Short-clip fast path: real separation costs minutes and gigabytes (local model) or
-            // money (cloud) for material where the mix alone analyzes fine. The skip fires only
-            // when the planned separator is one of those heavy kinds — placeholders and light
-            // test executors still run, so the mock banner and the fallback tests keep their
-            // meaning. Every later stage already falls back to the upload when no stems exist.
+            // Short-clip fast path: real separation costs minutes and gigabytes (local model) or a
+            // minute of the user's own machine (browser) for material where the mix alone analyzes
+            // fine. The skip fires only when the planned separator is one of those heavy kinds —
+            // placeholders and light test executors still run, so the mock banner and the fallback
+            // tests keep their meaning. Every later stage already falls back to the upload when no
+            // stems exist.
             var separationPlan = state.Plan.FirstOrDefault(p => p.Stage == StageNames.Separating);
             var heavySeparation = separationPlan is not null
-                && stemSeparators.FirstOrDefault(s => s.Name == separationPlan.Executor)?.UsesLocalModel == true;
+                && stemSeparators.FirstOrDefault(s => s.Name == separationPlan.Executor)
+                    is { UsesLocalModel: true } or { Tier: ExecutionTier.ClientDelegated };
             if (heavySeparation
                 && !state.CompletedStages.Contains(StageNames.Separating)
                 && AudioDecoder.TryReadDurationSeconds(store.InputPath(state)) is { } inputSeconds
@@ -115,10 +117,17 @@ public sealed class AnalysisPipeline(
             if (!state.CompletedStages.Contains(StageNames.ChordDetecting))
             {
                 await EnterStageAsync(state, JobStage.ChordDetecting, StageNames.ChordDetecting, ct);
+                // Beats first, so the recognizers cut chord changes on the beats a model heard
+                // rather than on each one's own single-tempo DSP estimate.
+                if (await WriteBeatGridAsync(state, context, ct) is { } beats
+                    && beats.Grid.Confidence >= Features.ChordRecognition.ChordSegmenter.MinBeatConfidence
+                    && beats.Beats.Count >= Features.ChordRecognition.ChordSegmenter.MinBeats)
+                {
+                    context.Beats = beats.Beats;
+                }
                 var chords = await RunWithFallbackAsync(state, StageNames.ChordDetecting, chordRecognizers,
                     (executor, token) => executor.RecognizeAsync(context, token), ct);
                 await store.WriteArtifactAsync(jobId, "chords.json", chords, ct);
-                await WriteBeatGridAsync(state, context, ct);
                 // The recognizer and the beat grid shared one cached decode — drop the PCM now.
                 context.ReleaseAnalysisAudio();
                 await CompleteStageAsync(state, StageNames.ChordDetecting, ct);
@@ -279,15 +288,16 @@ public sealed class AnalysisPipeline(
     }
 
     /// <summary>
-    /// Best-effort beat grid for the client metronome, the tempo map and (when the tracker hears
-    /// them) the downbeats that number the measures — written alongside chords.json. Reads the
+    /// Best-effort beat grid for the client metronome, the tempo map, the chord segmentation and
+    /// (when the tracker hears them) the downbeats that number the measures. Returns what was
+    /// written, or null when every tracker failed. Reads the
     /// instrumental stem when there is one (drums live there). Beat trackers are walked in
     /// <see cref="ExecutionPlanner.EffectiveRank"/> order and a failing one falls through to the next,
     /// ending at the always-available classic tracker; the one that answered is named in beats.json.
     /// A failure of every tracker costs the metronome, never the job, and a low-confidence grid is
     /// written as-is so the client can gate on it.
     /// </summary>
-    private async Task WriteBeatGridAsync(JobState state, StageContext context, CancellationToken ct)
+    private async Task<BeatTrackResult?> WriteBeatGridAsync(JobState state, StageContext context, CancellationToken ct)
     {
         foreach (var tracker in _beatTrackers.OrderBy(ExecutionPlanner.EffectiveRank))
         {
@@ -302,7 +312,7 @@ public sealed class AnalysisPipeline(
                 // Written alongside the grid, not instead of it: everything downstream still runs on
                 // the single tempo, and this is the honest record of what the tempo actually did.
                 await store.WriteArtifactAsync(state.JobId, "tempo-map.json", result.TempoMap, ct);
-                return;
+                return result;
             }
             catch (OperationCanceledException)
             {
@@ -314,6 +324,7 @@ public sealed class AnalysisPipeline(
                     tracker.Name, state.JobId);
             }
         }
+        return null;
     }
 
     private async Task<TResult> RunWithFallbackAsync<TExecutor, TResult>(

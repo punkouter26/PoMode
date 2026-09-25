@@ -1,7 +1,6 @@
 using System.Text;
-using PoMode.Shared.Analysis;
 
-namespace PoMode.API.Features.SongStatistics;
+namespace PoMode.Shared.Analysis;
 
 /// <summary>
 /// Builds the prompt for a follow-up question about a song, so every interpreter is asked the same
@@ -15,18 +14,23 @@ namespace PoMode.API.Features.SongStatistics;
 ///
 /// <para>The one thing this prompt adds is permission to decline. A summary can always be written
 /// from the data, but a question need not be answerable from it — "what are the lyrics about?" has no
-/// answer in a list of intervals — and a model with no way to say so will invent one. So it is given
-/// <see cref="NotInDataMarker"/> and told to use it, and the client labels an answer that carries it
-/// rather than hiding the refusal.</para>
+/// answer in a list of intervals — and a model with no way to say so will invent one. So the reply
+/// carries <see cref="InDataField"/>, and the client labels an answer that sets it false rather than
+/// hiding the refusal.</para>
 /// </summary>
 public static class QuestionPrompt
 {
+    public const string InDataField = "inData";
+    public const string AnswerField = "answer";
+
     /// <summary>
-    /// The line an interpreter opens with when the measurements do not cover the question. Distinctive
-    /// enough that ordinary prose cannot produce it by accident, matching the summary delimiter's
-    /// design.
+    /// The reply's shape. <c>inData</c> comes first so a model commits to whether the data covers the
+    /// question before it starts answering, rather than deciding halfway through a paragraph. It
+    /// replaced a "NOT IN THE DATA" first line, which models decorated ("**NOT IN THE DATA**") often
+    /// enough to need a tolerant matcher of its own.
     /// </summary>
-    public const string NotInDataMarker = "NOT IN THE DATA";
+    public const string Schema =
+        """{"type":"object","properties":{"inData":{"type":"boolean"},"answer":{"type":"string"}},"required":["inData","answer"]}""";
 
     /// <summary>
     /// Exchanges carried into the prompt, newest kept. A local model's context is finite and the
@@ -39,21 +43,26 @@ public static class QuestionPrompt
     /// because a user who pastes a paragraph still deserves an answer to the first part of it.</summary>
     public const int MaxQuestionLength = 500;
 
-    public const string System =
-        "You are answering one question about a single song, using measurements taken from its audio.\n"
-        + "\n"
-        + "- Answer ONLY from the measurements you are given, and from what general music theory says "
-        + "about those measurements.\n"
-        + "- You may explain, compare and reason about the figures. You may not add new ones.\n"
-        + "- Never name an artist, a song title, a genre-as-fact, a section, or a lyric. You were not "
-        + "given any of those and cannot know them.\n"
-        + "- If the measurements do not contain what was asked, reply with a first line of exactly "
-        + NotInDataMarker + " and then one sentence saying what would be needed to answer it. Do this "
-        + "rather than guessing.\n"
+    /// <summary>
+    /// What a question asks for, after the statistics and before the conversation. The rules every
+    /// request shares are <see cref="InterpretationPrompt.System"/>, sent as the system message here
+    /// too, so a question after the summary reuses its processed prefix.
+    /// </summary>
+    public const string Task =
+        "Answer one question about this song.\n"
+        + "- You may explain, compare and reason about the figures, but not add new ones.\n"
+        + "- Reply with a JSON object: \"inData\" is true when the measurements answer the question, and "
+        + "\"answer\" is your answer.\n"
+        + "- If the measurements do not contain what was asked, set inData to false and make the answer "
+        + "one sentence saying what would be needed to answer it. Do this rather than guessing.\n"
         + "- Match the questioner's level. If they use theory terms, use them back; if they do not, "
         + "explain in ordinary words.\n"
         + "- Be direct. Lead with the answer, then the evidence for it.\n"
-        + "- One or two short paragraphs. Plain prose — no headings, no bullet points, no markdown.";
+        + "- One or two short paragraphs.";
+
+    /// <summary>The whole request for one question.</summary>
+    public static ChatPrompt For(SongStats stats, IReadOnlyList<InterpretationTurn>? history, string question)
+        => new(InterpretationPrompt.System, [new ChatMessage("user", User(stats, history, question))], Schema);
 
     /// <summary>
     /// The measurements, then the conversation so far, then the question.
@@ -68,6 +77,7 @@ public static class QuestionPrompt
     {
         var text = new StringBuilder();
         text.AppendLine(InterpretationPrompt.User(stats));
+        text.AppendLine(Task);
 
         var recent = Recent(history);
         if (recent.Count > 0)
@@ -100,50 +110,6 @@ public static class QuestionPrompt
         return usable.Count <= MaxHistoryTurns
             ? usable
             : usable[^MaxHistoryTurns..];
-    }
-
-    /// <summary>
-    /// Separates a raw answer from whether it was answerable at all, stripping the marker so the
-    /// reader never sees the protocol.
-    ///
-    /// <para>Matching is tolerant for the same reason the summary delimiter's is — a model asked to
-    /// reproduce a literal token sometimes decorates or rephrases it, and a strict match would leave
-    /// "**NOT IN THE DATA**" sitting at the top of the answer while also reporting it as grounded.
-    /// </para>
-    /// </summary>
-    public static (string Answer, bool Grounded) Split(string raw)
-    {
-        var trimmed = raw.Trim();
-        if (trimmed.Length == 0)
-        {
-            return ("", true);
-        }
-
-        var lines = trimmed.Split('\n');
-        if (!IsMarkerLine(lines[0]))
-        {
-            return (trimmed, true);
-        }
-
-        var rest = string.Join("\n", lines[1..]).Trim();
-        return (rest.Length == 0
-            // The marker alone is a refusal with no reason attached; give the reader the reason.
-            ? "The measurements taken from this song do not cover that."
-            : rest, false);
-    }
-
-    /// <summary>Long enough to be prose rather than a marker that has been decorated.</summary>
-    private const int MaxMarkerLength = 60;
-
-    private static bool IsMarkerLine(string line)
-    {
-        var trimmed = line.Trim();
-        if (trimmed.Length == 0 || trimmed.Length > MaxMarkerLength)
-        {
-            return false;
-        }
-        var letters = string.Concat(trimmed.Where(char.IsLetter)).ToUpperInvariant();
-        return letters.StartsWith("NOTINTHEDATA", StringComparison.Ordinal);
     }
 
     /// <summary>

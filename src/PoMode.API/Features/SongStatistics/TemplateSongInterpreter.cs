@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json.Nodes;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.SongStatistics;
@@ -25,8 +27,33 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
 
     public Task<bool> IsAvailableAsync(CancellationToken ct) => Task.FromResult(true);
 
-    public Task<string> InterpretAsync(SongStats stats, CancellationToken ct)
-        => Task.FromResult(Write(stats));
+    /// <summary>
+    /// The whole reply in one piece, in the schema's JSON like every other interpreter's, so the
+    /// selector reads it the same way. Nothing to stream: it is written in microseconds.
+    /// </summary>
+    public async IAsyncEnumerable<string> ReplyAsync(
+        InterpretationRequest request, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        if (request.Question is null)
+        {
+            var (plain, theory) = Write(request.Stats);
+            yield return new JsonObject
+            {
+                [InterpretationPrompt.PlainField] = plain,
+                [InterpretationPrompt.TheoryField] = theory,
+            }.ToJsonString();
+        }
+        else
+        {
+            var (answer, inData) = Answer(request.Stats, request.Question);
+            yield return new JsonObject
+            {
+                [QuestionPrompt.InDataField] = inData,
+                [QuestionPrompt.AnswerField] = answer,
+            }.ToJsonString();
+        }
+    }
 
     /// <summary>
     /// Answers a follow-up by routing it to the measurement it is about.
@@ -38,15 +65,11 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
     /// actually ask an analysis are about its mode, its tempo, its range, its rhythm, its harmony and
     /// its hardest interval, and every one of those is a number this app already measured.</para>
     ///
-    /// <para>Anything outside that set gets <see cref="QuestionPrompt.NotInDataMarker"/> rather than a
+    /// <para>Anything outside that set is declined (<c>inData</c> false) rather than given a
     /// vague paragraph. Declining is the honest answer and it is also the useful one: it tells the
     /// reader the deterministic writer is answering, and that installing a local model would get them
     /// further.</para>
     /// </summary>
-    public Task<string> AnswerAsync(
-        SongStats stats, IReadOnlyList<InterpretationTurn>? history, string question, CancellationToken ct)
-        => Task.FromResult(Answer(stats, question));
-
     /// <summary>Topic keywords, most specific first — "chord tone" must beat bare "chord".</summary>
     private static readonly (string[] Words, Func<SongStats, string?> Write)[] Topics =
     [
@@ -61,7 +84,7 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
         (["phrase", "breath", "section", "line length"], PhraseAnswer),
     ];
 
-    private static string Answer(SongStats stats, string question)
+    private static (string Answer, bool InData) Answer(SongStats stats, string question)
     {
         var asked = question.ToLowerInvariant();
         foreach (var (words, write) in Topics)
@@ -69,14 +92,14 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
             if (words.Any(word => asked.Contains(word, StringComparison.Ordinal))
                 && write(stats) is { Length: > 0 } answer)
             {
-                return answer;
+                return (answer, true);
             }
         }
 
-        return QuestionPrompt.NotInDataMarker + "\nThis answer was written without a language model, so "
+        return ("This answer was written without a language model, so "
             + "it can only report the measurements directly: the mode and the evidence for it, tempo, "
             + "vocal range, rhythm, harmony, melodic motion and phrasing. Install a local model with "
-            + "'ollama pull llama3.2' to ask anything else.";
+            + "'ollama pull gemma3:4b' to ask anything else.", false);
     }
 
     /// <summary>
@@ -311,11 +334,11 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
             .ToString();
     }
 
-    private static string Write(SongStats stats)
+    private static (string Plain, string? Theory) Write(SongStats stats)
     {
         if (stats.MelodyNoteCount == 0)
         {
-            return stats.Fingerprint;
+            return (stats.Fingerprint, null);
         }
 
         var text = new StringBuilder();
@@ -324,16 +347,7 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
         text.Append(SingerParagraph(stats));
         text.Append("\n\n");
         text.Append(CharacterParagraph(stats));
-
-        // The same delimiter the LLM prompt asks for, so the selector splits every interpreter's
-        // output the same way and the UI never has to know which one wrote it.
-        text.Append("\n\n");
-        text.Append(InterpretationPrompt.Delimiter);
-        text.Append("\n\n");
-        text.Append(ModalParagraph(stats));
-        text.Append("\n\n");
-        text.Append(HarmonyParagraph(stats));
-        return text.ToString();
+        return (text.ToString(), $"{ModalParagraph(stats)}\n\n{HarmonyParagraph(stats)}");
     }
 
     /// <summary>

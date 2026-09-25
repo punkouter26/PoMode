@@ -87,7 +87,8 @@ function applyGains(state, immediate) {
         if (!node) {
             continue;
         }
-        const target = targets[stem];
+        // A synth solo layer mutes the stems; every re-apply (play, seek, mode change) must keep that.
+        const target = state.stemsMuted ? 0 : targets[stem];
         if (immediate) {
             node.gain.value = target;
             continue;
@@ -435,6 +436,9 @@ function tick(state) {
         if (seconds >= state.duration) {
             pauseInternal(state, state.duration);
             report(state, 'ended');
+            // Blazor's Play/Pause label only hears transport changes it asked for; without this it
+            // still says "Pause" and the first click after the end does nothing.
+            state.dotNet?.invokeMethodAsync('OnTransportKey', false);
             dropNotes(state.canvas); // end-of-song easter egg; play/seek clears it
             return;
         }
@@ -501,7 +505,7 @@ function onKeyDown(state, event) {
     // A focused button/link must keep its own Space activation — hijacking it would make the
     // whole page keyboard-hostile. The shortcut still works from the page body and the canvas.
     if (target && typeof target.closest === 'function'
-        && target.closest('button, [role="button"], a, select, [tabindex]')) {
+        && target.closest('button, [role="button"], a, select, summary, [tabindex]')) {
         return;
     }
     if (event.code === 'Space') {
@@ -522,24 +526,6 @@ function setModeInternal(state, mode) {
 
 /// Silences/un-silences the stem buses without touching the synth and metronome buses — so
 /// "Mute stems" + "Synth vocal" is the equivalent of "play only the MIDI".
-function applyStemMuting(state, muted) {
-    if (!state.context) {
-        return;
-    }
-    const now = state.context.currentTime;
-    for (const stem of STEMS) {
-        const node = state.gains[stem];
-        if (!node) {
-            continue;
-        }
-        const mode = state.mode;
-        const target = muted ? 0 : (MODE_GAINS[mode]?.[stem] ?? 0);
-        node.gain.cancelScheduledValues(now);
-        node.gain.setValueAtTime(node.gain.value, now);
-        node.gain.linearRampToValueAtTime(target, now + RAMP_SECONDS);
-    }
-}
-
 async function togglePlayback(state) {
     if (state.duration === 0) {
         return;
@@ -891,7 +877,9 @@ export function setStemsMuted(root, muted) {
         return;
     }
     state.stemsMuted = muted;
-    applyStemMuting(state, muted);
+    if (state.context) {
+        applyGains(state, false);
+    }
     state.root.dataset.mixerStemsMuted = muted ? 'muted' : 'audible';
 }
 

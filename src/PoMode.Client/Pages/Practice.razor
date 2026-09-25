@@ -365,7 +365,15 @@ else if (_loadError is { } loadError)
         await StopEverythingAsync();
         DiscardTakeState();
 
-        _melody = await Analysis.GenerateModalMelodyAsync(CurrentRequest());
+        var request = CurrentRequest();
+        var melody = await Analysis.GenerateModalMelodyAsync(request);
+        if (request != CurrentRequest())
+        {
+            // A slider drag fires one reload per step; only the latest may set the chords, or a
+            // take could be filed against a tempo the singer never heard.
+            return;
+        }
+        _melody = melody;
         if (_melody is null)
         {
             _loadError = "Could not load a chord progression.";

@@ -15,7 +15,7 @@ namespace PoMode.API.Features.PitchTracking;
 /// crashes or walks away can never wedge a job.</para>
 /// </summary>
 public sealed class ClientDelegatedPitchTracker(
-    ClientWorkRegistry registry,
+    ClientWorkRegistry<IReadOnlyList<NoteEvent>> registry,
     JobStore store,
     IAnalysisNotifier notifier,
     IConfiguration configuration,
@@ -41,7 +41,7 @@ public sealed class ClientDelegatedPitchTracker(
 
         // Register before announcing, so a very fast browser cannot post before anyone is waiting.
         var wait = registry.WaitAsync(context.JobId, timeout, ct);
-        await AnnounceAsync(context.JobId, ct);
+        await AnnounceAsync(store, notifier, context.JobId, ct);
 
         logger.LogInformation("Job {JobId} is awaiting browser pitch tracking.", context.JobId);
         var notes = await wait;
@@ -53,8 +53,10 @@ public sealed class ClientDelegatedPitchTracker(
     /// <summary>
     /// Publishes <see cref="JobStage.AwaitingClient"/> so the existing JobStatusChanged event tells the
     /// subscribed browser to start work (§13.5 collapsed §4's five named hub events into this one).
+    /// Shared with the browser separator: the browser tells the two apart by whether separation has
+    /// completed.
     /// </summary>
-    private async Task AnnounceAsync(string jobId, CancellationToken ct)
+    internal static async Task AnnounceAsync(JobStore store, IAnalysisNotifier notifier, string jobId, CancellationToken ct)
     {
         var state = await store.LoadAsync(jobId, ct);
         if (state is null)

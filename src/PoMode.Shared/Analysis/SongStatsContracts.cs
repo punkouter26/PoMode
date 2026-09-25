@@ -238,3 +238,16 @@ public sealed record SongAnswerDto(
     ExecutionTier Tier,
     bool UsedLlm,
     bool Grounded);
+
+/// <summary>
+/// One server-sent event while an interpretation or an answer is written: a piece of one reply
+/// field's text as the model writes it; a restart, meaning what streamed so far was discarded (the
+/// model failed, or wrote a figure the measurements do not contain, and the next attempt begins); or
+/// the finished, checked result, which is always the last event.
+/// </summary>
+public sealed record InterpretationEvent(
+    string? Field = null,
+    string? Text = null,
+    bool Restart = false,
+    SongInterpretationDto? Summary = null,
+    SongAnswerDto? Answer = null);

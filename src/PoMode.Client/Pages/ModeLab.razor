@@ -383,7 +383,13 @@
 
     private async Task RefreshMelodyAsync()
     {
-        _melody = await Analysis.GenerateModalMelodyAsync(CurrentRequest());
+        var request = CurrentRequest();
+        var melody = await Analysis.GenerateModalMelodyAsync(request);
+        if (request != CurrentRequest())
+        {
+            return; // superseded by a later slider step; its own refresh will land
+        }
+        _melody = melody;
         if (_melody is not null)
         {
             _totalDurationSec = _melody.MelodyNotes.Count > 0

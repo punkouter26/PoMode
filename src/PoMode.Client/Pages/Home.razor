@@ -140,6 +140,14 @@
 @if (_status is not null && (_status.Stage != JobStage.Complete || _visual is null))
 {
     <JobProgress Status="_status" OnCancel="@CancelJobAsync" />
+    @if (_status.Stage is JobStage.Failed or JobStage.Cancelled)
+    {
+        @* The intake card only shows with no job; without this a failed or cancelled job is a dead end. *@
+        <div class="analyze-another">
+            <RadzenButton Text="Analyze another file" Icon="upload_file" ButtonStyle="ButtonStyle.Primary"
+                          Click="@ResetForNewUpload" />
+        </div>
+    }
     @if (_preview is { } preview && preview.Confidence > 0 && !_status.Stage.IsTerminal())
     {
         <RadzenText class="preview-line"
@@ -173,13 +181,18 @@
 
     private void ResetForNewUpload()
     {
+        ClearJob();
+        Navigation.NavigateTo("/");
+    }
+
+    private void ClearJob()
+    {
         _status = null;
         _visual = null;
         _result = null;
         _selectedWindow = null;
         _playheadSec = 0;
         _preview = null;
-        Navigation.NavigateTo("/", replace: true);
     }
 
     private JobStatusDto? _status;
@@ -198,6 +211,7 @@
     private int? _selectedWindow;
     private double _playheadSec;
     private IJSObjectReference? _pitchWorker;
+    private IJSObjectReference? _separation;
     private IJSObjectReference? _recorder;
     private IJSObjectReference? _sfx;
     private IJSObjectReference? _themeJs;
@@ -268,7 +282,7 @@
                 continue;
             }
             var suffix = option.Available ? "" : " — unavailable";
-            choices.Add(new ExecutorChoice(option.Name, $"{ExecutorNames.Display(option.Name)} ({KindLabel(option.Kind)}){suffix}"));
+            choices.Add(new ExecutorChoice(option.Name, $"{ExecutorNames.Rated(option.Name)} ({KindLabel(option.Kind)}){suffix}"));
         }
         return choices;
     }
@@ -352,6 +366,38 @@
         _intakeReady = true;
     }
 
+    /// <summary>
+    /// The URL is the job (TrackJobAsync writes it), so a later change to it is a navigation to follow:
+    /// Back from a job to the bare page, the header's Analyze link, or a push link opened in this tab.
+    /// Home is reused across all of them, so OnInitializedAsync never sees these.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Job))
+        {
+            if (_status is not null)
+            {
+                ClearJob();
+            }
+            return;
+        }
+        if (Job == _status?.JobId)
+        {
+            return;
+        }
+        try
+        {
+            if (await Analysis.GetStatusAsync(Job) is { } status)
+            {
+                await TrackJobAsync(status);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // Same as a stale link on first load: the page stays as it is.
+        }
+    }
+
     private async Task LoadExecutorsAsync()
     {
         try
@@ -374,6 +420,7 @@
             return;
         }
         _pitchWorker = await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/pitch-worker.js");
+        _separation = await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/separation.js");
         _clientCapability = await _pitchWorker.InvokeAsync<string?>("probeCapability");
         _probed = true;
         RebuildExecutorChoices(); // a capable browser may now offer the browser-tier options
@@ -575,22 +622,37 @@
         _playheadSec = 0;
         _preview = null;
         _status = status;
+        // Put the job in the address bar: an analysis runs for minutes, and a reload, a phone that
+        // discarded the tab or a copied link must come back to it rather than to an empty intake.
+        if (Job != status.JobId)
+        {
+            Navigation.NavigateTo($"/?job={status.JobId}");
+        }
 
         if (_hub is null)
         {
+            // Progress is pushed, never polled, so a dropped socket (a phone waking, a network blip)
+            // would otherwise freeze the progress bar for the rest of the job.
             _hub = new HubConnectionBuilder()
                 .WithUrl(Navigation.ToAbsoluteUri("/hubs/analysis"))
+                .WithAutomaticReconnect()
                 .Build();
             _hub.On<JobStatusDto>("JobStatusChanged", OnStatusChanged); // register once, not per upload
+            _hub.Reconnected += _ => _status is { } tracked ? SubscribeAndReconcileAsync(tracked.JobId) : Task.CompletedTask;
         }
         if (_hub.State == HubConnectionState.Disconnected)
         {
             await _hub.StartAsync();
         }
-        await _hub.InvokeAsync("Subscribe", status.JobId);
+        await SubscribeAndReconcileAsync(status.JobId);
+    }
 
-        // The fake pipeline can finish before Subscribe lands — reconcile once.
-        var current = await Analysis.GetStatusAsync(status.JobId);
+    /// <summary>A new connection is in no groups, and pushes sent while it was down are gone: subscribe,
+    /// then read the status once. That one read also covers a fast job finishing before Subscribe lands.</summary>
+    private async Task SubscribeAndReconcileAsync(string jobId)
+    {
+        await _hub!.InvokeAsync("Subscribe", jobId);
+        var current = await Analysis.GetStatusAsync(jobId);
         if (current is not null)
         {
             await OnStatusChanged(current);
@@ -604,13 +666,16 @@
             return;
         }
         _status = status;
+        // One announcement serves both browser stages; which one is waiting follows from whether
+        // separation has finished. Keyed by stage, so a job that delegates both runs both.
+        var separating = !status.CompletedStages.Contains(StageNames.Separating);
         if (status.Stage == JobStage.AwaitingClient
-            && _pitchWorker is not null
-            && _delegatedJobs.Add(status.JobId))
+            && (separating ? _separation : _pitchWorker) is { } module
+            && _delegatedJobs.Add($"{status.JobId}:{(separating ? StageNames.Separating : StageNames.PitchTracking)}"))
         {
-            // Fire and forget: the module swallows its own failures, and the server's Tier2 timeout
-            // falls through to the next tier if this browser never posts a result.
-            _ = _pitchWorker.InvokeVoidAsync("runDelegated", status.JobId);
+            // Fire and forget: the modules swallow their own failures, and the server's Tier2 timeout
+            // (or the module's decline) falls through to the next tier.
+            _ = module.InvokeVoidAsync("runDelegated", status.JobId);
         }
         // The fast first-look preview: worth one fetch per push until it appears, while running.
         if (_preview is null && !_previewFetching && !status.Stage.IsTerminal() && status.Stage != JobStage.Uploaded)
@@ -673,8 +738,24 @@
         {
             await _pitchWorker.DisposeAsync();
         }
+        if (_separation is not null)
+        {
+            await _separation.DisposeAsync();
+        }
         if (_recorder is not null)
         {
+            if (_recording)
+            {
+                // Leaving mid-recording: without this the mic stays live (and its indicator lit) after
+                // the page is gone, still buffering audio nobody will ever upload.
+                try
+                {
+                    await _recorder.InvokeVoidAsync("stopRecording");
+                }
+                catch (JSException)
+                {
+                }
+            }
             await _recorder.DisposeAsync();
         }
         if (_sfx is not null)

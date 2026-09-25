@@ -77,7 +77,12 @@ export async function runDelegated(jobId) {
 }
 
 async function fetchVocalsMono22k(jobId) {
-    const response = await fetch(`api/analysis/${jobId}/stems/vocals`);
+    let response = await fetch(`api/analysis/${jobId}/stems/vocals`);
+    if (response.status === 404) {
+        // No stems: a short clip skips separation, and then the upload is the vocal line, exactly
+        // as the server-side trackers read it.
+        response = await fetch(`api/analysis/${jobId}/stems/mix`);
+    }
     if (!response.ok) {
         throw new Error(`vocals stem fetch failed: ${response.status}`);
     }

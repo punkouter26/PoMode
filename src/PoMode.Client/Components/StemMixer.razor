@@ -18,6 +18,14 @@
     @if (_status is "unavailable")
     {
         <RadzenText class="mixer-note" Text="Stem audio is not available for this job." />
+        @* Every load failure lands in this branch, so its Retry lives here too. *@
+        @if (_loadError is not null)
+        {
+            <div class="mixer-error-bar">
+                <span class="mixer-error-msg">⚠️ @_loadError</span>
+                <button type="button" class="mixer-retry-btn" @onclick="RetryLoad">↻ Retry</button>
+            </div>
+        }
     }
     else
     {
@@ -76,13 +84,6 @@
             }
             <RadzenText class="mixer-note" Text="@StatusText" />
         </div>
-        @if (_loadError is not null)
-        {
-            <div class="mixer-error-bar">
-                <span class="mixer-error-msg">⚠️ @_loadError</span>
-                <button type="button" class="mixer-retry-btn" @onclick="RetryLoad">↻ Retry</button>
-            </div>
-        }
         @* The bar's room stays when it goes, so the page under the player does not jump up the moment
            the stems finish loading. *@
         <div class="mixer-loading-slot">

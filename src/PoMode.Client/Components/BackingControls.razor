@@ -38,8 +38,8 @@
     </div>
     <div class="backing-field backing-field-slider">
         <span class="backing-label" id="tempo-label">@($"{_shownBpm ?? Bpm:0} BPM")</span>
-        @* The label follows the thumb while it is dragged; the page hears only the release, because
-           each change regenerates the backing. *@
+        @* The label follows the thumb while it is dragged. Radzen raises Change on every step of a
+           drag, not only on release, so each page drops a regenerate that a later step superseded. *@
         <RadzenSlider TValue="double" Value="@Bpm" Min="MinBpm" Max="MaxBpm" Step="2" Disabled="@Disabled"
                       ValueChanged="@(value => _shownBpm = value)"
                       Change="@(value => BpmChanged.InvokeAsync(value))"

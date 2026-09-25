@@ -159,6 +159,10 @@
     user-select: none;
 }
 
+.analyze-another {
+    margin-top: var(--pm-space-3);
+}
+
 .preview-line {
     color: var(--pm-fg-muted);
     font-style: italic;

@@ -1,28 +1,32 @@
-using PoMode.API.Pipeline;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.SongStatistics;
 
 /// <summary>
-/// Chooses which <see cref="ISongInterpreter"/> writes an interpretation, and falls through to the
-/// next one when the chosen one fails — the same contract <c>AnalysisPipeline.RunWithFallbackAsync</c>
-/// gives the pipeline stages, for the same reason: a dead local model server must degrade the answer,
-/// not the request.
+/// Chooses which <see cref="ISongInterpreter"/> writes a reply, streams it, checks its figures, and
+/// falls through to the next interpreter when one fails — the same contract
+/// <c>AnalysisPipeline.RunWithFallbackAsync</c> gives the pipeline stages, for the same reason: a dead
+/// local model server must degrade the answer, not the request.
 ///
 /// <para>Order is this seam's own — see <see cref="Rank"/> — a real local model first, then the
 /// deterministic template. No cloud interpreter is registered; if one is added, decide its rank here
 /// deliberately rather than borrowing the stage planner's, because the cost question is different.
-/// An interpretation is one small prompt, where a pipeline stage falling through to a paid provider
-/// is a whole separation or transcription on the bill.</para>
+/// The browser's built-in model is not here at all: it runs in the page, which builds the same
+/// prompt and runs the same <see cref="GroundingCheck"/> itself.</para>
 /// </summary>
 public sealed class SongInterpreterSelector(
     IEnumerable<ISongInterpreter> interpreters,
+    JobStore store,
     ILogger<SongInterpreterSelector> logger)
 {
     /// <summary>
     /// Interpreter order: a real local model, then the deterministic template. Ranking by answer
-    /// quality rather than by <see cref="ExecutionPlanner.EffectiveRank"/> is deliberate, because the
-    /// cost question a stage planner answers does not apply to one small prompt.
+    /// quality rather than by <see cref="Pipeline.ExecutionPlanner.EffectiveRank"/> is deliberate,
+    /// because the cost question a stage planner answers does not apply to one small prompt.
     /// </summary>
     private static int Rank(ISongInterpreter interpreter) => interpreter switch
     {
@@ -33,10 +37,7 @@ public sealed class SongInterpreterSelector(
     /// <summary>Recomputed per call so a configuration change needs no restart.</summary>
     private ISongInterpreter[] Ranked => [.. interpreters.OrderBy(Rank)];
 
-    /// <summary>
-    /// Every interpreter with its live availability, for the picker. Each carries its tier, so a paid
-    /// model added later is never hidden from whoever is paying.
-    /// </summary>
+    /// <summary>Every interpreter with its live availability, for the picker.</summary>
     public async Task<List<InterpreterOptionDto>> ListAsync(CancellationToken ct)
     {
         var ranked = Ranked;
@@ -62,14 +63,28 @@ public sealed class SongInterpreterSelector(
     }
 
     /// <summary>
-    /// Writes an interpretation, trying <paramref name="requested"/> first when it names a
-    /// registered interpreter. Never throws for a bad name or a failing model: an unknown name is
-    /// logged and ignored, and every failure falls through. The template interpreter is always
-    /// available, so this always returns something.
+    /// Writes the summary (<paramref name="question"/> null) or an answer, as events: each field's
+    /// text as it is written, a restart when an attempt is abandoned, and the checked result last.
+    /// Never throws for a bad name or a failing model: an unknown name is ignored and every failure
+    /// falls through. The template is always available, so this always finishes with a result.
+    ///
+    /// <para>A summary is cached per job and interpreter, keyed on a hash of the whole prompt, so
+    /// opening a song again costs a file read rather than a minute of model time, and a change to
+    /// the prompt or to the measurements invalidates it by itself. An answer is not cached: asking
+    /// again is a deliberate act.</para>
     /// </summary>
-    public async Task<SongInterpretationDto> InterpretAsync(
-        SongStats stats, string? requested, CancellationToken ct)
+    public async IAsyncEnumerable<InterpretationEvent> StreamAsync(
+        string jobId,
+        SongStats stats,
+        string? question,
+        IReadOnlyList<InterpretationTurn>? history,
+        string? requested,
+        [EnumeratorCancellation] CancellationToken ct)
     {
+        var prompt = question is null ? InterpretationPrompt.For(stats) : QuestionPrompt.For(stats, history, question);
+        var promptHash = Hash(prompt);
+        var streamed = false;
+
         foreach (var interpreter in Candidates(requested))
         {
             if (!await SafeIsAvailableAsync(interpreter, ct))
@@ -77,28 +92,82 @@ public sealed class SongInterpreterSelector(
                 continue;
             }
 
-            try
+            if (question is null
+                && await store.ReadArtifactAsync<CachedInterpretation>(jobId, CacheName(interpreter), ct) is { } cached
+                && cached.PromptHash == promptHash)
             {
-                // Every interpreter returns one string with both audiences separated by the shared
-                // delimiter; splitting here means the template and the LLMs need no separate handling
-                // and a model that ignores the delimiter degrades to a single summary rather than an
-                // error.
-                var (plain, theory) = InterpretationPrompt.Split(await interpreter.InterpretAsync(stats, ct));
-                return new SongInterpretationDto(
-                    Interpreter: interpreter.Name,
-                    Tier: interpreter.Tier,
-                    UsedLlm: !interpreter.IsClassicFallback,
-                    Text: plain,
-                    TheoryText: theory);
+                yield return new InterpretationEvent(Summary: cached.Result);
+                yield break;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+
+            var request = new InterpretationRequest(stats, question, prompt);
+            // A model gets one more attempt when it invents a figure, told which ones. The template
+            // states only measured figures, in its own rounding, so it is never checked.
+            var attempts = interpreter.IsClassicFallback ? 1 : 2;
+            for (var attempt = 1; attempt <= attempts; attempt++)
             {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex,
-                    "Interpreter {Interpreter} failed; falling through to the next one.", interpreter.Name);
+                if (streamed)
+                {
+                    yield return new InterpretationEvent(Restart: true);
+                    streamed = false;
+                }
+
+                var reader = new ReplyReader();
+                var raw = new StringBuilder();
+                Exception? failure = null;
+                await using (var chunks = interpreter.ReplyAsync(request, ct).GetAsyncEnumerator(ct))
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            if (!await chunks.MoveNextAsync())
+                            {
+                                break;
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                        {
+                            failure = ex;
+                            break;
+                        }
+
+                        raw.Append(chunks.Current);
+                        foreach (var (field, text) in reader.Push(chunks.Current))
+                        {
+                            streamed = true;
+                            yield return new InterpretationEvent(Field: field, Text: text);
+                        }
+                    }
+                }
+
+                var result = failure is null ? Finish(interpreter, question, reader) : null;
+                if (result is null)
+                {
+                    logger.LogWarning(failure,
+                        "Interpreter {Interpreter} failed; falling through to the next one.", interpreter.Name);
+                    break;
+                }
+
+                var unsupported = interpreter.IsClassicFallback
+                    ? []
+                    : GroundingCheck.Unsupported(Prose(result), prompt.Shown);
+                if (unsupported.Count > 0)
+                {
+                    logger.LogWarning(
+                        "Interpreter {Interpreter} wrote figures the measurements do not contain ({Figures}) "
+                        + "on attempt {Attempt}.", interpreter.Name, string.Join(", ", unsupported), attempt);
+                    request = request with { Prompt = prompt.Corrected(raw.ToString(), unsupported) };
+                    continue;
+                }
+
+                if (result.Summary is { } summary)
+                {
+                    await store.WriteArtifactAsync(
+                        jobId, CacheName(interpreter), new CachedInterpretation(promptHash, summary), ct);
+                }
+                yield return result;
+                yield break;
             }
         }
 
@@ -107,64 +176,36 @@ public sealed class SongInterpreterSelector(
         throw new InvalidOperationException("No song interpreter was able to produce a result.");
     }
 
-    /// <summary>
-    /// Answers a follow-up question, falling through on failure exactly as
-    /// <see cref="InterpretAsync"/> does.
-    ///
-    /// <para>The fall-through matters more for a question than for a summary. A summary is requested
-    /// once and a failure can be retried; a question arrives mid-conversation, and an error toast
-    /// where an answer was expected reads as the app breaking rather than as a model being
-    /// unavailable. The template always answers — with a refusal when it must — so this path always
-    /// produces something.</para>
-    /// </summary>
-    public async Task<SongAnswerDto> AnswerAsync(
-        SongStats stats,
-        string question,
-        IReadOnlyList<InterpretationTurn>? history,
-        string? requested,
-        CancellationToken ct)
+    /// <summary>The finished result from a complete reply, or null when a required field is empty —
+    /// a failure that did not throw, which would otherwise show the reader a blank bubble.</summary>
+    private static InterpretationEvent? Finish(ISongInterpreter interpreter, string? question, ReplyReader reply)
     {
-        foreach (var interpreter in Candidates(requested))
+        var usedLlm = !interpreter.IsClassicFallback;
+        if (question is null)
         {
-            if (!await SafeIsAvailableAsync(interpreter, ct))
-            {
-                continue;
-            }
-
-            try
-            {
-                var raw = await interpreter.AnswerAsync(stats, history, question, ct);
-                var (answer, grounded) = QuestionPrompt.Split(raw);
-                if (answer.Length == 0)
-                {
-                    // An empty answer is a failure that did not throw. Treating it as success would
-                    // show the reader a blank bubble and end the conversation there.
-                    throw new InvalidOperationException(
-                        $"{interpreter.Name} returned an empty answer.");
-                }
-
-                return new SongAnswerDto(
-                    Question: question,
-                    Answer: answer,
-                    Interpreter: interpreter.Name,
-                    Tier: interpreter.Tier,
-                    UsedLlm: !interpreter.IsClassicFallback,
-                    Grounded: grounded);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex,
-                    "Interpreter {Interpreter} could not answer; falling through to the next one.",
-                    interpreter.Name);
-            }
+            return reply[InterpretationPrompt.PlainField]?.Trim() is { Length: > 0 } plain
+                ? new InterpretationEvent(Summary: new SongInterpretationDto(
+                    interpreter.Name, interpreter.Tier, usedLlm, plain,
+                    reply[InterpretationPrompt.TheoryField]?.Trim() is { Length: > 0 } theory ? theory : null))
+                : null;
         }
 
-        throw new InvalidOperationException("No song interpreter was able to answer.");
+        return reply[QuestionPrompt.AnswerField]?.Trim() is { Length: > 0 } answer
+            ? new InterpretationEvent(Answer: new SongAnswerDto(
+                question, answer, interpreter.Name, interpreter.Tier, usedLlm,
+                Grounded: !bool.TryParse(reply[QuestionPrompt.InDataField], out var inData) || inData))
+            : null;
     }
+
+    private static string Prose(InterpretationEvent result)
+        => result.Summary is { } summary ? $"{summary.Text}\n{summary.TheoryText}" : result.Answer!.Answer;
+
+    private static string CacheName(ISongInterpreter interpreter) => $"interpretation-{interpreter.Name}.json";
+
+    private static string Hash(ChatPrompt prompt) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        $"{prompt.System}\n{prompt.Schema}\n{prompt.Shown}")));
+
+    internal sealed record CachedInterpretation(string PromptHash, SongInterpretationDto Result);
 
     /// <summary>
     /// The try order: the named interpreter first if it exists, then everything else in rank order.
@@ -189,9 +230,6 @@ public sealed class SongInterpreterSelector(
             }
         }
 
-        // Everything else follows, cloud included. The fallthrough matters more now that cloud can be
-        // the default: a dropped network or an expired credential has to degrade to the local model
-        // and then the template, never to an error.
         foreach (var interpreter in ranked)
         {
             if (!ReferenceEquals(interpreter, pick))

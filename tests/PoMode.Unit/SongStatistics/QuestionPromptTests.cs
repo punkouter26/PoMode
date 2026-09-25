@@ -5,50 +5,9 @@ using Xunit;
 
 namespace PoMode.Unit.SongStatistics;
 
-/// <summary>
-/// The follow-up question protocol.
-///
-/// <para>The marker split is the part with teeth. A model told to decline rather than guess will
-/// sometimes decorate the token it was given, and a strict match would leave "**NOT IN THE DATA**"
-/// sitting at the top of the answer <em>and</em> report the answer as grounded — the worst of both,
-/// since the reader sees the protocol and is told to trust it.</para>
-/// </summary>
+/// <summary>The follow-up question prompt: what each turn carries, and what it must not let through.</summary>
 public class QuestionPromptTests
 {
-    [Fact]
-    public void An_ordinary_answer_is_grounded_and_untouched()
-    {
-        var (answer, grounded) = QuestionPrompt.Split("It sits in D Dorian for most of the song.");
-
-        Assert.True(grounded);
-        Assert.Equal("It sits in D Dorian for most of the song.", answer);
-    }
-
-    [Theory]
-    [InlineData("NOT IN THE DATA")]
-    [InlineData("**NOT IN THE DATA**")]
-    public void A_decorated_refusal_marker_is_still_a_refusal(string marker)
-    {
-        var (answer, grounded) = QuestionPrompt.Split($"{marker}\nNothing here measures the lyrics.");
-
-        Assert.False(grounded);
-        Assert.Equal("Nothing here measures the lyrics.", answer);
-        Assert.DoesNotContain("NOT IN THE DATA", answer, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void A_sentence_that_merely_begins_with_not_is_not_a_refusal()
-    {
-        var (answer, grounded) = QuestionPrompt.Split(
-            "Not in the data given here, but across the measured windows the natural 6th is what "
-            + "separates this reading from Aeolian, and the melody sings it on 11% of notes.");
-
-        // Long enough to be prose rather than a marker. Treating it as a refusal would throw away
-        // the answer and label a perfectly good one as ungrounded.
-        Assert.True(grounded);
-        Assert.StartsWith("Not in the data given here", answer);
-    }
-
     [Fact]
     public void History_is_trimmed_to_the_recent_turns()
     {

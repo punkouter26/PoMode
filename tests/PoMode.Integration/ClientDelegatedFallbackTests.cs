@@ -22,7 +22,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"pomode-tier2-{Guid.NewGuid():N}");
     private readonly JobStore _store;
     private readonly FakeTimeProvider _time = new();
-    private readonly ClientWorkRegistry _registry;
+    private readonly ClientWorkRegistry<IReadOnlyList<NoteEvent>> _registry;
     private readonly RecordingNotifier _notifier = new();
 
     public ClientDelegatedFallbackTests()
@@ -31,7 +31,7 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
             new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?> { ["Jobs:RootPath"] = _root }).Build(),
             TimeProvider.System);
-        _registry = new ClientWorkRegistry(_time);
+        _registry = new ClientWorkRegistry<IReadOnlyList<NoteEvent>>(_time);
     }
 
     public void Dispose()
@@ -203,5 +203,64 @@ public sealed class ClientDelegatedFallbackTests : IDisposable
         var final = await _store.LoadAsync(job.JobId, CancellationToken.None);
         Assert.Equal(JobStage.Cancelled, final!.Stage);
         Assert.False(_registry.IsWaiting(job.JobId), "a waiter survived cancellation");
+    }
+
+    [Fact]
+    public async Task A_browser_separation_derives_the_instrumental_and_a_decline_falls_through_at_once()
+    {
+        var stems = new ClientWorkRegistry<ClientStems>(_time);
+        IPitchTracker[] trackers = [new StubFallbackPitchTracker()];
+        IStemSeparator[] separators =
+        [
+            new ClientDelegatedStemSeparator(stems, _store, _notifier,
+                new ConfigurationBuilder().Build(), NullLogger<ClientDelegatedStemSeparator>.Instance),
+            new FakeStemSeparator(),
+        ];
+        IChordRecognizer[] chords = [new ChromaChordRecognizer()];
+        var planner = new ExecutionPlanner(separators, trackers, chords);
+        var pipeline = new AnalysisPipeline(_store, planner, separators, trackers, chords,
+            new ArtifactModalAnalyzer(_store, NullLogger<ArtifactModalAnalyzer>.Instance),
+            _notifier, NullLogger<AnalysisPipeline>.Instance);
+
+        async Task<(JobState Job, Task Run)> StartAsync()
+        {
+            // Past the 30 s short-clip line, under which no separator is asked at all.
+            using var content = new MemoryStream(TestAudio.MakeTwoToneStereo(31.0, 220, 330));
+            var job = await _store.CreateAsync("song.wav", content, CancellationToken.None);
+            job.Plan = await planner.PlanAsync(browserCanInfer: true, null, CancellationToken.None);
+            await _store.SaveAsync(job, CancellationToken.None);
+            var run = pipeline.RunAsync(job.JobId, CancellationToken.None);
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (!stems.IsWaiting(job.JobId))
+            {
+                Assert.False(run.IsCompleted || DateTime.UtcNow > deadline, "separation never parked");
+                await Task.Delay(10);
+            }
+            return (job, run);
+        }
+
+        // The browser answers with half the mix as "vocals": the other half must be the instrumental.
+        var (answered, run) = await StartAsync();
+        var mix = PoMode.API.Audio.AudioDecoder.Decode(_store.InputPath(answered));
+        var vocalsPath = Path.Combine(_store.JobDir(answered.JobId), "vocals.wav");
+        PoMode.API.Audio.WavWriter.Write(vocalsPath, mix with { Samples = [.. mix.Samples.Select(sample => sample / 2)] });
+        Assert.True(stems.TryComplete(answered.JobId, new ClientStems(vocalsPath)));
+        await run;
+
+        var final = await _store.LoadAsync(answered.JobId, CancellationToken.None);
+        Assert.Equal(JobStage.Complete, final!.Stage);
+        Assert.Equal(nameof(ClientDelegatedStemSeparator), final.Plan.Single(p => p.Stage == StageNames.Separating).Executor);
+        var instrumental = PoMode.API.Audio.AudioDecoder.Decode(Path.Combine(_store.JobDir(answered.JobId), "instrumental.wav"));
+        Assert.Equal(mix.Samples.Length, instrumental.Samples.Length);
+        Assert.All(Enumerable.Range(0, mix.Samples.Length).Where(i => i % 97 == 0),
+            i => Assert.Equal(mix.Samples[i] / 2, instrumental.Samples[i], 0.002));
+
+        // A browser that declines is not waited for: no clock advance, and the placeholder takes over.
+        var (declined, declinedRun) = await StartAsync();
+        Assert.True(stems.TryDecline(declined.JobId, "no WebGPU"));
+        await declinedRun;
+        var fellThrough = await _store.LoadAsync(declined.JobId, CancellationToken.None);
+        Assert.Equal(JobStage.Complete, fellThrough!.Stage);
+        Assert.Equal(nameof(FakeStemSeparator), fellThrough.Plan.Single(p => p.Stage == StageNames.Separating).Executor);
     }
 }

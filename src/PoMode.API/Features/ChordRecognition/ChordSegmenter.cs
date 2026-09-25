@@ -10,12 +10,24 @@ namespace PoMode.API.Features.ChordRecognition;
 /// </summary>
 public static class ChordSegmenter
 {
+    /// <summary>Below this a beat grid is noise — sustained pads, silence — and chords are cut by
+    /// duration instead. The pipeline applies the same bar to the beat tracker's grid.</summary>
+    public const double MinBeatConfidence = 0.2;
+
+    /// <summary>Fewer heard beats than this is not a beat track to cut chords on.</summary>
+    public const int MinBeats = 4;
+
     /// <summary>
     /// Beat-synchronous segmentation (§13.6 fix b): chord changes land on beats, so each beat
     /// interval takes the majority label of its frames and boundaries fall exactly on the grid —
     /// no arbitrary duration floor absorbing flicker. When the grid's confidence is below
     /// <paramref name="minBeatConfidence"/> there are no beats worth trusting (sustained pads,
     /// silence), and this falls back to the duration-floor overload unchanged.
+    ///
+    /// <para><paramref name="beats"/>, when given, are the beats the pipeline's beat tracker heard,
+    /// and they win over <paramref name="grid"/>: a model's beats follow a tempo that drifts, where a
+    /// single-tempo grid slides off the music a bar at a time — and the DSP estimate behind the grid
+    /// halved a 143 BPM groove that Beat This! tracked at 0.99.</para>
     /// </summary>
     public static IReadOnlyList<ChordSpan> Segment(
         IReadOnlyList<(ChordCandidate Chord, double Score)> frames,
@@ -23,33 +35,46 @@ public static class ChordSegmenter
         BeatGrid? grid,
         double minDurationSec = 0.5,
         int medianWindow = 9,
-        double minBeatConfidence = 0.2)
+        double minBeatConfidence = MinBeatConfidence,
+        IReadOnlyList<double>? beats = null)
     {
         if (frames.Count == 0)
         {
             return [];
         }
-        if (grid is null || grid.Confidence < minBeatConfidence || grid.Bpm <= 0)
+
+        var duration = frames.Count / framesPerSecond;
+        List<double> boundaries;
+        if (beats is { Count: >= MinBeats })
+        {
+            // Beat boundaries as heard, closed at 0 and the track end; a beat within a quarter of
+            // the typical gap of either end would leave a sliver interval, so it is dropped.
+            var gaps = beats.Zip(beats.Skip(1), (a, b) => b - a).Order().ToArray();
+            var epsilon = gaps[gaps.Length / 2] * 0.25;
+            boundaries = [0.0, .. beats.Where(t => t > epsilon && t < duration - epsilon), duration];
+        }
+        else if (grid is not null && grid.Confidence >= minBeatConfidence && grid.Bpm > 0)
+        {
+            // Beat boundaries covering [0, duration]: the grid phase, then every period; 0 and the
+            // track end close the partial intervals at the edges.
+            var period = 60.0 / grid.Bpm;
+            var epsilon = period * 0.25;
+            boundaries = [0.0];
+            for (var t = grid.FirstBeatSec % period; t < duration - epsilon; t += period)
+            {
+                if (t > epsilon)
+                {
+                    boundaries.Add(t);
+                }
+            }
+            boundaries.Add(duration);
+        }
+        else
         {
             return Segment(frames, framesPerSecond, minDurationSec, medianWindow);
         }
 
         var smoothed = MedianSmooth(frames, medianWindow);
-        var duration = frames.Count / framesPerSecond;
-        var period = 60.0 / grid.Bpm;
-
-        // Beat boundaries covering [0, duration]: the grid phase, then every period; 0 and the
-        // track end close the partial intervals at the edges.
-        var boundaries = new List<double> { 0.0 };
-        var epsilon = period * 0.25;
-        for (var t = grid.FirstBeatSec % period; t < duration - epsilon; t += period)
-        {
-            if (t > epsilon)
-            {
-                boundaries.Add(t);
-            }
-        }
-        boundaries.Add(duration);
 
         // Majority label per beat interval; an interval too short to contain a frame centre
         // inherits its left neighbour so it merges away instead of inventing a label.

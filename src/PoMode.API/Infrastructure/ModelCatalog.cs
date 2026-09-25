@@ -78,8 +78,32 @@ public static class ModelCatalog
         Url: "https://huggingface.co/musetric/beat-this-onnx/resolve/4e971bd43753023e1bf961c34a0cb74985cfcb88/mel-filterbank.bin",
         Sha256: "1ee975d96f44ccf2c3bfe37825c1c1f0b089f5703c7a12a84b1f0a3bce004533");
 
+    /// <summary>
+    /// ChordMini's ChordNet "2E1D" (MIT, from <c>ptnghia-j/ChordMini</c>), the ONNX export in
+    /// <c>musetric/chordmini-onnx</c> pinned to commit <c>086162411b8c4772774392be195e5c6f065d67ad</c>:
+    /// the classifier only, static <c>features [16,108,144]</c> → <c>logits [16,108,170]</c>, with the
+    /// normalisation inside the graph. 17,080,918 bytes; the SHA-256 matches the model card and was
+    /// re-computed from a fresh download on 2026-09-25.
+    /// </summary>
+    public static readonly ModelDescriptor ChordMini = new(
+        Key: "chordmini",
+        FileName: "chordmini_chordnet.onnx",
+        Url: "https://huggingface.co/musetric/chordmini-onnx/resolve/086162411b8c4772774392be195e5c6f065d67ad/chordnet.onnx",
+        Sha256: "cfe7703434ebd1c28ba2ded6601581ab41d8f7d1b40f285110445460e1b11154");
+
+    /// <summary>
+    /// The constant-Q plan ChordNet's features are defined by — librosa 0.11's octave schedule, sparse
+    /// FFT basis and half-band resampling filter, baked by musetric — from the same commit. Downloaded
+    /// rather than re-derived, for the same reason as the Beat This! filterbank. MIT; 23,896 bytes.
+    /// </summary>
+    public static readonly ModelDescriptor ChordMiniCqtPlan = new(
+        Key: "chordmini-cqt",
+        FileName: "chordmini_cqt_plan.bin",
+        Url: "https://huggingface.co/musetric/chordmini-onnx/resolve/086162411b8c4772774392be195e5c6f065d67ad/cqt-plan.bin",
+        Sha256: "c31f0a6fd2d582d753be6628b5daecdee58acba53cba93b2bc2b5c75dee2ba48");
+
     public static readonly IReadOnlyList<ModelDescriptor> All =
-        [BasicPitch, HtDemucs, BeatThis, BeatThisMelFilterbank, Rmvpe];
+        [BasicPitch, HtDemucs, BeatThis, BeatThisMelFilterbank, Rmvpe, ChordMini, ChordMiniCqtPlan];
 
     /// <summary>
     /// onnxruntime-web 1.27.0, pinned to the immutable npm-versioned jsdelivr URLs (npm packages
@@ -141,6 +165,23 @@ public static class ModelCatalog
     /// every server start. <see cref="BasicPitch"/> appears in both — the browser runs the very same
     /// pinned model file the local tier runs.
     /// </summary>
+    /// <summary>
+    /// UVR-MDX-NET-Voc_FT, Ultimate Vocal Remover's fine-tuned MDX-Net vocal model, for the browser
+    /// separation tier: <c>input [batch,4,3072,256]</c> (left/right real/imag STFT bins) →
+    /// <c>output</c> of the same shape; opset 13, only ops onnxruntime-web's WebGPU provider runs.
+    /// From <c>Blane187/all_public_uvr_models</c> (the UVR public model pack, MIT) pinned to commit
+    /// <c>fddec39677560e41e3194f24a9e4c4cd32ef0e83</c>; 66,762,490 bytes, SHA-256 computed from a
+    /// fresh download on 2026-09-25. UVR asks apps that ship its models to credit it: this is
+    /// Ultimate Vocal Remover's work (github.com/Anjok07/ultimatevocalremovergui), and the executor
+    /// picker names it so. Its settings (n_fft 7680, dim_f 3072, compensation 1.021) are UVR's
+    /// model_data entry for this file's hash, and live in <c>js/infer/mdx.js</c>.
+    /// </summary>
+    public static readonly ModelDescriptor MdxVocals = new(
+        Key: "mdx-voc-ft",
+        FileName: "UVR-MDX-NET-Voc_FT.onnx",
+        Url: "https://huggingface.co/Blane187/all_public_uvr_models/resolve/fddec39677560e41e3194f24a9e4c4cd32ef0e83/UVR-MDX-NET-Voc_FT.onnx",
+        Sha256: "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111");
+
     public static readonly IReadOnlyList<ModelDescriptor> WebRuntime =
-        [OrtBundle, OrtWasm, OrtWasmJsep, OrtWasmGlue, OrtWasmJsepGlue, BasicPitch];
+        [OrtBundle, OrtWasm, OrtWasmJsep, OrtWasmGlue, OrtWasmJsepGlue, BasicPitch, MdxVocals];
 }

@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
 using PoMode.API.Audio;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
+using PoMode.API.Features.Separation;
 using PoMode.API.Features.Auth;
 using PoMode.API.Features.Uploads;
 using PoMode.API.Pipeline;
@@ -12,6 +14,9 @@ namespace PoMode.API.Features.Analysis;
 
 public static class AnalysisEndpoints
 {
+    /// <summary>The rate the browser separator works at: MDX-Net Voc_FT was trained at 44.1 kHz.</summary>
+    private const int ClientStemRate = 44100;
+
     public static IEndpointRouteBuilder MapAnalysis(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/analysis");
@@ -137,7 +142,7 @@ public static class AnalysisEndpoints
             string jobId,
             IReadOnlyList<NoteEvent> notes,
             JobStore store,
-            ClientWorkRegistry registry) =>
+            ClientWorkRegistry<IReadOnlyList<NoteEvent>> registry) =>
         {
             if (!registry.IsWaiting(jobId))
             {
@@ -162,6 +167,73 @@ public static class AnalysisEndpoints
                 ? TypedResults.Ok()
                 : TypedResults.NotFound();
         }).RequireAuthorization();
+
+        // The browser's half of Tier 2 separation: the vocal stem it separated, as 16-bit stereo
+        // 44.1 kHz WAV in the request body. The body limit is set from the upload's own length, so a
+        // browser can send a whole song's vocals and nothing larger. Validated before the waiting
+        // stage ever sees it: a wrong rate, channel count or length is refused, not repaired.
+        group.MapPost("/{jobId}/client-stems", async Task<Results<Ok, BadRequest<string>, NotFound>> (
+            string jobId,
+            HttpContext http,
+            JobStore store,
+            ClientWorkRegistry<ClientStems> registry,
+            CancellationToken ct) =>
+        {
+            if (!registry.IsWaiting(jobId)
+                || store.TryFindInputPath(jobId) is not { } inputPath
+                || AudioDecoder.TryReadDurationSeconds(inputPath) is not { } duration)
+            {
+                return TypedResults.NotFound();
+            }
+
+            var maxBytes = (long)((duration + 1) * ClientStemRate * 2 * 2) + 1024;
+            if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+            {
+                limit.MaxRequestBodySize = maxBytes;
+            }
+
+            var vocalsPath = Path.Combine(store.JobDir(jobId), "vocals.wav");
+            var uploadPath = vocalsPath + ".upload";
+            try
+            {
+                await using (var file = File.Create(uploadPath))
+                {
+                    await http.Request.Body.CopyToAsync(file, ct);
+                }
+
+                AudioBuffer vocals;
+                try
+                {
+                    vocals = AudioDecoder.Decode(uploadPath);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or FormatException or IOException or ArgumentException)
+                {
+                    return TypedResults.BadRequest("The vocal stem is not a readable WAV file.");
+                }
+                if (vocals.SampleRate != ClientStemRate || vocals.Channels != 2
+                    || Math.Abs(vocals.DurationSeconds - duration) > 0.5)
+                {
+                    return TypedResults.BadRequest(
+                        $"The vocal stem must be stereo at {ClientStemRate} Hz and as long as the upload.");
+                }
+
+                File.Move(uploadPath, vocalsPath, overwrite: true);
+                return registry.TryComplete(jobId, new ClientStems(vocalsPath))
+                    ? TypedResults.Ok()
+                    : TypedResults.NotFound();
+            }
+            finally
+            {
+                File.Delete(uploadPath);
+            }
+        }).RequireAuthorization();
+
+        // The browser saying it will not separate this job (no WebGPU for a long song, a failed model
+        // download): the stage falls through now instead of waiting out the timeout.
+        group.MapDelete("/{jobId}/client-stems", Results<Ok, NotFound> (
+            string jobId, string? reason, ClientWorkRegistry<ClientStems> registry) =>
+            registry.TryDecline(jobId, reason ?? "no reason given") ? TypedResults.Ok() : TypedResults.NotFound())
+            .RequireAuthorization();
 
         // Stem audio for the Web Audio mixer (spec §7). The caller's {name} selects from a fixed
         // allow-list and never becomes part of a path, so there is no traversal surface here at all.

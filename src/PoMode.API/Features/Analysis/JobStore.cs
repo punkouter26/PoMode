@@ -143,7 +143,10 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
             gate.Release();
         }
         await SaveAsync(copy, ct);
-        await MirrorToBlobAsync(copy.JobId, ct);
+        // Not awaited: the caller is a new user's first library read, and mirroring the stems made it
+        // wait seconds on an upload the local copy does not need (MirrorFileAsync logs its own failures).
+        // ponytail: lost if the process stops mid-upload; the local folder stays authoritative either way.
+        _ = MirrorToBlobAsync(copy.JobId, CancellationToken.None);
         return copy;
     }
 

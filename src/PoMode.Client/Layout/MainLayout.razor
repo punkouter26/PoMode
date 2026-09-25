@@ -160,7 +160,7 @@
 <RadzenNotification />
 
 <main id="main-content" class="app-main">
-    <ErrorBoundary>
+    <ErrorBoundary @ref="_boundary">
         <ChildContent>
             @* Pages wait for a session: every one of them calls the API on first render, and a call
                that beats the guest cookie would land in nobody's library. *@
@@ -201,6 +201,12 @@
 
     private string _fxLevel = "full";
     private bool _sessionReady;
+
+    private ErrorBoundary? _boundary;
+
+    /// <summary>The layout outlives navigation, so a tripped boundary would otherwise keep showing its
+    /// error panel on every page until a reload. A new page (a new Body) gets a clean start.</summary>
+    protected override void OnParametersSet() => _boundary?.Recover();
     private bool _fxMuted;
 
     /// <summary>True while no explicit level has been chosen, so the menu can say the level is

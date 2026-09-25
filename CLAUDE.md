@@ -16,6 +16,7 @@ dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~TempoEstimator"   # s
 ```
 
 - `tests/PoMode.Integration` includes `ModelAccuracyReportTests`: it renders a known-truth sample MP3, plus a voice-like stem with vibrato and bleed and two drum grooves with a known bar grid, races every free pitch/chord/beat executor against them, and rewrites `test-reports/model-accuracy.html`. It is a reporting tool, not a test, so it is opt-in: `POMODE_MODEL_REPORT=1 dotnet test tests/PoMode.Integration`. Otherwise it skips.
+- `InterpreterReportTests` does the same for the written interpretation: every Ollama model installed on the machine writes the summary and answers four questions over the real prompts, scored on schema, invented figures (`GroundingCheck`) and declining the unanswerable one, into `test-reports/interpreter-report.html`, and it fails when `OllamaSongInterpreter.PreferredModel` is not the winner. Minutes per model on a CPU: `POMODE_LLM_REPORT=1 dotnet test tests/PoMode.Integration --filter InterpreterReport`.
 
 - First E2EUI run: install browsers with `pwsh tests/PoMode.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium`.
 - API reference UI: `/scalar`. Health: `/health`, `/health/live`, `/health/ready`. Diagnostics: `/diag`.
@@ -70,7 +71,7 @@ These override any default instinct. Where one contradicts a habit, the rule win
 
 ## Architecture
 
-One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the REST endpoints, a SignalR hub (`/hubs/analysis`), and the background analysis worker. `PoMode.Shared` holds DTOs and the source-generated `PoModeJsonContext`, plus — as the one deliberate carve-out from NET_RULES' "zero business logic" — pure, dependency-free lookup extensions over those DTOs that both API and Client need (e.g. `ModalResultExtensions.WindowIndexAt`, `TimelineSearch`, `ExecutorNames.Display` — the page-facing name for a recorded executor class name; `/diag` keeps the raw one); anything with I/O, state, or musical judgment stays out.
+One process: `PoMode.API` hosts the Blazor WASM client (`PoMode.Client`), the REST endpoints, a SignalR hub (`/hubs/analysis`), and the background analysis worker. `PoMode.Shared` holds DTOs and the source-generated `PoModeJsonContext`, plus — as the one deliberate carve-out from NET_RULES' "zero business logic" — pure, dependency-free lookup extensions over those DTOs that both API and Client need (e.g. `ModalResultExtensions.WindowIndexAt`, `TimelineSearch`, `ExecutorNames.Display` — the page-facing name for a recorded executor class name; `/diag` keeps the raw one), and the interpretation prompts with their reply reader and `GroundingCheck`, because the browser's built-in model is asked the same question as Ollama and checked the same way; anything with I/O, state, or musical judgment stays out.
 
 ### Analysis pipeline (the core)
 
@@ -78,7 +79,9 @@ Each uploaded song becomes a job that runs 4 stages in `AnalysisPipeline`: **Sep
 
 **Pitch default is RMVPE, on the numbers.** `RmvpePitchTracker` (RMVPE, MIT, 361 MB, vocal-only, reads `vocals.wav`) is registered *before* `OnnxPitchTracker` (Basic Pitch) so it wins their shared local-model rank. Accuracy report, note F1 (exact pitch, onset ±0.25 s): sine melody RMVPE 0.88 / Basic Pitch 1.00; voice-like line with vibrato and 18 dB pad bleed RMVPE 1.00 / Basic Pitch 0.31 (44 notes for 8 — it transcribes the bleed); mean 0.94 vs 0.65. On a real full mix RMVPE gives 1.1 notes/s in D2–B4, Basic Pitch 4.6 notes/s down to E1. RMVPE is deliberately not an `IFileTranscriber`, so the backing stem is still transcribed by Basic Pitch. YIN scores 1.00 on both synthetic stems (clean monophonic tones are its best case) but stays a classic fallback; the report's default-is-the-winner check excludes classic fallbacks when the default is a model, and says so.
 
-**Beats: `IBeatTracker`** (not a planned stage; runs best-effort inside ChordDetecting, walked by `EffectiveRank` with fall-through, writer recorded in `BeatGridDto.Tracker`). `BeatThisBeatTracker` (Beat This!, CPJKU, MIT, 83 MB + mel filterbank) → `DspBeatTracker` (`TempoEstimator`, classic, hears no downbeats). Beat This writes `BeatGridDto.Downbeats` and a tempo map built bar by bar from them, and `ModalAnalysisEngine` numbers measures from those downbeats when present (4/4 from t=0 otherwise). Report, beat F / downbeat F at ±70 ms: 104 BPM groove 0.96/0.94 vs DSP 0.96/0.00; 143 BPM groove 0.99/0.96 vs DSP 0.65/0.67 (DSP halved the tempo). The chord recognizers still segment on their own `TempoEstimator` grid.
+**Beats: `IBeatTracker`** (not a planned stage; runs best-effort inside ChordDetecting, walked by `EffectiveRank` with fall-through, writer recorded in `BeatGridDto.Tracker`). `BeatThisBeatTracker` (Beat This!, CPJKU, MIT, 83 MB + mel filterbank) → `DspBeatTracker` (`TempoEstimator`, classic, hears no downbeats). Beat This writes `BeatGridDto.Downbeats` and a tempo map built bar by bar from them, and `ModalAnalysisEngine` numbers measures from those downbeats when present (4/4 from t=0 otherwise). Report, beat F / downbeat F at ±70 ms: 104 BPM groove 0.96/0.94 vs DSP 0.96/0.00; 143 BPM groove 0.99/0.96 vs DSP 0.65/0.67 (DSP halved the tempo). The beat tracker runs *before* chord recognition, and its beats ride on `StageContext.Beats` so every recognizer cuts chord changes on the beats that were heard (`ChordSegmenter`'s `beats` overload) rather than on its own single-tempo `TempoEstimator` grid, which they fall back to only when no usable grid came out.
+
+**Chords: ChordMini is the default, on the numbers.** `ChordMiniChordRecognizer` (ChordMini's ChordNet "2E1D", MIT, 17 MB, `musetric/chordmini-onnx`) is registered before `ChromaChordRecognizer` so it wins their shared local rank. The graph is the classifier only; its features are librosa 0.11's recursive CQT, computed here from the plan the model ships with (`cqt-plan.bin`: half-band resampler, per-octave sparse FFT basis), step for step as musetric's reference host does on the GPU — against `librosa.cqt` the port correlates at 0.9999997. Its 170 labels fold to the qualities `ChordPadBuilder` voices (sixths, sus and diminished sevenths to their nearest triad). Report, frame accuracy at triad level: plain triad pad under a sine melody ChordMini 100% / Chroma 100% / Viterbi 75%; the demo's F Lydian vamp, full mix with its flute melody, ChordMini 99% / Chroma 40% / Viterbi 0%.
 
 Model files come from `ModelCatalog` (URL pinned to a commit, SHA-256, licence noted) and download at runtime into `Models:RootPath`; nothing is committed. The neural front ends use `AudioDecoder.ResampleBandLimited`, not the linear `Resample`, because their top mel bands sit at the new Nyquist.
 
@@ -86,7 +89,7 @@ Users can pin an executor per stage: `GET /api/analysis/executors` feeds one dro
 
 Jobs are restart-safe: `JobStore` persists `job.json` plus artifacts (`notes.json`, `notes-backing.json`, `chords.json`, `beats.json`, `result.json`, stem WAVs) in a per-job folder under a per-job semaphore, mirroring everything to Azure Blob (Azurite locally). `JobRecoveryService` re-enqueues incomplete jobs on boot; `JobCleanupService` purges old ones. Stage progress is pushed over SignalR only — never polled, never written per-tick.
 
-**Tier 2 (client-delegated)**: the browser probes onnxruntime-web support (`pitch-worker.js`), uploads declare `clientCanInfer=true`, and when a job reaches `AwaitingClient` the browser runs the model and POSTs validated notes back to `/api/analysis/{jobId}/client-result`.
+**Tier 2 (client-delegated)**: the browser probes onnxruntime-web support (`pitch-worker.js`), uploads declare `clientCanInfer=true`, and when a job reaches `AwaitingClient` the browser runs the model and POSTs validated notes back to `/api/analysis/{jobId}/client-result`. The same handshake now covers separation, for the host that cannot run HTDemucs (Azure): `ClientDelegatedStemSeparator` parks, `js/infer/separation.js` fetches the upload, and a worker (`separation-thread.js` + `mdx.js`) runs UVR's MDX-Net Voc_FT (`ModelCatalog.MdxVocals`, UVR public pack, MIT with a credit request honoured in the executor's display name). `mdx.js` is a port of UVR's `demix` — torch STFT semantics at n_fft 7680 via a small mixed-radix FFT, UVR's chunk cross-fade, compensation 1.021 — validated in Node against HTDemucs on a real recording (vocal correlation 0.935). Only the vocals travel back (`POST client-stems`, 16-bit stereo 44.1 kHz, body limit set from the upload's length); the instrumental is mix minus vocals, derived server-side. A browser without WebGPU declines songs over 60 s (`DELETE client-stems`), so the stage falls through at once instead of holding the only worker, and the browser tells the two stages apart by whether `Separating` has completed. Clips under 30 s skip browser separation exactly as they skip HTDemucs, and the browser pitch worker then reads the mix, like the server-side trackers. The browser's files are served on Azure too: `ModelRegistry.EnsureAsync(servedToBrowser: true)` fetches and verifies them there, because the Azure rule is about running models on the server, and before this the hosted app had no browser tier at all.
 
 ### Resumable uploads (tus)
 
@@ -233,34 +236,58 @@ plain-English paragraph; its rule is that a weak figure (unconfident mode, missi
 *omitted*, never hedged.
 
 `GET /api/analysis/{id}/interpretation?interpreter=` turns those statistics into prose behind the
-`ISongInterpreter` seam. It extends `IStageExecutor`, so `ExecutionPlanner.EffectiveRank` orders the
-implementations without new rules: `OllamaSongInterpreter` (Local, uses whatever model Ollama has
-installed) → `TemplateSongInterpreter` (deterministic, always available, `IsClassicFallback`). There
-is no cloud interpreter; a paid one was documented here for a while but never existed in the repo.
+`ISongInterpreter` seam: `OllamaSongInterpreter` (Local, whatever model Ollama has installed,
+preferring `gemma3` because it won the interpreter report) → `TemplateSongInterpreter`
+(deterministic, always available, `IsClassicFallback`). There is no cloud interpreter.
 `SongInterpreterSelector` falls through on failure exactly like `RunWithFallbackAsync`, and ranks by
 answer quality rather than by `ExecutionPlanner.EffectiveRank`, because one small prompt is not the
-cost question a pipeline stage poses. `InterpretationPrompt` contains only measured numbers, no audio,
-title or artist, so a model cannot report what it was never given.
-Ollama requests set `think: false`: reasoning models otherwise spend the whole output budget on
-`thinking` and return empty `content`.
+cost question a pipeline stage poses. The prompt contains only measured numbers, no audio, title or
+artist, so a model cannot report what it was never given.
+
+One route per operation, two representations: `Accept: text/event-stream` gets server-sent
+`InterpretationEvent`s (each field's text as it is written, a restart when an attempt is abandoned,
+the checked result last) and anything else gets the finished JSON from the same events. The reply is
+JSON constrained by a schema (Ollama `format`, the Prompt API's `responseConstraint`) — `{plain,
+theory}` for the summary, `{inData, answer}` for a question — and `ReplyReader` reads it while it
+streams. That replaced a `===FOR MUSICIANS===` delimiter and a `NOT IN THE DATA` first line, which
+models mangled often enough to need tolerant parsers of their own. `GroundingCheck` then compares
+every figure in the reply with the measurements it was shown (rounding to the written precision is
+quoting; whole numbers up to 12 pass, the documented ceiling); a model that invents one is sent its
+own reply with the figures named for one more attempt, then falls through. The summary is cached per
+job and interpreter as `interpretation-{name}.json`, keyed on a hash of the whole prompt, so a
+reload is a file read and a prompt change invalidates it; the GET carries the interpret rate limit
+because a cache miss runs a model.
+
+Every request about a song sends the same system message (`InterpretationPrompt.System`) and puts
+the statistics first in the user message, the task after them: llama.cpp reuses the processed prefix
+of its previous request, so after the first request only the tail is processed. Ollama requests set
+`think: false` (reasoning models otherwise spend the whole output budget on `thinking`), `num_ctx`
+8192 (Ollama drops the *front* of an overlong prompt, which is where the measurements are, and the
+prompt token count is logged against it), and `num_predict` 1536 with `done_reason: length` treated as
+a failure (llama3.2 looped on the theory half under the JSON constraint until the old five-minute
+timeout). A probe loads the model in the background at the same `num_ctx` — warming at Ollama's
+default made the first question reload it. Residency is left at Ollama's five-minute default on
+purpose: see the list below.
 
 `POST /api/analysis/{id}/interpretation/ask` turns that one-shot write-up into a conversation, over
-the same seam and the same measurements. `ISongInterpreter.AnswerAsync` sits beside `InterpretAsync`
-rather than on a seam of its own - it is the same capability asked a narrower question, and splitting
-it would mean a second availability probe and a second ranking for the same Ollama socket.
-`QuestionPrompt` restates the full statistics block on *every* turn ahead of the transcript, because a
-model asked to recall a figure from six messages back approximates it, and an approximated statistic
-presented as measured is the failure the grounding exists to prevent. What the question prompt adds is
-permission to decline: a summary can always be written from the data but a question need not be
-answerable from it, so the model is given the `NOT IN THE DATA` marker and told to use it rather than
-guess. `QuestionPrompt.Split` strips it tolerantly - same reasoning as the `===FOR MUSICIANS===`
-delimiter - and the client labels the answer rather than hiding the refusal.
+the same seam and the same measurements. `QuestionPrompt` restates the full statistics block on
+*every* turn ahead of the transcript, because a model asked to recall a figure from six messages back
+approximates it, and an approximated statistic presented as measured is the failure the grounding
+exists to prevent. What the question prompt adds is permission to decline: a summary can always be
+written from the data but a question need not be answerable from it, so `inData` false is a
+legitimate answer, and the client labels it rather than hiding the refusal.
 `TemplateSongInterpreter` answers by routing the question to the measurement it is about (mode, tempo,
 range, rhythm, harmony, motion, phrasing, tension) and declines anything else, which is honest and
 also tells the reader a local model would get them further. The conversation is held client-side; the
 server stores no transcript, same ruling as the statistics themselves. On the page the summary and
 the questions are one transcript: "Summarize this song" is the first starter chip and its write-up
 lands as the first turn, rather than a separate Interpret block with its own heading and controls.
+
+The browser's built-in model (Chrome's Prompt API, `js/infer/browser-llm.js`) is a third interpreter
+the page offers when `LanguageModel.availability()` says it can run, ranked where the planner ranks a
+browser tier: after Ollama, ahead of the template, and the default only when it is ready and the
+server has no model. The page builds the same prompt from the `SongStats` it holds and runs the same
+`GroundingCheck`; a reply that fails it, or a model that errors, falls back to the server's default.
 
 ### Why this mode, and where the sections are
 
@@ -420,6 +447,14 @@ Each of these existed and was removed, with the reason, so nobody rebuilds one b
   plus any card or roll restarts from bar one), and its WAV/MIDI links share one `DownloadMenu`.
   Key / mode / chords / tempo are one `BackingControls` row on both the Mode Lab and Practice (tempo
   50–180 on both), and the singer's read is one `SingerCard` on both the analysis page and Practice.
+- **GPU inference through DirectML** — measured on this project's Snapdragon X (Adreno X1-85):
+  HTDemucs does not fit the integrated GPU's memory, RMVPE ran slower than on the CPU (0.84 s vs
+  0.53 s a chunk), Beat This! the same, ChordMini faster by 50 ms. And the DirectML package stops at
+  onnxruntime 1.24, five versions behind. Revisit on a machine with a discrete GPU, through Windows ML.
+- **Running pitch and chord detection side by side** — both take seconds after separation's minutes,
+  and a concurrent stage would persist over the browser handshake's `AwaitingClient`.
+- **A long Ollama keep-alive** — thirty minutes left three 3–4 GB models resident and HTDemucs failed
+  to allocate on a 16 GB machine.
 - **Nine of eleven `fx-*` modules and the OpenTelemetry export** — decoration, and instruments with
   no collector configured anywhere. `js/shell/prefs.js` survives because it still governs motion and
   sound; which executor really ran is still recorded, in `StageHistory`, where the UI can show it.

@@ -39,7 +39,7 @@
                         {
                             <div class="why-row @(vote.IsPrimary ? "row-winner" : "")">
                                 <span class="why-label" title="@Fingerprint(vote)">
-                                    @vote.Mode
+                                    @ScaleModes.DisplayName(vote.Mode)
                                     @if (vote.IsPrimary)
                                     {
                                         <span class="why-crown" aria-label="winner">★</span>
@@ -98,19 +98,19 @@
 
         return winner.WindowPercent switch
         {
-            >= 80 => $"{winner.Mode} wins almost everywhere, so this is a confident answer.",
-            >= 50 => $"{winner.Mode} wins most of the song, with the others turning up in places.",
+            >= 80 => $"{ScaleModes.DisplayName(winner.Mode)} wins almost everywhere, so this is a confident answer.",
+            >= 50 => $"{ScaleModes.DisplayName(winner.Mode)} wins most of the song, with the others turning up in places.",
             _ when contenders > 1 =>
-                $"{winner.Mode} leads, but no scale takes over — {contenders} of them share the song.",
-            _ => $"{winner.Mode} leads, though only across part of the song.",
+                $"{ScaleModes.DisplayName(winner.Mode)} leads, but no scale takes over — {contenders} of them share the song.",
+            _ => $"{ScaleModes.DisplayName(winner.Mode)} leads, though only across part of the song.",
         };
     }
 
     /// <summary>The evidence for a mode, shown on hover: the degrees that identify it.</summary>
     private static string Fingerprint(ModeVote vote)
         => vote.CharacteristicDegrees.Count == 0
-            ? $"{vote.Mode} won {vote.WindowsWon} windows"
-            : $"{vote.Mode} is identified by its {string.Join(" and ", vote.CharacteristicDegrees)}";
+            ? $"{ScaleModes.DisplayName(vote.Mode)} won {vote.WindowsWon} windows"
+            : $"{ScaleModes.DisplayName(vote.Mode)} is identified by its {string.Join(" and ", vote.CharacteristicDegrees)}";
 
     /// <summary>
     /// Bars are drawn against the most-sung degree, not against 100%. A melody spread over seven

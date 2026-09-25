@@ -12,7 +12,7 @@ public class ClientWorkRegistryTests
     [Fact]
     public async Task Completion_and_duplicate_prevention()
     {
-        var registry = new ClientWorkRegistry(new FakeTimeProvider());
+        var registry = new ClientWorkRegistry<IReadOnlyList<NoteEvent>>(new FakeTimeProvider());
         var wait = registry.WaitAsync("job1", TimeSpan.FromMinutes(5), CancellationToken.None);
 
         Assert.True(registry.TryComplete("job1", Notes));
@@ -24,7 +24,7 @@ public class ClientWorkRegistryTests
     public async Task Timeout_and_cancellation_leave_no_orphaned_waiters()
     {
         var time = new FakeTimeProvider();
-        var registry = new ClientWorkRegistry(time);
+        var registry = new ClientWorkRegistry<IReadOnlyList<NoteEvent>>(time);
         var wait = registry.WaitAsync("job1", TimeSpan.FromSeconds(300), CancellationToken.None);
 
         time.Advance(TimeSpan.FromSeconds(301));
