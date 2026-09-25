@@ -19,7 +19,7 @@ public class YinMelodyTranscriberTests
     }
 
     [Fact]
-    public void A_pure_A4_tone_transcribes_to_a_single_midi_69_note()
+    public void A_pure_A4_tone_is_one_midi_69_note_measured_to_the_cent_and_silence_is_none()
     {
         var buffer = new AudioBuffer(Sine(440.0, 1.5), SampleRate, 1);
 
@@ -29,6 +29,17 @@ public class YinMelodyTranscriberTests
         Assert.Equal(69, note.MidiPitch);
         Assert.True(note.DurationSec > 1.0, $"expected a sustained note, got {note.DurationSec:0.00}s");
         Assert.InRange(note.Velocity, 1, 127);
+
+        // Inside a note, the continuous pitch is what intonation is graded on: a tone 20 cents sharp
+        // (445.1 Hz) must read as 69.2, not round back to 69.
+        var sharp = new AudioBuffer(Sine(445.1, 1.5), SampleRate, 1);
+        var inside = Assert.Single(YinMelodyTranscriber.PitchesInside(sharp, [(0.0, 1.5)]));
+        Assert.NotEmpty(inside);
+        Assert.All(inside, midi => Assert.InRange(midi, 69.17, 69.23));
+
+        var silence = new AudioBuffer(new float[SampleRate * 2], SampleRate, 1);
+        Assert.Empty(YinMelodyTranscriber.Transcribe(silence));
+        Assert.Empty(Assert.Single(YinMelodyTranscriber.PitchesInside(silence, [(0.0, 2.0)])));
     }
 
     [Fact]
@@ -50,15 +61,5 @@ public class YinMelodyTranscriberTests
         Assert.True(
             notes.First(n => n.MidiPitch == 57).StartSec < notes.First(n => n.MidiPitch == 64).StartSec,
             "the A3 note must start before the E4 note");
-    }
-
-    [Fact]
-    public void Silence_transcribes_to_no_notes()
-    {
-        var buffer = new AudioBuffer(new float[SampleRate * 2], SampleRate, 1);
-
-        var notes = YinMelodyTranscriber.Transcribe(buffer);
-
-        Assert.Empty(notes);
     }
 }

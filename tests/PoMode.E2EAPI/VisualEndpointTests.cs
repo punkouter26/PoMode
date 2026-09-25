@@ -69,5 +69,14 @@ public sealed class VisualEndpointTests : IDisposable
             Assert.EndsWith("]", note.DegreeLabel);
             Assert.InRange(note.MidiPitch, payload.MinPitch, payload.MaxPitch);
         });
+
+        // Same silent job, the singer's profile: nothing was sung, so it declines in words rather
+        // than naming a voice type — and an unknown job is a 404, like every other per-job read.
+        var voice = await client.GetFromJsonAsync<VoiceProfileDto>($"/api/analysis/{jobId}/voice");
+        Assert.NotNull(voice);
+        Assert.Null(voice.Type);
+        Assert.False(string.IsNullOrWhiteSpace(voice.Summary));
+        var missing = await client.GetAsync($"/api/analysis/{new string('0', 32)}/voice");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
     }
 }

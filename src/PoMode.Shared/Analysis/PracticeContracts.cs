@@ -25,7 +25,8 @@ public sealed record PastTakeDto(
 /// Where the caller's voice sits, pooled across their recent finished hum takes. The pitch fields
 /// and <paramref name="Fit"/> are null until there is enough to say anything, and
 /// <paramref name="TakesNeeded"/> says how far off that is. <paramref name="Summary"/> is the
-/// sentence to show in both cases.
+/// sentence to show in both cases. <paramref name="Voice"/> is the voice type and strongest note from
+/// the same takes, present once the range is.
 /// </summary>
 public sealed record VocalRangeDto(
     int TakeCount,
@@ -36,7 +37,8 @@ public sealed record VocalRangeDto(
     int? HighMidi,
     string? HighLabel,
     string Summary,
-    VoiceFitDto? Fit);
+    VoiceFitDto? Fit,
+    VoiceProfileDto? Voice = null);
 
 /// <summary>
 /// The key that puts one mode where the caller sings. <paramref name="TonicPitchClass"/> is the

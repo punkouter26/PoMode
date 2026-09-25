@@ -35,6 +35,71 @@
     color: var(--pm-fg);
 }
 
+/* ---- The singer ---- */
+
+.voice {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--pm-border);
+}
+
+.voice-text {
+    margin: 0;
+    line-height: 1.5;
+    color: var(--pm-fg);
+}
+
+.voice-pending {
+    color: var(--pm-fg-muted);
+}
+
+.voice-notes {
+    /* Capped: five short columns spread across a wide card put each number a long way from its note. */
+    width: 100%;
+    max-width: 36rem;
+    border-collapse: collapse;
+    font-size: var(--pm-text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.voice-notes caption {
+    text-align: left;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+    padding-bottom: 0.25rem;
+}
+
+.voice-notes th,
+.voice-notes td {
+    padding: 0.3rem 0.5rem;
+    text-align: right;
+    border-bottom: 1px solid var(--pm-border);
+    color: var(--pm-fg-muted);
+}
+
+.voice-notes th[scope="row"],
+.voice-notes thead th:first-child {
+    text-align: left;
+    color: var(--pm-fg);
+}
+
+.voice-notes .voice-best th,
+.voice-notes .voice-best td {
+    color: var(--pm-ok);
+    background: var(--pm-ok-bg);
+    font-weight: 600;
+}
+
+/* Five columns fit a 320px phone at the small size; the padding is what gives way first. */
+@media (max-width: 640px) {
+    .voice-notes th,
+    .voice-notes td {
+        padding: 0.3rem 0.25rem;
+    }
+}
+
 /* ---- Detail boxes ---- */
 
 .song-stats-grid {

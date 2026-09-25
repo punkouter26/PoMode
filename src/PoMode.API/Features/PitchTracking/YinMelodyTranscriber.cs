@@ -98,6 +98,59 @@ public static class YinMelodyTranscriber
         return Segment(midis, rmsPerFrame);
     }
 
+    /// <summary>
+    /// The continuous (fractional MIDI) pitch at up to <paramref name="maxFramesPerSpan"/> points
+    /// inside each span, tuning-corrected like <see cref="Transcribe"/>. Only the middle of each span
+    /// is read — the first and last fifth are where a singer scoops into and falls off a note, which
+    /// is expression rather than tuning. Silent or unvoiced points are simply absent from a span's list.
+    ///
+    /// <para>Measures inside notes someone else already found rather than re-transcribing, so it can
+    /// grade the notes whichever tracker produced them, and costs a few frames per note instead of a
+    /// full pass over the recording.</para>
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<double>> PitchesInside(
+        AudioBuffer buffer,
+        IReadOnlyList<(double StartSec, double EndSec)> spans,
+        double tuningOffsetCents = 0.0,
+        int maxFramesPerSpan = 8)
+    {
+        var mono = AudioDecoder.ToMono(buffer);
+        if (mono.SampleRate != TargetSampleRate)
+        {
+            mono = AudioDecoder.Resample(mono, TargetSampleRate);
+        }
+        var samples = mono.Samples;
+        var tauMin = Math.Max(2, (int)(TargetSampleRate / MaxFrequencyHz));
+        var tauMax = (int)(TargetSampleRate / MinFrequencyHz);
+        var lastStart = samples.Length - (WindowSize + tauMax);
+        var cmndf = new double[tauMax + 1];
+        var shift = tuningOffsetCents / 100.0;
+
+        var result = new List<IReadOnlyList<double>>(spans.Count);
+        foreach (var (startSec, endSec) in spans)
+        {
+            var pitches = new List<double>(maxFramesPerSpan);
+            var trim = (endSec - startSec) * 0.2;
+            var from = (int)((startSec + trim) * TargetSampleRate);
+            var to = (int)((endSec - trim) * TargetSampleRate) - WindowSize;
+            var count = Math.Clamp(((to - from) / HopSize) + 1, 0, maxFramesPerSpan);
+            for (var i = 0; i < count; i++)
+            {
+                var start = count == 1 ? from : from + (int)((long)(to - from) * i / (count - 1));
+                if (start < 0 || start > lastStart || Rms(samples, start, WindowSize) < SilenceRms)
+                {
+                    continue;
+                }
+                if (EstimateMidi(samples, start, tauMin, tauMax, cmndf) is { } midi)
+                {
+                    pitches.Add(midi - shift);
+                }
+            }
+            result.Add(pitches);
+        }
+        return result;
+    }
+
     private static double Rms(float[] samples, int start, int count)
     {
         var sum = 0.0;

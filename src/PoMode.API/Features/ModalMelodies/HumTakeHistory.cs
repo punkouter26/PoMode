@@ -1,6 +1,7 @@
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.SongStatistics;
+using PoMode.API.Features.VoiceProfile;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.ModalMelodies;
@@ -15,7 +16,7 @@ namespace PoMode.API.Features.ModalMelodies;
 /// run of matches and no percentage. Practice is unscored on purpose: a take that came out Mixolydian
 /// over Dorian chords is a finding, not a miss.</para>
 /// </summary>
-public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generator)
+public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generator, VoiceProfileService voices)
 {
     /// <summary>Fewer finished takes than this and the range is one session's mood, not a voice.</summary>
     public const int MinTakes = 3;
@@ -76,9 +77,11 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
     }
 
     /// <summary>The caller's vocal range from their recent finished takes, over any backing — a voice
-    /// does not change register with the chords — plus the key that fits <paramref name="mode"/> to it.</summary>
+    /// does not change register with the chords — plus the key that fits <paramref name="mode"/> to it,
+    /// and, once the range stands, the voice type and strongest note those same takes show.</summary>
     public async Task<VocalRangeDto> VocalRangeAsync(string? ownerId, ScaleMode mode, CancellationToken ct)
     {
+        var finished = new List<JobState>();
         var takes = new List<IReadOnlyList<NoteEvent>>();
         foreach (var state in await OwnedTakesAsync(ownerId, ct))
         {
@@ -86,13 +89,25 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
             {
                 continue;
             }
+            finished.Add(state);
             takes.Add(await store.ReadArtifactListAsync<NoteEvent>(state.JobId, "notes.json", ct));
             if (takes.Count == MaxTakes)
             {
                 break;
             }
         }
-        return Profile(takes, mode);
+        var range = Profile(takes, mode);
+        if (range.TakesNeeded > 0)
+        {
+            // Same gate as the range: a voice type from one lucky phrase would be a guess with a label.
+            return range;
+        }
+        var sung = new List<NoteIntonation>();
+        foreach (var state in finished)
+        {
+            sung.AddRange(await voices.IntonationAsync(state, ct));
+        }
+        return range with { Voice = VoiceProfiler.Build(sung, VoiceSubject.You) };
     }
 
     /// <summary>Every hum take the caller owns, newest first. Ownerless callers own nothing — same

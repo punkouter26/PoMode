@@ -78,6 +78,20 @@
                               Click="@FitToVoiceAsync" id="practice-fit" title="@fit.Explanation" />
             }
         </div>
+        @* Voice type and strongest note from the same takes, worded server-side. Present only once
+           the range is: both are read from the same pool of notes. *@
+        @if (voice.Voice is { TypeLabel: not null } singer)
+        {
+            <div class="practice-singer" id="practice-singer" data-voice-type="@singer.Type"
+                 data-voice-strongest="@(singer.StrongestLabel ?? "")">
+                <p class="practice-voice-why">@singer.Summary</p>
+                @if (singer.StrongestSentence is { } strongest)
+                {
+                    <p class="practice-voice-why">@strongest</p>
+                }
+                <p class="practice-singer-how">@singer.HowJudged</p>
+            </div>
+        }
         @* The reason is shown once it applies rather than before: until then it would be a sentence
            about a key the page is not playing. *@
         @if (FitForMode is { } applied && applied.TonicPitchClass == _tonic)

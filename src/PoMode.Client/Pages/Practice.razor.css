@@ -71,6 +71,19 @@
     max-width: 64ch;
 }
 
+/* The type and strongest note read as the voice's own lines, a shade stronger than the fit's
+   explanation; the caveat about what a pitch track can hear stays quiet beneath them. */
+.practice-singer .practice-voice-why {
+    color: var(--pm-fg);
+}
+
+.practice-singer-how {
+    margin: var(--pm-space-1) 0 0;
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+    max-width: 64ch;
+}
+
 /* ---- Earlier takes over these chords ---- */
 
 .history-summary {

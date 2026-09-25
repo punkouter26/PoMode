@@ -194,6 +194,30 @@ describes the backing that was *played to* the singer and never asserts a mode f
 is the answer the analyzer exists to give, and stating it alongside would pre-empt it. An ordinary
 upload has no origin; a dropped file is its own explanation.
 
+### The singer's voice
+
+`GET /api/analysis/{id}/voice` answers what a singer asks about their own voice: which voice type's
+range it sits in, and the note it does best. `/api/modal-melodies/voice` carries the same read for the
+caller, pooled over the same hum takes as their range and gated by the same minimum.
+
+The type is judged by range only — the share of notes inside each classical range (E2–E4 bass up to
+C4–C6 soprano), then the type whose usual centre is nearest the median. Those centres sit about two
+semitones below the middle of each range, because singers live in the lower middle of their voice;
+matching the arithmetic middle read every baritone as a bass. Within 1.5 semitones of two centres the
+answer is "between baritone and tenor", because a pitch track cannot honestly split them finer. Every
+read carries a sentence saying a teacher would also listen to tone and register changes, which pitch
+cannot hear, and labels name a range, never the person.
+
+"Best note" is not the most frequent one. notes.json keeps whole semitones, so `IntonationMeter` goes
+back to the audio and reads YIN's continuous pitch inside each note (`PitchesInside`, middle 60% only —
+the scoop into a note and the fall off it are expression, not tuning). A pitch's score is time held,
+discounted by distance from true pitch and by wobble while held; the sentence only claims the
+superlatives it actually won. That measurement costs a second or two per song, so unlike `/stats` it is
+cached as `intonation.json`, keyed on note count and tuning reference. A song is graded against its own
+measured tuning (the band sets the pitch); a hum take against A=440, the backing it was sung over —
+correcting a take for its own offset would forgive exactly the flatness a singer wants to hear about.
+The demo declines outright: its melody is a synthesized flute, not a voice.
+
 ### Song statistics and interpretation
 
 `GET /api/analysis/{id}/stats` derives every melody/harmony statistic on demand from the stored

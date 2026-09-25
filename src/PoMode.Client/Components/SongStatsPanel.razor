@@ -16,6 +16,62 @@
             <p class="fingerprint-text">@stats.Fingerprint</p>
         </div>
 
+        @* The singer, shown open rather than inside the details below: it answers a question people
+           ask about a recording directly, where the boxes are supporting figures. Loaded on its own
+           because the first request measures the vocal and should not hold up the rest. *@
+        <div class="voice" id="voice-profile" data-voice-type="@(_voice?.Type?.ToString() ?? "")"
+             data-voice-strongest="@(_voice?.StrongestLabel ?? "")">
+            <span class="fingerprint-label">The singer</span>
+            @if (_voice is { } singer)
+            {
+                @if (singer.TypeLabel is { } type)
+                {
+                    <div class="stat-highlight voice-head">
+                        <span class="range-span">@(singer.Leaning is { } leaning ? $"{type} / {leaning}" : type)</span>
+                        @if (singer.StrongestLabel is { } strongest)
+                        {
+                            <span class="stat-badge badge-success">Strongest note: @strongest</span>
+                        }
+                    </div>
+                }
+                <p class="voice-text">@singer.Summary</p>
+                @if (singer.StrongestSentence is { } why)
+                {
+                    <p class="voice-text">@why</p>
+                }
+                @if (singer.Notes.Count > 0)
+                {
+                    <table class="voice-notes">
+                        <caption>The notes sung most, and how they were held</caption>
+                        <thead>
+                            <tr><th scope="col">Note</th><th scope="col">Sung</th><th scope="col">Held</th><th scope="col">Off pitch</th><th scope="col">Wobble</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var note in singer.Notes)
+                            {
+                                <tr class="@(note.Midi == singer.StrongestMidi ? "voice-best" : "")">
+                                    <th scope="row">@note.Label</th>
+                                    <td>@($"{note.Count}×")</td>
+                                    <td>@($"{note.HeldSec:0.0} s")</td>
+                                    <td>@(note.OffCents is { } off ? $"{off:0} ¢" : "—")</td>
+                                    <td>@(note.WobbleCents is { } wobble ? $"{wobble:0} ¢" : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <p class="stat-note voice-how">@singer.HowJudged</p>
+            }
+            else if (_voiceLoading)
+            {
+                <p class="voice-text voice-pending">Measuring the vocal…</p>
+            }
+            else
+            {
+                <p class="voice-text voice-pending">The singer could not be profiled for this song.</p>
+            }
+        </div>
+
         @* The six detail boxes carry every measured figure, and the fingerprint paragraph above
            already states the same things in prose — so they open on request rather than making the
            page two and a half screens tall before anyone has asked a question. Progressive
@@ -393,6 +449,8 @@
     [Parameter, EditorRequired] public required string JobId { get; set; }
 
     private SongStats? _stats;
+    private VoiceProfileDto? _voice;
+    private bool _voiceLoading;
     private List<InterpreterOptionDto>? _interpreters;
     private SongInterpretationDto? _interpretation;
     private string? _chosen;
@@ -411,6 +469,7 @@
 
         _loadedJobId = JobId;
         _stats = null;
+        _voice = null;
         _interpretation = null;
         _error = null;
         // A different song is a different conversation; carrying the transcript over would put
@@ -421,6 +480,7 @@
         _askError = null;
 
         _stats = await Client.GetStatsAsync(JobId);
+        _ = LoadVoiceAsync(JobId);
 
         // The interpreter list describes the server, not the song, so it is fetched once per
         // component instance and reused across jobs.
@@ -428,6 +488,33 @@
         {
             _interpreters = await Client.GetInterpretersAsync();
             _chosen = _interpreters?.FirstOrDefault(option => option.IsDefault)?.Name;
+        }
+    }
+
+    /// <summary>Fire-and-forget beside the statistics: a render with them should not wait on the vocal
+    /// being measured. Drops its answer if the component has moved on to another job meanwhile.</summary>
+    private async Task LoadVoiceAsync(string jobId)
+    {
+        _voiceLoading = true;
+        try
+        {
+            var voice = await Client.GetVoiceProfileAsync(jobId);
+            if (jobId == JobId)
+            {
+                _voice = voice;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            // The rest of the panel stands without it; the block says it could not be profiled.
+        }
+        finally
+        {
+            if (jobId == JobId)
+            {
+                _voiceLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 

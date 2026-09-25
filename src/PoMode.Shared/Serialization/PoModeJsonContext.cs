@@ -21,6 +21,7 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(List<StageExecutorsDto>))]
 [JsonSerializable(typeof(ModalResult))]
 [JsonSerializable(typeof(SongStats))]
+[JsonSerializable(typeof(VoiceProfileDto))]
 [JsonSerializable(typeof(SongInterpretationDto))]
 [JsonSerializable(typeof(List<InterpreterOptionDto>))]
 [JsonSerializable(typeof(BeatGridDto))]

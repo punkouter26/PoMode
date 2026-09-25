@@ -34,6 +34,11 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<VisualizationPayload?> GetVisualAsync(string jobId)
         => http.GetFromJsonAsync<VisualizationPayload>($"api/analysis/{jobId}/visual");
 
+    /// <summary>The lead singer's voice type and strongest note. The first request for a song measures
+    /// its vocal, so it can take a second or two; later ones are cached server-side.</summary>
+    public Task<VoiceProfileDto?> GetVoiceProfileAsync(string jobId)
+        => http.GetFromJsonAsync<VoiceProfileDto>($"api/analysis/{jobId}/voice");
+
     /// <summary>Every derived song/melody statistic, plus the fingerprint paragraph.</summary>
     public Task<SongStats?> GetStatsAsync(string jobId)
         => http.GetFromJsonAsync<SongStats>($"api/analysis/{jobId}/stats");
