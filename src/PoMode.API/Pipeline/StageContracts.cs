@@ -129,3 +129,22 @@ public interface IChordRecognizer : IStageExecutor
     Task<IReadOnlyList<ChordSpan>> RecognizeAsync(StageContext context, CancellationToken ct);
 }
 
+/// <summary>
+/// What a beat tracker hands the pipeline: the two artifacts it writes (beats.json, tempo-map.json)
+/// plus every beat time it placed, which is not persisted — the grid and the map are what the app
+/// reads — but is what a beat tracker is scored on.
+/// </summary>
+public sealed record BeatTrackResult(BeatGridDto Grid, TempoMapDto TempoMap, IReadOnlyList<double> Beats);
+
+/// <summary>
+/// Beats (and, where the executor can tell, downbeats) for the metronome, the tempo map and the
+/// measure numbers. Not one of the four planned stages: it runs best-effort inside ChordDetecting,
+/// walked in <see cref="ExecutionPlanner.EffectiveRank"/> order with fall-through on failure, and the
+/// executor that answered is recorded in <see cref="BeatGridDto.Tracker"/>.
+/// </summary>
+public interface IBeatTracker : IStageExecutor
+{
+    /// <summary>Reads <see cref="StageContext.PreferredAnalysisPath"/> (the instrumental stem when one exists).</summary>
+    Task<BeatTrackResult> TrackBeatsAsync(StageContext context, CancellationToken ct);
+}
+

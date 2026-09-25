@@ -20,7 +20,18 @@ public sealed record AnalysisPreviewDto(string TonicName, double TempoBpm, doubl
 /// moves, but the metronome, the syncopation figure and beat-synchronous chord segmentation all
 /// assume a single regular grid, so the map is reported alongside this rather than replacing it.</para>
 /// </summary>
-public sealed record BeatGridDto(double Bpm, double FirstBeatSec, double Confidence);
+/// <param name="Downbeats">
+/// Bar starts in seconds, when the beat tracker could hear them (a neural tracker can; the classic
+/// onset-autocorrelation one cannot and leaves this null). When present, measure numbers count these
+/// instead of assuming four beats from t=0.
+/// </param>
+/// <param name="Tracker">The executor that produced this grid, or null for a grid that was given rather than measured.</param>
+public sealed record BeatGridDto(
+    double Bpm,
+    double FirstBeatSec,
+    double Confidence,
+    IReadOnlyList<double>? Downbeats = null,
+    string? Tracker = null);
 
 /// <summary>One measure's own tempo, read from the gap to the next downbeat.</summary>
 /// <param name="Number">1-based, matching the measure numbers the canvas shows.</param>

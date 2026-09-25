@@ -199,7 +199,7 @@
     private static string StageDescription(string stage) => stage switch
     {
         StageNames.Separating => "Separating audio into vocal and instrumental tracks with neural AI model…",
-        StageNames.PitchTracking => "Transcribing vocal melody and pitch contours with Basic Pitch…",
+        StageNames.PitchTracking => "Transcribing the vocal melody note by note…",
         StageNames.ChordDetecting => "Detecting harmony and chord progressions over time…",
         StageNames.ModalAnalysis => "Computing modal scale distribution and determining key & tonic…",
         _ => "Processing analysis stage…",

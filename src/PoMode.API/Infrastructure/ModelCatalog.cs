@@ -7,7 +7,7 @@ namespace PoMode.API.Infrastructure;
 public static class ModelCatalog
 {
     /// <summary>
-    /// Spotify Basic Pitch (pitch tracking). File confirmed working in the 2026-08-16 ONNX/ARM64
+    /// Spotify Basic Pitch (pitch tracking). Licence: Apache-2.0. File confirmed working in the 2026-08-16 ONNX/ARM64
     /// feasibility spike (real inference benchmarked there). The URL is pinned to the commit that added
     /// the file (<c>dfb20ef559dff1792e11e022f3f0c7008c1dee6d</c>, "Add onnx serialized model") rather
     /// than <c>raw/main</c>, so the bytes behind this URL cannot change under us. The SHA-256 below was
@@ -22,7 +22,7 @@ public static class ModelCatalog
         Sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec");
 
     /// <summary>
-    /// HTDemucs stem separation model. URL and SHA-256 established as the real feasibility-gate values
+    /// HTDemucs stem separation model. Licence: MIT (Meta's demucs weights). URL and SHA-256 established as the real feasibility-gate values
     /// for Task 8's stem separator. The URL is pinned to the repo's current commit
     /// (<c>d54ed9eb60e258ea82131c6ee14578628816456a</c>, resolved via the Hugging Face models API for
     /// <c>StemSplitio/htdemucs-onnx</c>) rather than <c>resolve/main</c>, so the bytes behind this URL
@@ -35,7 +35,51 @@ public static class ModelCatalog
         Url: "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/d54ed9eb60e258ea82131c6ee14578628816456a/htdemucs_fp16weights.onnx",
         Sha256: "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a");
 
-    public static readonly IReadOnlyList<ModelDescriptor> All = [BasicPitch, HtDemucs];
+    /// <summary>
+    /// RMVPE vocal pitch estimator (Wei et al., 2023), the ONNX export shipped with RVC WebUI.
+    /// Licence: MIT (the <c>lj1995/VoiceConversionWebUI</c> model card; RVC itself is MIT).
+    /// Pinned to repo commit <c>e6d0c1a17da07c33557852f9dfa2bd44cc75737d</c>; 361,688,443 bytes;
+    /// SHA-256 computed from a fresh download of that pinned URL on 2026-09-24 and the graph loaded
+    /// with <c>Microsoft.ML.OnnxRuntime</c> 1.29: <c>input [1,128,T]</c> log-mel →
+    /// <c>output [1,T,360]</c> pitch salience. Large, so it downloads last.
+    /// </summary>
+    public static readonly ModelDescriptor Rmvpe = new(
+        Key: "rmvpe",
+        FileName: "rmvpe.onnx",
+        Url: "https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/e6d0c1a17da07c33557852f9dfa2bd44cc75737d/rmvpe.onnx",
+        Sha256: "5370e71ac80af8b4b7c793d27efd51fd8bf962de3a7ede0766dac0befa3660fd");
+
+    /// <summary>
+    /// Beat This! (Foscarin, Schlüter &amp; Widmer, ISMIR 2024; CPJKU, checkpoint <c>final0</c>)
+    /// beat and downbeat tracker. Licence: MIT (upstream weights and this export). The export is
+    /// <c>musetric/beat-this-onnx</c> pinned to its first commit
+    /// <c>4e971bd43753023e1bf961c34a0cb74985cfcb88</c> on purpose: later commits rewrite the graph
+    /// for mobile WebGPU (static 513-frame windows, im2col convolutions), which buys nothing on the
+    /// CPU provider and moves away from the reference 1500-frame chunking. 83,143,431 bytes; the
+    /// SHA-256 matches the one the model card publishes for that revision and was re-computed from a
+    /// fresh download on 2026-09-24: <c>spect [windows,frames,128]</c> → <c>beat</c>,
+    /// <c>downbeat [windows,frames]</c> logits.
+    /// </summary>
+    public static readonly ModelDescriptor BeatThis = new(
+        Key: "beat-this",
+        FileName: "beat_this.onnx",
+        Url: "https://huggingface.co/musetric/beat-this-onnx/resolve/4e971bd43753023e1bf961c34a0cb74985cfcb88/beat_this.onnx",
+        Sha256: "078572af6ca47741e06a82d09525d13c793eaa8e311a8cf15e831dcd7e73f218");
+
+    /// <summary>
+    /// The mel filterbank Beat This! was trained with — torchaudio's <c>MelScale.fb</c> (Slaney
+    /// scale, 30–11000 Hz) written verbatim as a raw row-major float32 <c>[513,128]</c> matrix, from
+    /// the same pinned commit. Downloaded rather than re-derived so the features match the reference
+    /// bit for bit. MIT; 262,656 bytes.
+    /// </summary>
+    public static readonly ModelDescriptor BeatThisMelFilterbank = new(
+        Key: "beat-this-mels",
+        FileName: "beat_this_mel_filterbank.bin",
+        Url: "https://huggingface.co/musetric/beat-this-onnx/resolve/4e971bd43753023e1bf961c34a0cb74985cfcb88/mel-filterbank.bin",
+        Sha256: "1ee975d96f44ccf2c3bfe37825c1c1f0b089f5703c7a12a84b1f0a3bce004533");
+
+    public static readonly IReadOnlyList<ModelDescriptor> All =
+        [BasicPitch, HtDemucs, BeatThis, BeatThisMelFilterbank, Rmvpe];
 
     /// <summary>
     /// onnxruntime-web 1.27.0, pinned to the immutable npm-versioned jsdelivr URLs (npm packages

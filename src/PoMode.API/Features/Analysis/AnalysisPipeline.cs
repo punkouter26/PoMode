@@ -14,9 +14,14 @@ public sealed class AnalysisPipeline(
     Features.ModalAnalysis.ArtifactModalAnalyzer modalAnalyzer,
     IAnalysisNotifier notifier,
     ILogger<AnalysisPipeline> logger,
-    TimeProvider? time = null)
+    TimeProvider? time = null,
+    IEnumerable<IBeatTracker>? beatTrackers = null)
 {
     private readonly TimeProvider _time = time ?? TimeProvider.System;
+
+    /// <summary>Hosts that register no beat tracker (older test fixtures) keep the classic one.</summary>
+    private readonly IReadOnlyList<IBeatTracker> _beatTrackers =
+        beatTrackers?.ToArray() is { Length: > 0 } registered ? registered : [new Features.BeatTracking.DspBeatTracker()];
 
     /// <summary>Clips shorter than this skip stem separation entirely (snippets, mic checks).</summary>
     private const double ShortClipSeconds = 30.0;
@@ -250,38 +255,40 @@ public sealed class AnalysisPipeline(
     }
 
     /// <summary>
-    /// Best-effort beat grid for the client metronome, written alongside chords.json. Prefers the
-    /// instrumental stem (same choice ChromaChordRecognizer makes — drums live there); falls back
-    /// to the original upload. A failure only costs the metronome, never the job, and a
-    /// low-confidence grid is written as-is so the client can gate on it.
+    /// Best-effort beat grid for the client metronome, the tempo map and (when the tracker hears
+    /// them) the downbeats that number the measures — written alongside chords.json. Reads the
+    /// instrumental stem when there is one (drums live there). Beat trackers are walked in
+    /// <see cref="ExecutionPlanner.EffectiveRank"/> order and a failing one falls through to the next,
+    /// ending at the always-available classic tracker; the one that answered is named in beats.json.
+    /// A failure of every tracker costs the metronome, never the job, and a low-confidence grid is
+    /// written as-is so the client can gate on it.
     /// </summary>
     private async Task WriteBeatGridAsync(JobState state, StageContext context, CancellationToken ct)
     {
-        try
+        foreach (var tracker in _beatTrackers.OrderBy(ExecutionPlanner.EffectiveRank))
         {
-            var audio = context.DecodePreferredAnalysisAudio();
-            var grid = TempoEstimator.EstimateGrid(audio);
-            await store.WriteArtifactAsync(
-                state.JobId, "beats.json", new BeatGridDto(grid.Bpm, grid.FirstBeatSec, grid.Confidence), ct);
-
-            // Written alongside the grid, not instead of it: everything downstream still runs on the
-            // single tempo, and this is the honest record of what the tempo actually did.
-            var map = TempoEstimator.EstimateTempoMap(audio);
-            await store.WriteArtifactAsync(
-                state.JobId, "tempo-map.json",
-                new TempoMapDto(
-                    map.MedianBpm, map.MinBpm, map.MaxBpm, map.IsSteady, map.Confidence,
-                    [.. map.Measures.Select(measure => new TempoMeasureDto(
-                        measure.Number, measure.StartSec, measure.Bpm, measure.Changed))]),
-                ct);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Beat grid estimation failed for job {JobId}; continuing without it.", state.JobId);
+            try
+            {
+                if (!await tracker.IsAvailableAsync(ct))
+                {
+                    continue;
+                }
+                var result = await tracker.TrackBeatsAsync(context, ct);
+                await store.WriteArtifactAsync(state.JobId, "beats.json", result.Grid, ct);
+                // Written alongside the grid, not instead of it: everything downstream still runs on
+                // the single tempo, and this is the honest record of what the tempo actually did.
+                await store.WriteArtifactAsync(state.JobId, "tempo-map.json", result.TempoMap, ct);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Beat tracker {Tracker} failed for job {JobId}; trying the next one.",
+                    tracker.Name, state.JobId);
+            }
         }
     }
 

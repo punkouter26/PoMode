@@ -127,4 +127,63 @@ public static class AudioDecoder
         }
         return new AudioBuffer(output, targetSampleRate, 1);
     }
+
+    /// <summary>
+    /// Windowed-sinc resampling with the anti-aliasing <see cref="Resample"/> skips. Linear
+    /// interpolation is fine for the classic DSP stages, which only look well below the new Nyquist,
+    /// but a neural front end's top mel bands sit right at it: downsampling 44.1 kHz to 16 kHz by
+    /// interpolation folds cymbals and sibilance back into exactly the bands the model reads, as
+    /// energy it never saw in training. Mono only, like <see cref="Resample"/>.
+    /// </summary>
+    public static AudioBuffer ResampleBandLimited(AudioBuffer buffer, int targetSampleRate)
+    {
+        if (buffer.Channels != 1)
+        {
+            throw new ArgumentException("Resample expects mono input; call ToMono first.", nameof(buffer));
+        }
+        if (buffer.SampleRate == targetSampleRate || buffer.Samples.Length == 0)
+        {
+            return buffer with { SampleRate = targetSampleRate };
+        }
+
+        const int ZeroCrossings = 16;
+        var input = buffer.Samples;
+        var ratio = (double)targetSampleRate / buffer.SampleRate;
+        // Cutoff as a fraction of the input rate: the lower Nyquist, pulled in slightly so the
+        // transition band finishes before it rather than straddling it.
+        var cutoff = 0.5 * Math.Min(1.0, ratio) * 0.95;
+        var halfWidth = ZeroCrossings / (2.0 * cutoff); // in input samples
+        var output = new float[(int)(input.Length * ratio)];
+
+        // The kernel tabulated at 1/256-sample resolution: evaluating sin and cos per tap would
+        // cost seconds on a full song, and the table's error is far below 16-bit audio's.
+        const int Resolution = 256;
+        var kernel = new float[(int)Math.Ceiling(2 * halfWidth * Resolution) + 2];
+        for (var t = 0; t < kernel.Length; t++)
+        {
+            var x = (t / (double)Resolution) - halfWidth;
+            if (Math.Abs(x) > halfWidth)
+            {
+                continue;
+            }
+            var arg = 2.0 * cutoff * x;
+            var sinc = Math.Abs(arg) < 1e-9 ? 1.0 : Math.Sin(Math.PI * arg) / (Math.PI * arg);
+            var window = 0.5 + (0.5 * Math.Cos(Math.PI * x / halfWidth)); // Hann
+            kernel[t] = (float)(2.0 * cutoff * sinc * window);
+        }
+
+        Parallel.For(0, output.Length, i =>
+        {
+            var centre = i / ratio;
+            var first = Math.Max(0, (int)Math.Ceiling(centre - halfWidth));
+            var last = Math.Min(input.Length - 1, (int)Math.Floor(centre + halfWidth));
+            var sum = 0f;
+            for (var j = first; j <= last; j++)
+            {
+                sum += input[j] * kernel[(int)(((j - centre + halfWidth) * Resolution) + 0.5)];
+            }
+            output[i] = sum;
+        });
+        return new AudioBuffer(output, targetSampleRate, 1);
+    }
 }

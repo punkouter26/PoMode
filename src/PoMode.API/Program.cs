@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
+using PoMode.API.Features.BeatTracking;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Demo;
 using PoMode.API.Features.Diagnostics;
@@ -59,6 +60,9 @@ builder.Services.AddSingleton<AnalysisIntake>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
+// RMVPE and Basic Pitch share a rank (both local models), so registration order decides the default:
+// RMVPE first, on the accuracy numbers in CLAUDE.md. Basic Pitch still transcribes the backing stem.
+builder.Services.AddSingleton<IPitchTracker, RmvpePitchTracker>();
 builder.Services.AddSingleton<OnnxPitchTracker>();
 builder.Services.AddSingleton<IPitchTracker>(sp => sp.GetRequiredService<OnnxPitchTracker>());
 builder.Services.AddSingleton<IPitchTracker, ClientDelegatedPitchTracker>();
@@ -67,6 +71,8 @@ builder.Services.AddSingleton<IPitchTracker, FakePitchTracker>();
 builder.Services.AddSingleton<IChordRecognizer, ChromaChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, ViterbiChordRecognizer>();
 builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
+builder.Services.AddSingleton<IBeatTracker, BeatThisBeatTracker>();
+builder.Services.AddSingleton<IBeatTracker, DspBeatTracker>();
 builder.Services.AddSingleton<ArtifactModalAnalyzer>();
 builder.Services.AddSingleton<ModalMelodyGenerator>();
 builder.Services.AddSingleton<HumTakeSeeder>();

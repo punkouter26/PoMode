@@ -347,10 +347,10 @@ public static class TempoEstimator
     /// frame at 22 kHz is about 23 ms, which at 120 BPM is already ~1 BPM of apparent change — so a
     /// smaller threshold would flag measurement noise as musical rubato.
     /// </summary>
-    private const double ChangeThresholdBpm = 2.0;
+    internal const double ChangeThresholdBpm = 2.0;
 
     /// <summary>A song whose whole range fits inside this is "steady" and needs no tempo track.</summary>
-    private const double SteadyRangeBpm = 4.0;
+    internal const double SteadyRangeBpm = 4.0;
 
     /// <summary>
     /// How far one measure's tempo may differ from the previous accepted one before it is treated as
@@ -498,7 +498,7 @@ public static class TempoEstimator
     /// <para>The first and last measures keep their raw value: there is no window around them, and
     /// borrowing one would shift the ends of the curve.</para>
     /// </summary>
-    private static double[] MedianSmooth(double[] values)
+    internal static double[] MedianSmooth(double[] values)
     {
         if (values.Length < 3)
         {

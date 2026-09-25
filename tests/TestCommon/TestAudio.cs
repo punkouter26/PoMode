@@ -177,6 +177,108 @@ public static class TestAudio
         return ToPcm16Wav(samples, sampleRate);
     }
 
+    /// <summary>
+    /// A voice-like line rather than a sine: a harmonic-rich source (partials falling off at 1/k),
+    /// 5.5 Hz vibrato of ±<paramref name="vibratoCents"/>, a soft attack and release, and optional
+    /// quiet noise standing in for the bleed a real separation leaves behind. What a vocal pitch
+    /// model is for, and what a plain sine never exercises.
+    /// </summary>
+    public static byte[] MakeSungLine(
+        double seconds,
+        IReadOnlyList<(int Midi, double StartSec, double DurationSec)> notes,
+        double vibratoCents = 40,
+        double noiseLevel = 0.0,
+        int sampleRate = 44100)
+    {
+        var count = (int)(seconds * sampleRate);
+        var samples = new double[count];
+        var random = new Random(7);
+        foreach (var (midi, startSec, durationSec) in notes)
+        {
+            var frequency = 440.0 * Math.Pow(2, (midi - 69) / 12.0);
+            var start = (int)(startSec * sampleRate);
+            var length = (int)(durationSec * sampleRate);
+            var phase = 0.0;
+            for (var i = 0; i < length && start + i < count; i++)
+            {
+                var t = i / (double)sampleRate;
+                var envelope = Math.Min(1.0, Math.Min(t / 0.04, (durationSec - t) / 0.06));
+                var bent = frequency * Math.Pow(2, vibratoCents * Math.Sin(2 * Math.PI * 5.5 * t) / 1200.0);
+                phase += 2 * Math.PI * bent / sampleRate;
+                var value = 0.0;
+                for (var k = 1; k <= 8 && bent * k < sampleRate / 2.0; k++)
+                {
+                    value += Math.Sin(k * phase) / k;
+                }
+                samples[start + i] += 0.5 * Math.Max(0, envelope) * value;
+            }
+        }
+        if (noiseLevel > 0)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                samples[i] += noiseLevel * ((random.NextDouble() * 2) - 1);
+            }
+        }
+        return ToPcm16Wav(samples, sampleRate);
+    }
+
+    /// <summary>
+    /// A 4/4 groove with a known beat and bar grid, for beat trackers: kick on 1 and 3, snare on 2 and
+    /// 4, closed hi-hat eighths, and a bass note that changes on every bar's downbeat (the cue a
+    /// listener uses to hear where bar one is). Silence before <paramref name="leadInSec"/>, so bar
+    /// one does not coincide with t=0. Returns the true beat and downbeat times with the audio.
+    /// </summary>
+    public static (byte[] Wav, double[] Beats, double[] Downbeats) MakeDrumLoop(
+        int bars, double bpm, double leadInSec, int sampleRate = 44100)
+    {
+        var beatSec = 60.0 / bpm;
+        var seconds = leadInSec + (bars * 4 * beatSec) + 1.0;
+        var count = (int)(seconds * sampleRate);
+        var samples = new double[count];
+        var random = new Random(11);
+        int[] bassLine = [36, 41, 43, 38]; // C2 F2 G2 D2, one per bar
+
+        void Add(double atSec, double durationSec, Func<double, double> voice)
+        {
+            var start = (int)(atSec * sampleRate);
+            for (var i = 0; i < (int)(durationSec * sampleRate) && start + i < count; i++)
+            {
+                samples[start + i] += voice(i / (double)sampleRate);
+            }
+        }
+
+        var beats = new List<double>();
+        var downbeats = new List<double>();
+        for (var bar = 0; bar < bars; bar++)
+        {
+            var barStart = leadInSec + (bar * 4 * beatSec);
+            downbeats.Add(barStart);
+            var bass = 440.0 * Math.Pow(2, (bassLine[bar % bassLine.Length] - 69) / 12.0);
+            Add(barStart, (4 * beatSec) - 0.05, t => 0.35 * Math.Sin(2 * Math.PI * bass * t) * Math.Exp(-t * 0.8));
+            for (var beat = 0; beat < 4; beat++)
+            {
+                var at = barStart + (beat * beatSec);
+                beats.Add(at);
+                if (beat % 2 == 0)
+                {
+                    // Kick: a pitch-dropping sine thump.
+                    Add(at, 0.18, t => 0.9 * Math.Sin(2 * Math.PI * (50 + (100 * Math.Exp(-t * 30))) * t) * Math.Exp(-t * 18));
+                }
+                else
+                {
+                    // Snare: a noise burst over a short tone.
+                    Add(at, 0.15, t => ((0.5 * ((random.NextDouble() * 2) - 1)) + (0.3 * Math.Sin(2 * Math.PI * 190 * t))) * Math.Exp(-t * 25));
+                }
+                for (var half = 0; half < 2; half++)
+                {
+                    Add(at + (half * beatSec / 2), 0.04, t => 0.15 * ((random.NextDouble() * 2) - 1) * Math.Exp(-t * 90));
+                }
+            }
+        }
+        return (ToPcm16Wav(samples, sampleRate), [.. beats], [.. downbeats]);
+    }
+
     private static byte[] ToPcm16Wav(double[] samples, int sampleRate)
     {
         var peak = samples.Length == 0 ? 1.0 : Math.Max(samples.Max(Math.Abs), 1e-9);

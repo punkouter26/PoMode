@@ -18,7 +18,8 @@ public static class ModalAnalysisEngine
         IReadOnlyList<ChordSpan> chords,
         double tempoBpm = 120.0,
         bool tempoEstimated = true,
-        double tuningOffsetCents = 0.0)
+        double tuningOffsetCents = 0.0,
+        IReadOnlyList<double>? downbeats = null)
     {
         var bpm = tempoBpm <= 0 ? 120.0 : tempoBpm;
         var tonic = TonicDetector.Detect(notes, chords);
@@ -41,7 +42,7 @@ public static class ModalAnalysisEngine
                 StartSec: chord.StartSec,
                 EndSec: chord.EndSec,
                 ChordSymbol: chord.Symbol,
-                MeasureNumber: (int)(chord.StartSec / secondsPerMeasure) + 1,
+                MeasureNumber: MeasureAt(chord.StartSec, secondsPerMeasure, downbeats),
                 VocalMask: vocalMask,
                 SungIntervals: intervals,
                 InsufficientEvidence: insufficient,
@@ -61,6 +62,26 @@ public static class ModalAnalysisEngine
             TempoEstimated: tempoEstimated,
             Windows: windows,
             TuningOffsetCents: tuningOffsetCents);
+    }
+
+    /// <summary>
+    /// 1-based measure number at <paramref name="seconds"/>. With heard downbeats it is the count of
+    /// bar starts at or before that moment (a pickup before the first one belongs to measure 1);
+    /// without them it falls back to 4/4 at the song's tempo from t=0, which is all a grid with no
+    /// downbeats can claim.
+    /// </summary>
+    private static int MeasureAt(double seconds, double secondsPerMeasure, IReadOnlyList<double>? downbeats)
+    {
+        if (downbeats is not { Count: >= 2 })
+        {
+            return (int)(seconds / secondsPerMeasure) + 1;
+        }
+        var started = 0;
+        while (started < downbeats.Count && downbeats[started] <= seconds + 1e-6)
+        {
+            started++;
+        }
+        return Math.Max(1, started);
     }
 
     /// <summary>Distinct, ascending intervals above the tonic sung inside the chord's half-open

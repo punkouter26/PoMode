@@ -33,7 +33,7 @@ public class TempoMapTests
     }
 
     [Fact]
-    public void Steady_click_track_is_reported_steady_with_consecutive_measures()
+    public void Steady_click_track_is_reported_steady_and_silence_yields_no_measures()
     {
         var map = TempoEstimator.EstimateTempoMap(ClickTrack(64, _ => 120.0));
 
@@ -43,6 +43,12 @@ public class TempoMapTests
         Assert.Equal(1, map.Measures[0].Number);
         Assert.False(map.Measures[0].Changed);
         Assert.DoesNotContain(map.Measures, m => m.Changed);
+
+        // Nothing to measure is an empty map, not a guessed one — silence and a too-short buffer alike.
+        var silence = new AudioBuffer(new float[SampleRate * 4], SampleRate, Channels: 1);
+        Assert.Empty(TempoEstimator.EstimateTempoMap(silence).Measures);
+        var tiny = new AudioBuffer(new float[64], SampleRate, Channels: 1);
+        Assert.Empty(TempoEstimator.EstimateTempoMap(tiny).Measures);
     }
 
     [Fact]
@@ -58,15 +64,4 @@ public class TempoMapTests
         Assert.True(bpms[^1] > bpms[0] + 20);
         Assert.All(map.Measures, m => Assert.InRange(m.Bpm, map.MedianBpm / 2, map.MedianBpm * 2));
     }
-
-    [Fact]
-    public void Silence_and_tiny_buffers_yield_empty_maps()
-    {
-        var silence = new AudioBuffer(new float[SampleRate * 4], SampleRate, Channels: 1);
-        Assert.Empty(TempoEstimator.EstimateTempoMap(silence).Measures);
-
-        var tiny = new AudioBuffer(new float[64], SampleRate, Channels: 1);
-        Assert.Empty(TempoEstimator.EstimateTempoMap(tiny).Measures);
-    }
-
 }

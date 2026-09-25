@@ -16,10 +16,10 @@ public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalA
         var notes = await store.ReadArtifactListAsync<NoteEvent>(context.JobId, "notes.json", ct);
         var chords = await store.ReadArtifactListAsync<ChordSpan>(context.JobId, "chords.json", ct);
 
-        var (bpm, estimated) = await EstimateTempoAsync(context, ct);
+        var (bpm, estimated, downbeats) = await EstimateTempoAsync(context, ct);
 
         var result = ModalAnalysisEngine.Analyze(
-            notes, chords, bpm, estimated, context.TuningOffsetCents(logger));
+            notes, chords, bpm, estimated, context.TuningOffsetCents(logger), downbeats);
 
         await store.WriteArtifactAsync(context.JobId, "result.json", result, ct);
     }
@@ -29,26 +29,28 @@ public sealed class ArtifactModalAnalyzer(JobStore store, ILogger<ArtifactModalA
     /// beats.json — reuse that instead of re-decoding the whole track. Only when the artifact is
     /// missing (its best-effort write failed) does this fall back to estimating directly. A
     /// failure must never fail the whole job — the tempo stays at the Phase-3 default and is
-    /// still labelled estimated.
+    /// still labelled estimated. Downbeats ride along when the beat tracker heard them, so measure
+    /// numbers follow the music rather than a 4/4 grid laid from t=0.
     /// </summary>
-    private async Task<(double Bpm, bool Estimated)> EstimateTempoAsync(StageContext context, CancellationToken ct)
+    private async Task<(double Bpm, bool Estimated, IReadOnlyList<double>? Downbeats)> EstimateTempoAsync(
+        StageContext context, CancellationToken ct)
     {
         try
         {
             if (await store.ReadArtifactAsync<BeatGridDto>(context.JobId, "beats.json", ct) is { } grid)
             {
-                return grid.Confidence > 0 ? (grid.Bpm, false) : (120.0, true);
+                return grid.Confidence > 0 ? (grid.Bpm, false, grid.Downbeats) : (120.0, true, null);
             }
 
             var buffer = AudioDecoder.Decode(context.PreferredAnalysisPath);
             var estimate = TempoEstimator.Estimate(buffer);
 
-            return estimate.Confidence > 0 ? (estimate.Bpm, false) : (120.0, true);
+            return estimate.Confidence > 0 ? (estimate.Bpm, false, null) : (120.0, true, null);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Tempo estimation failed for job {JobId}; falling back to the 120 BPM default.", context.JobId);
-            return (120.0, true);
+            return (120.0, true, null);
         }
     }
 }
