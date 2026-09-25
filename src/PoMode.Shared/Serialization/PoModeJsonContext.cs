@@ -28,6 +28,8 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(ModalMelodyRequest))]
 [JsonSerializable(typeof(GeneratedMelodyDto))]
 [JsonSerializable(typeof(ModeFitDto))]
+[JsonSerializable(typeof(TakeHistoryDto))]
+[JsonSerializable(typeof(VocalRangeDto))]
 [JsonSerializable(typeof(SongQuestionRequest))]
 [JsonSerializable(typeof(SongAnswerDto))]
 public sealed partial class PoModeJsonContext : JsonSerializerContext;

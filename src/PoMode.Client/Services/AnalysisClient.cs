@@ -143,6 +143,20 @@ public sealed class AnalysisClient(HttpClient http)
             : null;
     }
 
+    /// <summary>The caller's earlier takes over this backing's mode and progression. Key and tempo are
+    /// not sent: the server matches takes across them on purpose.</summary>
+    public Task<TakeHistoryDto?> GetTakeHistoryAsync(ModalMelodyRequest backing)
+        => http.GetFromJsonAsync<TakeHistoryDto>(
+            "api/modal-melodies/takes"
+            + $"?mode={backing.Mode}"
+            + $"&progressionId={Uri.EscapeDataString(backing.ProgressionId)}"
+            + $"&targetPurity={backing.TargetPurity.ToString(CultureInfo.InvariantCulture)}");
+
+    /// <summary>The caller's sung range, and the key that fits <paramref name="mode"/> to it once
+    /// there are enough takes to say.</summary>
+    public Task<VocalRangeDto?> GetVocalRangeAsync(ScaleMode mode)
+        => http.GetFromJsonAsync<VocalRangeDto>($"api/modal-melodies/voice?mode={mode}");
+
     /// <summary>Synthesizes the melody and chords into WAV audio and queues an end-to-end analysis job in the Song Analyzer.</summary>
     public async Task<JobStatusDto?> AnalyzeModalMelodyAsync(ModalMelodyRequest request)
     {

@@ -228,7 +228,7 @@ public static class SongStatsBuilder
     }
 
     /// <summary>Nearest-rank percentile over an already-sorted array.</summary>
-    private static int Percentile(int[] sorted, double fraction)
+    public static int Percentile(int[] sorted, double fraction)
     {
         var index = (int)Math.Round(fraction * (sorted.Length - 1), MidpointRounding.AwayFromZero);
         return sorted[Math.Clamp(index, 0, sorted.Length - 1)];
@@ -558,7 +558,7 @@ public static class SongStatsBuilder
     }
 
     /// <summary>MIDI 60 is C4, so the octave is <c>midi / 12 - 1</c> — same rule as the canvas labels.</summary>
-    private static string PitchLabel(int midiPitch)
+    public static string PitchLabel(int midiPitch)
         => $"{PitchNames.Name(midiPitch)}{(midiPitch / 12) - 1}";
 
     private static double Percent(int part, int whole) => whole == 0 ? 0 : part * 100.0 / whole;

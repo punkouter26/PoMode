@@ -164,6 +164,58 @@ public sealed class HumTakeEndpointTests : IDisposable
         Assert.NotEqual(tightChords[0].Symbol, looseChords[0].Symbol);
     }
 
+    /// <summary>
+    /// The Practice page's take history and vocal range read back the caller's own takes. History is
+    /// matched on the backing's mode and progression — not its key or tempo, which "Fit to my voice"
+    /// and the tempo slider are meant to move freely — and nobody else's takes ever appear. With only
+    /// a few seconds of steady tone on file, the range must say what it still needs rather than guess.
+    /// </summary>
+    [Fact]
+    public async Task Past_takes_and_range_are_the_callers_own_and_matched_on_mode_and_chords()
+    {
+        await using var factory = Factory();
+        using var client = factory.CreateClient();
+
+        async Task<JobStatusDto> SingAsync(int key, string progressionId, double bpm)
+        {
+            using var take = TakeOf(seconds: 9.0);
+            var url = $"/api/modal-melodies/hum?tonicPitchClass={key}&mode=Dorian&progressionId={progressionId}&bpm={bpm}";
+            var job = await (await client.PostAsync(url, take)).Content.ReadFromJsonAsync<JobStatusDto>();
+            Assert.NotNull(job);
+            return job;
+        }
+
+        var inD = await SingAsync(key: 2, "dorian-vamp", bpm: 92);
+        var inG = await SingAsync(key: 7, "dorian-vamp", bpm: 120);
+        var otherChords = await SingAsync(key: 2, "pop-axis", bpm: 92);
+
+        var history = await client.GetFromJsonAsync<TakeHistoryDto>(
+            "/api/modal-melodies/takes?mode=Dorian&progressionId=dorian-vamp");
+        Assert.NotNull(history);
+        Assert.Equal(
+            new[] { inD.JobId, inG.JobId }.Order(),
+            history.Takes.Select(take => take.JobId).Order());
+        Assert.DoesNotContain(history.Takes, take => take.JobId == otherChords.JobId);
+        Assert.StartsWith("2 takes over Dorian Groove", history.Summary);
+        // Each row still says what it was sung over, since key and tempo were allowed to differ.
+        Assert.Contains(history.Takes, take => take.SungOver.Contains("120 BPM"));
+
+        using var asSomeoneElse = new HttpRequestMessage(
+            HttpMethod.Get, "/api/modal-melodies/takes?mode=Dorian&progressionId=dorian-vamp");
+        asSomeoneElse.Headers.Add("X-Fake-User", "someone-else");
+        var theirs = await (await client.SendAsync(asSomeoneElse)).Content.ReadFromJsonAsync<TakeHistoryDto>();
+        Assert.NotNull(theirs);
+        Assert.Empty(theirs.Takes);
+
+        // A steady tone yields a note or two per take, which is no evidence of a range at all.
+        var voice = await client.GetFromJsonAsync<VocalRangeDto>("/api/modal-melodies/voice?mode=Dorian");
+        Assert.NotNull(voice);
+        Assert.True(voice.TakesNeeded > 0);
+        Assert.Null(voice.Fit);
+        Assert.Null(voice.LowMidi);
+        Assert.StartsWith("Sing ", voice.Summary);
+    }
+
     [Fact]
     public async Task A_hum_post_without_auth_is_401()
     {

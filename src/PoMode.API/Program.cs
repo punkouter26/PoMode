@@ -69,6 +69,7 @@ builder.Services.AddSingleton<IChordRecognizer, FakeChordRecognizer>();
 builder.Services.AddSingleton<ArtifactModalAnalyzer>();
 builder.Services.AddSingleton<ModalMelodyGenerator>();
 builder.Services.AddSingleton<HumTakeSeeder>();
+builder.Services.AddSingleton<HumTakeHistory>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
 builder.Services.AddSingleton<SongInterpreterSelector>();

@@ -67,7 +67,12 @@ public sealed class HumTakeSeeder(ModalMelodyGenerator generator, JobStore store
         MarkProvided(state, StageNames.Separating, SkippedSeparationExecutor);
         MarkProvided(state, StageNames.ChordDetecting, ProvidedChordsExecutor);
 
-        state.Origin = new TakeOrigin(TakeOrigin.HumTake, Describe(generator.GetProgression(backing.ProgressionId), generated));
+        // The backing is stored with its progression id canonicalised, so a take filed under a
+        // differently-cased or unknown id is still found by the history of the loop it actually played.
+        state.Origin = new TakeOrigin(
+            TakeOrigin.HumTake,
+            Describe(generator.GetProgression(backing.ProgressionId), generated),
+            backing with { ProgressionId = generated.ProgressionId });
     }
 
     /// <summary>

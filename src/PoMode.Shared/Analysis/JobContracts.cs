@@ -73,8 +73,12 @@ public static class JobStageExtensions
 /// an unexplained file. <paramref name="Kind"/> is a stable token for the client to branch on;
 /// <paramref name="Description"/> is the sentence to show, worded server-side like every other
 /// musical statement in the app.
+///
+/// <para><paramref name="Backing"/> is the request the loop was generated from, kept so a later take
+/// over the same chords can be found again (the Practice page's take history). Null on takes from
+/// before it was recorded, and on anything that is not a hum take.</para>
 /// </summary>
-public sealed record TakeOrigin(string Kind, string Description)
+public sealed record TakeOrigin(string Kind, string Description, ModalMelodyRequest? Backing = null)
 {
     /// <summary>Sung or hummed over a Mode Lab progression.</summary>
     public const string HumTake = "HumTake";

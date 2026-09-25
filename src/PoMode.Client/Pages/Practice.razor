@@ -39,7 +39,10 @@
                             Disabled="@Busy" aria-labelledby="practice-mode-label" />
         </div>
         <div class="practice-field">
-            <span class="practice-field-label" id="practice-tonic-label">Tonic</span>
+            @* "Key", as the Mode Lab labels it: the value is the parent key, and the chords are
+               rooted on the mode's own note inside it (Dorian in D is E Dorian). "Tonic" named
+               a note the backing does not treat as home. *@
+            <span class="practice-field-label" id="practice-tonic-label">Key</span>
             <RadzenDropDown TValue="int" Data="@TonicOptions" TextProperty="Name" ValueProperty="PitchClass"
                             Value="@_tonic"
                             Change="@(async value => { _tonic = (int)value; await ReloadAsync(); })"
@@ -59,6 +62,29 @@
                           aria-labelledby="practice-tempo-label" />
         </div>
     </div>
+
+    @* The singer's range, pooled from their own finished takes, and a key that sits the chosen mode
+       inside it. Both sentences and the key are the server's: choosing where a mode's home note
+       should land is a musical decision, so this only applies the key it is handed. *@
+    @if (_voice is { } voice)
+    {
+        <div class="practice-voice" data-voice-takes-needed="@voice.TakesNeeded">
+            <span class="practice-voice-range">@voice.Summary</span>
+            @if (FitForMode is { } fit)
+            {
+                <RadzenButton Text="@(fit.TonicPitchClass == _tonic ? "Fitted to your voice" : "Fit to my voice")"
+                              Icon="tune" ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                              Disabled="@(Busy || fit.TonicPitchClass == _tonic)"
+                              Click="@FitToVoiceAsync" id="practice-fit" title="@fit.Explanation" />
+            }
+        </div>
+        @* The reason is shown once it applies rather than before: until then it would be a sentence
+           about a key the page is not playing. *@
+        @if (FitForMode is { } applied && applied.TonicPitchClass == _tonic)
+        {
+            <p class="practice-voice-why">@applied.Explanation</p>
+        }
+    }
 </RadzenCard>
 
 @if (_melody is { } melody)
@@ -137,6 +163,32 @@ else if (_loadError is { } loadError)
     </RadzenCard>
 }
 
+@* What the singer's earlier melodies over these chords turned out to be. A mirror, not a grade: the
+   server tallies the readings without marking any as the expected one, so there is no best take, no
+   run of matches and no percentage here — a take that came out Mixolydian over Dorian chords is a
+   finding about the melody, not a miss. *@
+@if (_history is { } history)
+{
+    <RadzenCard class="practice-history" data-take-count="@history.Takes.Count">
+        <RadzenText TextStyle="TextStyle.H6" Text="Your takes over these chords" />
+        <p class="history-summary">@history.Summary</p>
+        @if (history.Takes.Count > 0)
+        {
+            <ul class="history-list">
+                @foreach (var take in history.Takes)
+                {
+                    <li class="history-row" data-job-id="@take.JobId" data-take-stage="@take.Stage">
+                        <time class="history-when" datetime="@take.CreatedAt.ToString("o")">@take.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm")</time>
+                        <span class="history-reading">@take.Reading</span>
+                        <span class="history-over">@take.SungOver</span>
+                        <a class="history-open" href="@($"/?job={take.JobId}")">Open analysis</a>
+                    </li>
+                }
+            </ul>
+        }
+    </RadzenCard>
+}
+
 @code {
     /// <summary>Where a take is in its cycle — one answer to "what is happening" rather than four
     /// booleans that can disagree. Mirrors the Mode Lab's hum states, whose flow this reuses.</summary>
@@ -168,7 +220,7 @@ else if (_loadError is { } loadError)
     private GeneratedMelodyDto? _melody;
 
     private ScaleMode _mode = ScaleMode.Dorian;
-    private int _tonic = 2;                 // D Dorian: the mode this app is usually explaining
+    private int _tonic = 2;                 // the parent key: Dorian in D, so E Dorian chords
     private string _progressionId = "";
     private double _bpm = 92;
 
@@ -182,6 +234,17 @@ else if (_loadError is { } loadError)
     private bool _sending;
     private string? _error;
     private string? _loadError;
+
+    private TakeHistoryDto? _history;
+    private VocalRangeDto? _voice;
+
+    /// <summary>Which backing <see cref="_history"/> describes. Key and tempo are not part of it —
+    /// the server matches takes across both — so moving either leaves the history where it is.</summary>
+    private string? _historyFor;
+
+    /// <summary>The fit only while it is for the mode on screen; a mode change refetches it, and until
+    /// then the previous mode's key would be the wrong answer.</summary>
+    private VoiceFitDto? FitForMode => _voice?.Fit is { } fit && fit.Mode == _mode ? fit : null;
 
     /// <summary>Settings are locked while the microphone is open: changing the chords underneath a
     /// take in progress would leave the singer's melody filed against chords they never heard.</summary>
@@ -204,6 +267,7 @@ else if (_loadError is { } loadError)
         // thing the singer hears on the parent key would put the wrong note under it.
         _progressionId = SignatureIdFor(_mode) ?? _progressions[0].Id;
         await ReloadAsync();
+        await LoadVoiceAsync();
     }
 
     /// <summary>
@@ -225,6 +289,57 @@ else if (_loadError is { } loadError)
             _progressionId = id;
         }
         await ReloadAsync();
+        await LoadVoiceAsync();
+    }
+
+    /// <summary>Applies the key the server chose for this mode and this voice. The page does no
+    /// transposing of its own — the returned key simply replaces the one in the request.</summary>
+    private async Task FitToVoiceAsync()
+    {
+        if (FitForMode is not { } fit || Busy)
+        {
+            return;
+        }
+        _tonic = fit.TonicPitchClass;
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// The singer's range and the key that fits the current mode to it. Auxiliary to the exercise, so
+    /// a failure leaves the line off the page rather than getting in the way of singing.
+    /// </summary>
+    private async Task LoadVoiceAsync()
+    {
+        try
+        {
+            _voice = await Analysis.GetVocalRangeAsync(_mode);
+        }
+        catch (HttpRequestException)
+        {
+            _voice = null;
+        }
+    }
+
+    /// <summary>The earlier takes over the current mode and progression, fetched only when one of those
+    /// changed. Like the range, a failure hides the card rather than blocking the page.</summary>
+    private async Task LoadHistoryAsync()
+    {
+        var request = CurrentRequest();
+        var key = $"{request.Mode}|{request.ProgressionId}|{request.TargetPurity}";
+        if (key == _historyFor)
+        {
+            return;
+        }
+        try
+        {
+            _history = await Analysis.GetTakeHistoryAsync(request);
+            _historyFor = key;
+        }
+        catch (HttpRequestException)
+        {
+            _history = null;
+            _historyFor = null;
+        }
     }
 
     /// <summary>A different progression in the same key and tempo. The key is deliberately left
@@ -258,6 +373,7 @@ else if (_loadError is { } loadError)
             return;
         }
         _loadError = null;
+        await LoadHistoryAsync();
         // The generated melody is ignored on purpose. /generate returns one because the Mode Lab
         // wants it; here the melody is the singer's job, and playing the server's would be handing
         // them the answer to the question the analyzer is about to be asked.

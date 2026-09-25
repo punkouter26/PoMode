@@ -180,6 +180,35 @@ public static class ModalMelodyEndpoints
         .WithName("AnalyzeHumTake")
         .WithSummary("Stores a sung/hummed take recorded over a Mode Lab progression and queues it for analysis against that progression's chords.");
 
+        // The two reads below are the hum takes read back to the person who sang them, so both are
+        // scoped to the caller the same way the library is. They sit here rather than under
+        // /api/analysis because what they are about is the backing — a mode and a progression, or
+        // a mode to fit to a voice — and the jobs are only where the answers are stored.
+        group.MapGet("/takes", async Task<Ok<TakeHistoryDto>> (
+            HttpContext context,
+            [FromQuery] ScaleMode? mode,
+            [FromQuery] string? progressionId,
+            [FromQuery] double? targetPurity,
+            HumTakeHistory history,
+            CancellationToken ct) =>
+        {
+            var backing = FromQuery(null, mode, progressionId, null, null, null, targetPurity);
+            return TypedResults.Ok(await history.ForBackingAsync(PoUser.IdOf(context.User), backing, ct));
+        })
+        .RequireAuthorization()
+        .WithName("GetHumTakeHistory")
+        .WithSummary("The caller's earlier hum takes over one mode and progression, with the mode the analyzer found for each.");
+
+        group.MapGet("/voice", async Task<Ok<VocalRangeDto>> (
+            HttpContext context,
+            [FromQuery] ScaleMode? mode,
+            HumTakeHistory history,
+            CancellationToken ct) =>
+            TypedResults.Ok(await history.VocalRangeAsync(PoUser.IdOf(context.User), mode ?? ScaleMode.Ionian, ct)))
+        .RequireAuthorization()
+        .WithName("GetVocalRange")
+        .WithSummary("The caller's comfortable sung range across their finished hum takes, and the key that fits a mode to it.");
+
         return app;
     }
 

@@ -185,7 +185,7 @@ were built from before the analysis has had its say. The answer is the analysis,
 the take. This replaced an earlier scored drill (`ModeExerciseBuilder` / `ModeExerciseGrader`, a
 `/api/practice` group and a localStorage streak); all of it was deleted rather than left switched off.
 
-There is no Practice feature on the server. The page is a second, narrower door onto the Mode Lab's
+There is no Practice slice on the server. The page is a second, narrower door onto the Mode Lab's
 hum path: `ModalMelodyGenerator` voices the backing, `POST /api/modal-melodies/hum` takes the
 recording, and `HumTakeSeeder` seeds the progression as the job's chord track. The backing travels as
 the `ModalMelodyRequest` that generated it rather than as a copy of its notes, which is what lets the
@@ -198,6 +198,22 @@ would hand the singer the answer to the question the analyzer is about to be ask
 swaps in its own signature cadence through the shared `ProgressionCatalog.SignatureFor`, matching the
 Mode Lab's "Match to mode" default — a mode is a tonal centre, and rooting the chords on the parent
 key would put the wrong note under the first thing the singer hears.
+
+The page reads the caller's own takes back through two reads in the same `ModalMelodies` group, both
+served by `HumTakeHistory` and derived on demand like `/stats`. `GET /api/modal-melodies/takes` lists
+earlier takes over the same backing and tallies what the analyzer found in one server-worded sentence
+("2 takes over Dorian Groove (i - IV - i - IV) in Dorian: 1 came out Dorian, 1 Mixolydian"). It is a
+mirror, not a grade: no percentage, no best take, no streak, and the backing's own mode gets no
+special place in the tally. Takes are matched on mode, progression and purity (purity rotates the
+loop's opening chord), never on key or tempo — transposing asks the same modal question in another
+register, and "Fit to my voice" exists to change the key. Matching needs `TakeOrigin.Backing`, the
+request the loop was generated from, which the seeder now stores; takes from before it are unmatched.
+`GET /api/modal-melodies/voice?mode=` pools the notes of the caller's last 20 finished takes (over any
+chords) into a 10th–90th-percentile range, and refuses to claim one below 3 usable takes and 40 notes,
+saying how many more takes it needs instead. Its fit puts the mode's home note half an octave under
+the median sung note, and returns the *parent key* — the field `ModalMelodyRequest.TonicPitchClass`
+already carries — so the client applies it without any transposing of its own. The dropdown is
+labelled "Key" for that reason: Dorian in D is E Dorian.
 
 Capture is `hum-recorder.js`, not a fourth path: this records while chords play out of the speakers,
 which is the one case that *wants* the browser's echo cancellation, and it already shares
