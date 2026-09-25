@@ -1,6 +1,7 @@
-// Analysis canvas (spec §7): a tempo line on top, note capsules in the middle, chord blocks below.
-// The tempo lane shares the other two lanes' time axis, which is the whole reason it is drawn here
-// rather than as a separate chart above the canvas — pan and zoom keep all three aligned.
+// Analysis canvas (spec §7): the song's sections along the very top, a tempo line under them, note
+// capsules in the middle, chord blocks below. The section and tempo lanes share the other two lanes'
+// time axis, which is the whole reason they are drawn here rather than as separate charts above the
+// canvas — pan and zoom keep all four aligned.
 //
 // Every musical decision — which colour class a note belongs to, its labels, its measure number —
 // was already made server-side by VisualizationBuilder and arrives in the payload. This module only
@@ -27,6 +28,11 @@ const NOTE_LANE_FRACTION = 0.68;
 /// box, so a short canvas shrinks the note lane instead of squashing this into nothing. Capped
 /// against the canvas height below so it can never take over a very short one.
 const TEMPO_LANE_PX = 38;
+/// The section ribbon: tall enough for one line of 12px caption, the app's text floor.
+const SECTION_LANE_PX = 22;
+const SECTION_FONT = '12px system-ui, sans-serif';
+/// The server names each band's colour as a theme token; anything else is ignored rather than read.
+const SECTION_TOKEN = /^--pm-[a-z-]+$/;
 const TEMPO_LANE_PAD_PX = 7;
 const LANE_GAP_PX = 6;
 const MIN_LABEL_WIDTH_PX = 38;
@@ -60,6 +66,16 @@ function readColours(canvas) {
         // Amber, matching the tempo chart in the stats panel, so a change reads the same everywhere.
         tempoChange: read('--pm-tempo-change', '#fbbf24'),
     };
+}
+
+/// Resolves each section's colour token against the live theme. Called on a new model and on every
+/// theme flip, never per frame — getComputedStyle is not free.
+function resolveSectionColours(state) {
+    const style = getComputedStyle(state.canvas);
+    const sections = state.model && state.model.sections ? state.model.sections : [];
+    state.sectionColours = sections.map(section => (SECTION_TOKEN.test(section.colourToken)
+        ? style.getPropertyValue(section.colourToken).trim()
+        : '') || state.colours.muted);
 }
 
 function totalSeconds(state) {
@@ -156,20 +172,31 @@ function draw(state) {
 
     ctx.clearRect(0, 0, width, height);
 
-    // The strip only exists when there is a line to draw, so a song with no tempo map keeps the
-    // whole box for notes and chords exactly as before.
+    // Each strip only exists when there is something to draw in it, so a song with no sections and
+    // no tempo map keeps the whole box for notes and chords exactly as before.
+    const sections = state.model && state.model.sections ? state.model.sections : [];
+    const sectionLaneHeight = sections.length > 0 ? SECTION_LANE_PX : 0;
+    state.sectionLaneHeight = sectionLaneHeight;
+    const tempoTop = sectionLaneHeight > 0 ? sectionLaneHeight + LANE_GAP_PX : 0;
+
     const tempoPoints = state.model && state.model.tempo ? state.model.tempo : [];
     const hasTempo = tempoPoints.length > 1;
     const tempoLaneHeight = hasTempo ? Math.min(TEMPO_LANE_PX, height * 0.25) : 0;
-    const bodyTop = hasTempo ? tempoLaneHeight + LANE_GAP_PX : 0;
+    const bodyTop = tempoTop + (hasTempo ? tempoLaneHeight + LANE_GAP_PX : 0);
     const bodyHeight = Math.max(height - bodyTop, 1);
 
     const noteLaneHeight = Math.max((bodyHeight - LANE_GAP_PX) * NOTE_LANE_FRACTION, 1);
     const chordLaneTop = noteLaneHeight + LANE_GAP_PX;
     const chordLaneHeight = Math.max(bodyHeight - chordLaneTop, 1);
 
+    if (sectionLaneHeight > 0) {
+        drawSections(state, ctx, width, sectionLaneHeight, sections);
+    }
     if (hasTempo) {
+        ctx.save();
+        ctx.translate(0, tempoTop);
         drawTempo(state, ctx, width, tempoLaneHeight, tempoPoints);
+        ctx.restore();
     }
 
     // The note and chord lanes are still drawn in their own coordinates and shifted as a block, so
@@ -242,6 +269,57 @@ function draw(state) {
         dataset.firstNote = firstNote;
     }
     dataset.painted = '1';
+}
+
+/// The section ribbon: one band per section, tinted with the colour the server named for its mode,
+/// captioned with the server's own label when it fits, the bare letter when only that fits, and
+/// nothing when neither does. A narrow band loses its words rather than shrinking them.
+function drawSections(state, ctx, width, laneHeight, sections) {
+    const colours = state.colours;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, laneHeight);
+    ctx.clip();
+    ctx.font = SECTION_FONT;
+    ctx.textBaseline = 'middle';
+
+    for (let index = 0; index < sections.length; index++) {
+        const section = sections[index];
+        if (section.endSec < state.viewStart || section.startSec > state.viewEnd) {
+            continue;
+        }
+        const x = timeToX(state, section.startSec, width);
+        const bandWidth = Math.max(timeToX(state, section.endSec, width) - x, 1);
+        const colour = state.sectionColours[index] || colours.muted;
+
+        ctx.fillStyle = colour;
+        ctx.globalAlpha = 0.22;
+        ctx.fillRect(x, 0, bandWidth, laneHeight);
+        ctx.globalAlpha = 1;
+        // A solid foot on each band, so the section's colour survives the low-alpha fill in both themes.
+        ctx.fillRect(x, laneHeight - 3, bandWidth, 3);
+        ctx.fillStyle = colours.border;
+        ctx.fillRect(Math.round(x), 0, 1, laneHeight);
+
+        // Captions stay on the visible part of a band, so a long section panned half off-screen
+        // still says what it is.
+        const left = Math.max(x, 0) + 6;
+        const room = Math.min(x + bandWidth, width) - left - 4;
+        const caption = ctx.measureText(section.label).width <= room ? section.label
+            : ctx.measureText(section.letter).width <= room ? section.letter
+            : '';
+        if (caption) {
+            ctx.fillStyle = colours.text;
+            ctx.fillText(caption, left, (laneHeight - 3) / 2);
+        }
+    }
+    ctx.restore();
+}
+
+/// The section covering `seconds`, or null. A song has a handful of sections, so a scan is fine.
+function sectionAt(state, seconds) {
+    const sections = state.model && state.model.sections ? state.model.sections : [];
+    return sections.find(section => seconds >= section.startSec && seconds < section.endSec) || null;
 }
 
 /// The tempo line: higher is faster, on the same time axis as the notes below it.
@@ -361,6 +439,10 @@ function drawNotes(state, ctx, width, laneHeight) {
         // has already played (so the user sees the strip of synth notes they just heard).
         const haloed = (state.playhead >= note.startSec && state.playhead < endSec)
             || (state.overlay.vocal && note.startSec <= state.playhead && state.playhead - note.startSec < 0.8);
+        // While the "why this mode?" readout is open, the notes it cites stay at full strength and
+        // everything else steps back. Which notes those are was decided server-side (note.evidence).
+        const faded = state.highlightEvidence && !note.evidence;
+        ctx.globalAlpha = faded ? 0.3 : 1;
         ctx.fillStyle = colourForRole(state, note.role);
         if (haloed) {
             // A soft halo behind the sounding note: same colour, low alpha, slightly larger.
@@ -371,9 +453,16 @@ function drawNotes(state, ctx, width, laneHeight) {
         }
         roundedRect(ctx, x, top, capsuleWidth, capsuleHeight, Math.min(3, capsuleHeight / 2));
         ctx.fill();
+        ctx.globalAlpha = 1;
+        if (state.highlightEvidence && note.evidence) {
+            ctx.strokeStyle = state.colours.text;
+            ctx.lineWidth = 2;
+            roundedRect(ctx, x - 1.5, top - 1.5, capsuleWidth + 3, capsuleHeight + 3, Math.min(4, (capsuleHeight + 3) / 2));
+            ctx.stroke();
+        }
         drawn++;
 
-        if (showLabels && capsuleWidth >= MIN_LABEL_WIDTH_PX) {
+        if (showLabels && capsuleWidth >= MIN_LABEL_WIDTH_PX && !faded) {
             ctx.fillStyle = state.colours.text;
             ctx.fillText(note.label, x + 3, top + (capsuleHeight / 2));
         }
@@ -701,7 +790,12 @@ function onPointerUp(state, event) {
     if (event.type === 'pointercancel' || !drag || drag.moved > DRAG_THRESHOLD_PX || !state.dotNet) {
         return;
     }
-    const seekTime = xToTime(state, event.clientX);
+    // A click on the section ribbon jumps to the start of that section rather than to the exact
+    // spot under the pointer: the band is a "go to the chorus" control, not a scrubber.
+    const rect = state.canvas.getBoundingClientRect();
+    const clickedTime = xToTime(state, event.clientX);
+    const section = event.clientY - rect.top < state.sectionLaneHeight ? sectionAt(state, clickedTime) : null;
+    const seekTime = section ? section.startSec : clickedTime;
     state.playhead = seekTime;
     invalidate(state);
     state.dotNet.invokeMethodAsync('OnCanvasSeek', seekTime);
@@ -735,6 +829,9 @@ export function init(canvas, dotNetRef) {
         reducedMotion: !prefs.allowsMotion(),
         overlay: { vocal: true, backing: false },
         colours: readColours(canvas),
+        sectionColours: [],
+        sectionLaneHeight: 0,
+        highlightEvidence: false,
         frame: null,
         drag: null,
         viewStartText: null,
@@ -762,6 +859,7 @@ export function init(canvas, dotNetRef) {
     state.scheme = window.matchMedia('(prefers-color-scheme: dark)');
     state.onSchemeChange = () => {
         state.colours = readColours(canvas);
+        resolveSectionColours(state);
         invalidate(state);
     };
     state.scheme.addEventListener('change', state.onSchemeChange);
@@ -793,6 +891,15 @@ export function setModel(canvas, payload) {
             state.maxChordDuration = Math.max(state.maxChordDuration, chord.endSec - chord.startSec);
         }
     }
+    resolveSectionColours(state);
+
+    // Published once per model rather than per frame: which sections exist and how many notes carry
+    // the mode's evidence are facts about the payload, not about the view.
+    const sections = payload && payload.sections ? payload.sections : [];
+    canvas.dataset.sectionCount = String(sections.length);
+    canvas.dataset.sectionLetters = sections.map(section => section.letter).join('');
+    canvas.dataset.evidenceNotes = String(payload ? payload.notes.filter(note => note.evidence).length : 0);
+
     state.viewStart = 0;
     state.viewEnd = totalSeconds(state);
     clampView(state);
@@ -853,6 +960,18 @@ export function setSelection(canvas, index) {
         return;
     }
     state.selection = index;
+    invalidate(state);
+}
+
+/// Rings the notes the server marked as evidence for the song's mode and fades the rest. Mirrored
+/// to data-evidence-highlight so a browser test can assert the state without reading pixels.
+export function setEvidenceHighlight(canvas, enabled) {
+    const state = states.get(canvas);
+    if (!state) {
+        return;
+    }
+    state.highlightEvidence = !!enabled;
+    canvas.dataset.evidenceHighlight = state.highlightEvidence ? '1' : '0';
     invalidate(state);
 }
 

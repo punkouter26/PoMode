@@ -172,6 +172,40 @@ range, rhythm, harmony, motion, phrasing, tension) and declines anything else, w
 also tells the reader a local model would get them further. The conversation is held client-side; the
 server stores no transcript, same ruling as the statistics themselves.
 
+### Why this mode, and where the sections are
+
+Both ride on `/visual`, derived on every request and never stored, same ruling as the rest of that
+payload: one fetch, and the canvas never has to join two responses on a time axis.
+
+`ModeEvidenceBuilder` answers "why Dorian?" by comparing the primary mode with its one-note
+neighbours. The neighbours are *computed* - two seven-note modes whose interval sets differ by exactly
+one note - which produces the brightness chain without a second hand-written table; the headline is
+whichever contrast `ScaleModes.CharacteristicIntervals` names first, so the badge, the note colour and
+the sentence all point at the same degree. For each contrast it measures sung time and chord count on
+the mode's tone and on the rival's, calls the rival ruled out when its tone carries at most a fifth of
+the weight, and names the strongest argument *for* a neighbour as counter-evidence. Degrees are spelled
+against the major scale, so Locrian's tritone reads ♭5 and Lydian's reads ♯4. Same wording rule as
+`SongFingerprint`: a weak figure is dropped, not hedged; a tone never sounded is stated as never
+sounded, because that is a fact about the song. Pentatonics have no one-note neighbour, so their
+readout is the notes they leave out, and only when the line really keeps to five notes. The notes
+flagged `VisualNote.Evidence` are exactly the tones the sentences cite - ringing a note the text never
+mentions sends the reader looking for an explanation that is not there - and `VisualWindow.Evidence`
+gives the HUD one line when a single window settles the headline question on its own. The client's
+"Why this mode?" disclosure sits beside the key badge; opening it rings those notes on the canvas
+(`data-evidence-highlight`) and fades the rest.
+
+`SongSectionBuilder` (its own slice, `Features/SongStructure`) finds the verse/chorus shape from the
+chord track alone: a root-weighted chroma per bar, a cosine self-similarity matrix, a Foote checkerboard
+slid down its diagonal, peaks at least four bars apart, then segments lettered by matching their overall
+chord content (adjacent same letters merge - a boundary between A and A is a peak the harmony did not
+bear out). Bars come from the tempo map, else the beat grid, else fixed four-beat bars at the analysed
+tempo. Each section's mode is the overlap- and confidence-weighted vote of the modal windows under it,
+named only past 60% of the vote with 30% coverage; the caption adds the mode's own chord (Dorian's IV,
+Mixolydian's ♭VII) only when that chord actually sounds in the section. A song that comes out as one
+section gets no sections: a ribbon reading "A" end to end says nothing. The ribbon's colour is a token
+name (`--pm-mode-{name}`, `--pm-fg-muted` otherwise) resolved against the live theme in `canvas.js`;
+clicking a band seeks to its start, and `data-section-count` / `data-section-letters` mirror it.
+
 ### Practice (sing over the chords)
 
 `/practice` is the other half of the app's purpose: the analyzer tells you a song is Dorian, this asks

@@ -49,3 +49,9 @@
 .outside {
     background: var(--pm-note-outside);
 }
+
+/* The canvas rings evidence notes in the foreground colour, so the swatch is a ring too. */
+.evidence {
+    background: transparent;
+    border: 2px solid var(--pm-fg);
+}

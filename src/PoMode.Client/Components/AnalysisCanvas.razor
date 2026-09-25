@@ -12,6 +12,11 @@
         <span class="swatch characteristic"></span>modal note
         <span class="swatch in-mode"></span>in mode
         <span class="swatch outside"></span>outside
+        @if (HighlightEvidence)
+        {
+            @* Only while the "Why this mode?" readout is open — the only time the rings mean anything. *@
+            <span class="swatch evidence"></span><span>ringed: the tone that decides the mode</span>
+        }
     </p>
 </div>
 
@@ -19,17 +24,24 @@
     /// <summary>Row sent to JS. Roles travel as strings so reordering the C# enum cannot silently
     /// remap colours (Blazor's interop serializer writes enums as numbers by default).</summary>
     private sealed record CanvasNote(
-        int MidiPitch, double StartSec, double DurationSec, string Role, string PitchLabel, string DegreeLabel);
+        int MidiPitch, double StartSec, double DurationSec, string Role, string PitchLabel, string DegreeLabel,
+        bool Evidence);
 
     private sealed record CanvasChord(
         string Symbol, double StartSec, double EndSec, int MeasureNumber, string? ModeTag);
 
     private sealed record CanvasTempo(double StartSec, double Bpm, bool Changed);
 
+    /// <summary>A section band. The colour travels as a CSS token name and is resolved against the
+    /// live theme in canvas.js, so the ribbon flips with light/dark like every other colour.</summary>
+    private sealed record CanvasSection(
+        double StartSec, double EndSec, string Letter, string Label, string ColourToken);
+
     private sealed record CanvasPayload(
         IReadOnlyList<CanvasNote> Notes, IReadOnlyList<CanvasChord> Chords,
         double DurationSec, int MinPitch, int MaxPitch,
-        IReadOnlyList<CanvasTempo> Tempo);
+        IReadOnlyList<CanvasTempo> Tempo,
+        IReadOnlyList<CanvasSection> Sections);
 
     [Parameter, EditorRequired] public VisualizationPayload? Model { get; set; }
 
@@ -38,6 +50,10 @@
     [Parameter] public double PlayheadSec { get; set; }
 
     [Parameter] public EventCallback<double> OnSeek { get; set; }
+
+    /// <summary>Ring the notes the server flagged as carrying the mode's deciding tone and fade the
+    /// rest, so the "Why this mode?" sentence can be checked against the notes it is about.</summary>
+    [Parameter] public bool HighlightEvidence { get; set; }
 
     /// <summary>
     /// Raised once the canvas element exists and its module is initialised, handing the element to the
@@ -54,6 +70,7 @@
     private VisualizationPayload? _sentModel;
     private int? _sentSelection;
     private double? _sentPlayhead;
+    private bool? _sentHighlight;
 
     [JSInvokable]
     public Task OnCanvasSeek(double seconds) => OnSeek.InvokeAsync(seconds);
@@ -93,6 +110,11 @@
             _sentSelection = SelectedWindowIndex;
             await _module.InvokeVoidAsync("setSelection", _canvas, SelectedWindowIndex);
         }
+        if (_sentHighlight != HighlightEvidence)
+        {
+            _sentHighlight = HighlightEvidence;
+            await _module.InvokeVoidAsync("setEvidenceHighlight", _canvas, HighlightEvidence);
+        }
         if (_sentPlayhead != PlayheadSec)
         {
             _sentPlayhead = PlayheadSec;
@@ -104,11 +126,13 @@
         => model is null ? null : new CanvasPayload(
             [.. model.Notes.Select(note => new CanvasNote(
                 note.MidiPitch, note.StartSec, note.DurationSec,
-                note.Role.ToString(), note.PitchLabel, note.DegreeLabel))],
+                note.Role.ToString(), note.PitchLabel, note.DegreeLabel, note.Evidence))],
             [.. model.Chords.Select(chord => new CanvasChord(
                 chord.Symbol, chord.StartSec, chord.EndSec, chord.MeasureNumber, chord.ModeTag))],
             model.DurationSec, model.MinPitch, model.MaxPitch,
-            [.. model.Tempo.Select(point => new CanvasTempo(point.StartSec, point.Bpm, point.Changed))]);
+            [.. model.Tempo.Select(point => new CanvasTempo(point.StartSec, point.Bpm, point.Changed))],
+            [.. model.Sections.Select(section => new CanvasSection(
+                section.StartSec, section.EndSec, section.Letter, section.Label, section.ColourToken))]);
 
     public async ValueTask DisposeAsync()
     {

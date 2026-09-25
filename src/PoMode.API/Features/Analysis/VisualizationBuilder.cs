@@ -1,4 +1,5 @@
 using PoMode.API.Features.ModalAnalysis;
+using PoMode.API.Features.SongStructure;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -22,8 +23,14 @@ public static class VisualizationBuilder
         IReadOnlyList<NoteEvent> notes,
         IReadOnlyList<ChordSpan> chords,
         ModalResult result,
-        TempoMapDto? tempoMap = null)
+        TempoMapDto? tempoMap = null,
+        BeatGridDto? beats = null)
     {
+        // The notes the "Why this mode?" readout talks about are flagged here, from the same
+        // builder that wrote the readout, so the canvas rings exactly the tones the sentence names.
+        var evidence = ModeEvidenceBuilder.Build(notes, chords, result);
+        var evidenceIntervals = ModeEvidenceBuilder.CitedIntervals(evidence);
+
         var visualNotes = new List<VisualNote>(notes.Count);
         foreach (var note in notes)
         {
@@ -34,7 +41,8 @@ public static class VisualizationBuilder
                 DurationSec: note.DurationSec,
                 Role: RoleOf(note, interval, chords, result),
                 PitchLabel: PitchLabel(note.MidiPitch),
-                DegreeLabel: $"[{PitchNames.IntervalLabel(interval)}]"));
+                DegreeLabel: $"[{PitchNames.IntervalLabel(interval)}]",
+                Evidence: evidenceIntervals.Contains(interval)));
         }
 
         var visualChords = new List<VisualChord>(chords.Count);
@@ -52,7 +60,7 @@ public static class VisualizationBuilder
         var visualWindows = new List<VisualWindow>(result.Windows.Count);
         foreach (var window in result.Windows)
         {
-            visualWindows.Add(ToVisualWindow(window));
+            visualWindows.Add(ToVisualWindow(window, result.TonicPitchClass));
         }
 
         var (minPitch, maxPitch) = PitchRange(notes);
@@ -68,7 +76,8 @@ public static class VisualizationBuilder
             : [];
 
         return new VisualizationPayload(
-            SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch, tempo);
+            SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch, tempo,
+            evidence, SongSectionBuilder.Build(chords, result, tempoMap, beats));
     }
 
     /// <summary>
@@ -76,7 +85,7 @@ public static class VisualizationBuilder
     /// primary mode when evidence was insufficient: the canvas may colour notes optimistically, but the
     /// HUD is a factual readout and must not claim a match the engine did not make.
     /// </summary>
-    private static VisualWindow ToVisualWindow(ModalWindow window)
+    private static VisualWindow ToVisualWindow(ModalWindow window, int tonicPitchClass)
     {
         var top = TopMode(window);
         var modeMask = top is null ? 0 : ModeDefinitions.Mask(top.Value);
@@ -110,7 +119,8 @@ public static class VisualizationBuilder
             ModeConfidence: top is null ? null : window.Matches[0].Confidence,
             InsufficientEvidence: window.InsufficientEvidence,
             Degrees: degrees,
-            Alternatives: alternatives);
+            Alternatives: alternatives,
+            Evidence: ModeEvidenceBuilder.ForWindow(window, tonicPitchClass));
     }
 
     /// <summary>

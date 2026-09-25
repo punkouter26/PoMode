@@ -20,13 +20,20 @@ public enum NoteRole
 }
 
 /// <summary>One note capsule in the piano-roll lane, with the dual label §7 asks for.</summary>
+/// <param name="Evidence">
+/// The note sounds a tone that separates the song's primary mode from one of its one-note
+/// neighbours (the ♮6 of a Dorian song, the ♭7 of a Mixolydian one) — the notes the "Why this
+/// mode?" readout is talking about. Independent of <paramref name="Role"/>: a characteristic tone
+/// that happens to be a chord tone is still evidence, it just colours as a chord tone.
+/// </param>
 public sealed record VisualNote(
     int MidiPitch,
     double StartSec,
     double DurationSec,
     NoteRole Role,
     string PitchLabel,
-    string DegreeLabel);
+    string DegreeLabel,
+    bool Evidence);
 
 /// <summary>One chord block in the lower lane. <paramref name="ModeTag"/> is null when the window had no usable mode.</summary>
 public sealed record VisualChord(
@@ -50,6 +57,8 @@ public sealed record ModeAlternative(string Mode, double Confidence);
 /// Everything the HUD shows for one analysis window, pre-derived. <paramref name="ModeTag"/> and
 /// <paramref name="ModeConfidence"/> are null when the engine found insufficient evidence — the HUD
 /// must say so rather than borrow the whole-song primary mode, which would overstate the result.
+/// <paramref name="Evidence"/> is one sentence naming the tone sung in this window that rules out the
+/// mode's nearest rival, or null when the window does not settle that question on its own.
 /// </summary>
 public sealed record VisualWindow(
     int Index,
@@ -62,7 +71,8 @@ public sealed record VisualWindow(
     double? ModeConfidence,
     bool InsufficientEvidence,
     IReadOnlyList<DegreeBadge> Degrees,
-    IReadOnlyList<ModeAlternative> Alternatives);
+    IReadOnlyList<ModeAlternative> Alternatives,
+    string? Evidence);
 
 /// <summary>
 /// One step of the canvas's tempo line: this measure held this tempo from <paramref name="StartSec"/>
@@ -72,10 +82,70 @@ public sealed record VisualWindow(
 public sealed record VisualTempoPoint(double StartSec, double Bpm, bool Changed);
 
 /// <summary>
+/// One comparison between the primary mode and a neighbour that differs from it by a single note —
+/// Dorian against Aeolian is the ♮6 against the ♭6. Every figure is measured; the sentences built
+/// from them live on <see cref="ModeEvidence"/>.
+/// </summary>
+/// <param name="Interval">The mode's tone in semitones above the tonic, 0-11.</param>
+/// <param name="Degree">The mode's own degree, spelled against the major scale ("♮6", "♭2", "♯4").</param>
+/// <param name="ToneName">That degree as a pitch name in this song's key.</param>
+/// <param name="Rival">The neighbouring mode this tone tells apart.</param>
+/// <param name="RivalDegree">The degree the rival would have instead.</param>
+/// <param name="MelodyPercent">Share of sung time spent on the mode's tone, 0-100.</param>
+/// <param name="ChordCount">Chords whose triad contains the mode's tone.</param>
+/// <param name="RulesOut">The mode's tone outweighs the rival's clearly enough to exclude the rival.</param>
+public sealed record ModeContrast(
+    int Interval,
+    string Degree,
+    string ToneName,
+    string Rival,
+    string RivalDegree,
+    string RivalToneName,
+    double MelodyPercent,
+    int ChordCount,
+    double RivalMelodyPercent,
+    int RivalChordCount,
+    bool RulesOut);
+
+/// <summary>
+/// Why the song's primary mode is that mode rather than a neighbour: the sentences are worded
+/// server-side, like the fingerprint, and a weak figure is left out rather than hedged.
+/// </summary>
+/// <param name="Reasons">What argues for the mode, most telling first. Never empty.</param>
+/// <param name="CounterEvidence">The strongest thing that argues for a neighbour instead, or null.</param>
+/// <param name="Contrasts">The measurements the sentences were written from, headline contrast first.</param>
+public sealed record ModeEvidence(
+    string Mode,
+    IReadOnlyList<string> Reasons,
+    string? CounterEvidence,
+    IReadOnlyList<ModeContrast> Contrasts);
+
+/// <summary>
+/// One structural section of the song (the verse/chorus shape), found from the harmony alone.
+/// <paramref name="Letter"/> repeats when the harmony does — A, B, A — and <paramref name="Mode"/> is
+/// null when the modal windows under it do not agree clearly enough to name one.
+/// </summary>
+/// <param name="ColourToken">
+/// The CSS custom property the canvas paints this band with (<c>--pm-mode-dorian</c>). A token name
+/// rather than a colour, so the band follows the theme exactly as the Mode Lab's cards do.
+/// </param>
+/// <param name="Label">The band's caption, worded server-side ("Section B · Mixolydian (♭VII chord)").</param>
+public sealed record VisualSection(
+    int Index,
+    string Letter,
+    double StartSec,
+    double EndSec,
+    string? Mode,
+    string ColourToken,
+    string Label);
+
+/// <summary>
 /// Everything the canvas and HUD need, flattened into one payload so the client makes a single request,
 /// the Blazor render tree never holds per-note state, and clicking a chord needs no round trip.
 /// Derived on demand from the stored artifacts, so SchemaVersion has nothing to migrate yet — it exists
-/// so a future stored form can be versioned.
+/// so a future stored form can be versioned. <paramref name="Evidence"/> is null when there is nothing
+/// honest to say about why the mode is that mode; <paramref name="Sections"/> is empty when the song
+/// did not divide into at least two sections.
 /// </summary>
 public sealed record VisualizationPayload(
     int SchemaVersion,
@@ -85,4 +155,6 @@ public sealed record VisualizationPayload(
     double DurationSec,
     int MinPitch,
     int MaxPitch,
-    IReadOnlyList<VisualTempoPoint> Tempo);
+    IReadOnlyList<VisualTempoPoint> Tempo,
+    ModeEvidence? Evidence,
+    IReadOnlyList<VisualSection> Sections);

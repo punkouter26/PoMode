@@ -67,6 +67,10 @@ public sealed class VisualEndpointTests : IDisposable
         Assert.Empty(payload.Chords);
         Assert.True(payload.MaxPitch - payload.MinPitch >= 12, $"range was {payload.MaxPitch - payload.MinPitch}");
         Assert.Equal(0.0, payload.DurationSec);
+        // No mode was named and no chord was heard: nothing to explain and nothing to divide, so both
+        // derived readouts are absent rather than filled with a vacuous answer.
+        Assert.Null(payload.Evidence);
+        Assert.Empty(payload.Sections);
         Assert.All(payload.Notes, note =>
         {
             Assert.False(string.IsNullOrWhiteSpace(note.PitchLabel));

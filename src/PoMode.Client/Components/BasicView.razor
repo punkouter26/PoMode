@@ -17,6 +17,13 @@
                     {
                         <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0}")</span>
                     }
+                    @if (Visual.Evidence is not null)
+                    {
+                        <button class="basic-why-toggle" type="button" @onclick="ToggleWhy"
+                                aria-expanded="@(_whyOpen ? "true" : "false")" aria-controls="mode-why">
+                            Why this mode?
+                        </button>
+                    }
                 </div>
 
                 <div class="basic-badge-item">
@@ -52,12 +59,30 @@
             </div>
         </div>
 
+        @if (_whyOpen && Visual.Evidence is { } evidence)
+        {
+            @* Every sentence was worded server-side from measured figures (ModeEvidenceBuilder); this
+               only lays them out. The canvas rings the cited notes for as long as this is open. *@
+            <section id="mode-why" class="basic-why" aria-label="Why this mode" data-mode-evidence="@evidence.Mode">
+                <ul class="basic-why-reasons">
+                    @foreach (var reason in evidence.Reasons)
+                    {
+                        <li>@reason</li>
+                    }
+                </ul>
+                @if (evidence.CounterEvidence is { } against)
+                {
+                    <p class="basic-why-against">@against</p>
+                }
+            </section>
+        }
+
         <TuningNotice Cents="Result.TuningOffsetCents" />
 
         <!-- Compact Piano Roll -->
         <div class="basic-canvas-section">
             <AnalysisCanvas Model="Visual" SelectedWindowIndex="SelectedWindowIndex"
-                            PlayheadSec="PlayheadSec" OnSeek="OnSeek"
+                            PlayheadSec="PlayheadSec" OnSeek="OnSeek" HighlightEvidence="_whyOpen"
                             OnReady="@(element => _canvasElement = element)" />
         </div>
 
@@ -85,6 +110,11 @@
     [Parameter] public EventCallback OnAnalyzeNew { get; set; }
 
     private ElementReference? _canvasElement;
+
+    /// <summary>The "Why this mode?" disclosure; it also drives the canvas's evidence rings.</summary>
+    private bool _whyOpen;
+
+    private void ToggleWhy() => _whyOpen = !_whyOpen;
 
     /// <summary>Tempo of the measure the playhead is in, pushed up by the mixer as it changes.</summary>
     private double _liveBpm;

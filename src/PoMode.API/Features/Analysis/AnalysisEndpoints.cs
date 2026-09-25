@@ -129,7 +129,9 @@ public static class AnalysisEndpoints
             var chords = await store.ReadArtifactListAsync<ChordSpan>(jobId, "chords.json", ct);
             // Null for a job analysed before the tempo map existed; the canvas then draws no tempo lane.
             var tempoMap = await store.ReadArtifactAsync<TempoMapDto>(jobId, "tempo-map.json", ct);
-            return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result, tempoMap));
+            // Both only sharpen the section grid; without them sections fall back to fixed bars.
+            var beats = await store.ReadArtifactAsync<BeatGridDto>(jobId, "beats.json", ct);
+            return TypedResults.Ok(VisualizationBuilder.Build(notes, chords, result, tempoMap, beats));
         });
 
         // The chord pad is derived, not stored: chords.json → triad NoteEvents so the mixer's
