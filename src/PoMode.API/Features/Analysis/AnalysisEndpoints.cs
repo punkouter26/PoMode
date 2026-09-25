@@ -3,6 +3,7 @@ using PoMode.API.Audio;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Features.Auth;
 using PoMode.API.Pipeline;
 using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
@@ -16,8 +17,8 @@ public static class AnalysisEndpoints
         var group = app.MapGroup("/api/analysis");
         group.AddEndpointFilter<JobIdEndpointFilter>();
 
-        // Stays anonymous: RadzenUpload posts the file itself from the browser and cannot attach
-        // the FakeAuth headers the C# HttpClient carries. Every other write endpoint requires auth.
+        // Requires a session like every other write: the browser's own upload carries the session
+        // cookie, and the job has to know whose library it belongs to.
         group.MapPost("", async Task<Results<Ok<JobStatusDto>, BadRequest<string>>> (
             HttpRequest request, AnalysisIntake intake, CancellationToken ct) =>
         {
@@ -63,9 +64,11 @@ public static class AnalysisEndpoints
             // The home page's per-stage model pickers arrive as plain query params; an absent or
             // bogus name simply leaves that stage on the planner's normal ranked order.
             var state = await intake.StartAsync(
-                file.FileName, fresh, clientCanInfer, ct, PreferredExecutors(request));
+                file.FileName, fresh, clientCanInfer, ct, PreferredExecutors(request),
+                ownerId: PoUser.IdOf(request.HttpContext.User));
             return TypedResults.Ok(state.ToDto());
         })
+        .RequireAuthorization()
         .DisableAntiforgery()
         // The two guards answer different questions: the rate limit bounds how fast one client may
         // ask, the capacity filter bounds how much this server has already agreed to do. Neither
@@ -86,10 +89,12 @@ public static class AnalysisEndpoints
         });
 
         group.MapDelete("/{jobId}", async Task<Results<Ok, NotFound>> (
-            string jobId, JobStore store, JobCancellationRegistry cancellations, CancellationToken ct) =>
+            string jobId, HttpContext context, JobStore store, JobCancellationRegistry cancellations, CancellationToken ct) =>
         {
             var state = await store.LoadAsync(jobId, ct);
-            if (state is null)
+            // Someone else's job answers exactly like a missing one, so the endpoint cannot be used to
+            // learn which ids exist. An unowned legacy job stays cancellable by any signed-in caller.
+            if (state is null || (state.OwnerId is not null && state.OwnerId != PoUser.IdOf(context.User)))
             {
                 return TypedResults.NotFound();
             }

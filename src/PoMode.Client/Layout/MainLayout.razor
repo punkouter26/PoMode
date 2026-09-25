@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject SessionState Session
+@using PoMode.Shared.Account
 @implements IAsyncDisposable
 
 <a class="skip-link" href="#main-content">Skip to content</a>
@@ -29,6 +31,10 @@
         </NavLink>
     </nav>
     <div class="session">
+        @if (Session.Current is { DisplayName: { } who })
+        {
+            <span class="session-name" id="session-name" data-session-kind="@Session.Current.Kind">@who</span>
+        }
         <button class="icon-button theme-toggle" type="button" @onclick="CycleThemeAsync"
                 title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {ThemeLabel}")">
             @ThemeGlyph
@@ -45,6 +51,33 @@
             <div class="overflow-scrim" @onclick="CloseOverflow" aria-hidden="true"></div>
             <div class="overflow-menu" role="menu" tabindex="-1" @ref="_overflowMenu"
                  @onkeydown="OnOverflowKeyDown">
+                @if (Session.Current is { } session)
+                {
+                    <div class="overflow-group overflow-account" role="group" aria-label="Account">
+                        <span class="overflow-label">Account</span>
+                        <span class="overflow-who">@(session.DisplayName ?? "Not signed in")</span>
+                        @if (session.Kind == SessionKind.Guest)
+                        {
+                            <span class="overflow-hint">Your library lives in this browser.</span>
+                        }
+                    </div>
+                    @* A guest is never offered "sign out": their session is their library, and ending it
+                       would strand every take in it. Signing in with Microsoft carries it across. *@
+                    @if (session.Kind == SessionKind.Guest && session.MicrosoftAvailable)
+                    {
+                        <button class="overflow-item" type="button" role="menuitem" id="sign-in-microsoft"
+                                @onclick="SignInWithMicrosoft">
+                            Sign in with Microsoft
+                        </button>
+                    }
+                    else if (session.Kind == SessionKind.Microsoft)
+                    {
+                        <button class="overflow-item" type="button" role="menuitem" id="sign-out"
+                                @onclick="SignOutAsync">
+                            Sign out
+                        </button>
+                    }
+                }
                 <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
                     Keyboard shortcuts
                 </button>
@@ -114,7 +147,12 @@
 <main id="main-content" class="app-main">
     <ErrorBoundary>
         <ChildContent>
-            @Body
+            @* Pages wait for a session: every one of them calls the API on first render, and a call
+               that beats the guest cookie would land in nobody's library. *@
+            @if (_sessionReady)
+            {
+                @Body
+            }
         </ChildContent>
         <ErrorContent>
             @* Without a boundary a single component exception tears down the whole render tree
@@ -142,6 +180,7 @@
     ];
 
     private string _fxLevel = "full";
+    private bool _sessionReady;
     private bool _fxMuted;
 
     /// <summary>True while no explicit level has been chosen, so the menu can say the level is
@@ -162,6 +201,37 @@
     /// exactly once rather than stealing focus back on every subsequent render.</summary>
     private bool _focusOverflow;
     private bool _focusShortcuts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        try
+        {
+            await Session.EnsureAsync();
+        }
+        catch (HttpRequestException)
+        {
+            // The API is unreachable: render the pages anyway so they can show their own errors,
+            // rather than a blank shell that looks like a hang.
+        }
+        _sessionReady = true;
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    private void SignInWithMicrosoft()
+    {
+        var returnUrl = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        Navigation.NavigateTo($"auth/login/microsoft?returnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+    }
+
+    private async Task SignOutAsync()
+    {
+        _overflowOpen = false;
+        await Session.SignOutAsync();
+        // The library and any open job belonged to the account just left.
+        Navigation.NavigateTo("", forceLoad: true);
+    }
 
     private string ThemeLabel => _themeMode switch
     {
@@ -303,6 +373,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Session.Changed -= OnSessionChanged;
         try
         {
             if (_pwa is not null)

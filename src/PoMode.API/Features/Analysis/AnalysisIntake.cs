@@ -5,8 +5,8 @@ namespace PoMode.API.Features.Analysis;
 
 /// <summary>
 /// The one path from "validated audio stream" to "queued job": persist, plan, enqueue.
-/// Shared by the upload endpoint, the URL ingest endpoint, and the batch endpoint so the
-/// planning-before-response contract (the response DTO already reflects the plan) holds everywhere.
+/// Shared by the upload endpoint and the Mode Lab endpoints so the planning-before-response
+/// contract (the response DTO already reflects the plan) holds everywhere.
 /// </summary>
 public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlanner planner)
 {
@@ -23,9 +23,10 @@ public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlan
         bool clientCanInfer,
         CancellationToken ct,
         IReadOnlyDictionary<string, string>? preferredExecutors = null,
-        Func<JobState, CancellationToken, Task>? seed = null)
+        Func<JobState, CancellationToken, Task>? seed = null,
+        string? ownerId = null)
     {
-        var state = await store.CreateAsync(fileName, content, ct);
+        var state = await store.CreateAsync(fileName, content, ct, ownerId);
         try
         {
             state.Plan = await planner.PlanAsync(clientCanInfer, preferredExecutors, ct);

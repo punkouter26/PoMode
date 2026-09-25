@@ -1,8 +1,9 @@
 using PoMode.API.Platform;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Features.Auth;
 using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Export;
@@ -27,15 +28,16 @@ builder.Services.AddSingleton(secretSource);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, PoModeJsonContext.Default));
 
-if (builder.Environment.IsProduction())
+// Guest and Microsoft sign-in in every environment; FakeAuth headers in Development and Test only.
+builder.AddPoAuthentication();
+// App Service terminates TLS in front of Kestrel. Without the forwarded scheme the OIDC redirect URI
+// is built as http://, which does not match the app registration and the sign-in fails at Microsoft.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    throw new InvalidOperationException(
-        "FakeAuthHandler must never run in Production. Configure a real authentication provider.");
-}
-
-builder.Services.AddAuthentication(FakeAuthHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
-builder.Services.AddAuthorization();
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
@@ -89,6 +91,7 @@ if (secretSource.FellBack)
     app.Logger.LogWarning("Key Vault unreachable — secrets are coming from environment variables this run.");
 }
 
+app.UseForwardedHeaders();
 app.UseBlazorFrameworkFiles();
 // .webmanifest is not in every ASP.NET Core content-type table, and a manifest served as
 // application/octet-stream is ignored by the browser without an error anyone would notice — the app
@@ -133,6 +136,7 @@ app.MapPoLiveness();
 app.MapHealthChecks("/health/ready");
 app.MapDiagnostics();
 
+app.MapAuth();
 app.MapAnalysis();
 app.MapLibrary();
 app.MapWebRuntime();

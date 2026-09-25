@@ -32,6 +32,11 @@ public sealed class JobState
     /// it was sung over. Null for an ordinary upload, which is its own complete explanation.</summary>
     public TakeOrigin? Origin { get; set; }
 
+    /// <summary>The signed-in user (guest or Microsoft) who created the job, as <c>PoUser.IdOf</c>
+    /// reads it. Settable because a guest who signs in with Microsoft takes their library with
+    /// them. Null on jobs from before ownership existed; those belong to no one's library.</summary>
+    public string? OwnerId { get; set; }
+
     public JobStatusDto ToDto(double? liveProgress = null)
         => new(JobId, Stage, liveProgress ?? Progress, Plan, CompletedStages, Error, CreatedAt, StageHistory, InputFileName, Origin);
 }

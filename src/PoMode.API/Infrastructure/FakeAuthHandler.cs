@@ -2,10 +2,13 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using PoMode.API.Features.Auth;
+using PoMode.Shared.Account;
 
 namespace PoMode.API.Infrastructure;
 
-/// <summary>Dev/test-only header auth (X-Fake-User / X-Fake-Roles). Hard-fails in Production per NET_RULES.</summary>
+/// <summary>Dev/test-only header auth (X-Fake-User / X-Fake-Roles). Registered only in Development and
+/// Test by <see cref="PoAuth"/>, and still hard-fails in Production per NET_RULES should that ever change.</summary>
 public sealed class FakeAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -32,6 +35,7 @@ public sealed class FakeAuthHandler(
         }
 
         var claims = new List<Claim> { new(ClaimTypes.Name, userName) };
+        claims.AddRange(PoUser.Stamp($"test:{userName}", SessionKind.Test));
         var roles = Request.Headers[RolesHeader].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(roles))
         {

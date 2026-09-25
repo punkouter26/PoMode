@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using PoMode.API.Features.Auth;
 
 namespace PoMode.API.Platform;
 
@@ -102,12 +103,12 @@ public static class PoRateLimits
     }
 
     /// <summary>
-    /// Who is being limited. The signed-in name first, because the upload endpoint is anonymous by
-    /// design (RadzenUpload posts the file itself and cannot attach auth headers) while every other
-    /// costly endpoint is not — so both kinds have to partition sensibly.
+    /// Who is being limited: the session's user id, never the display name — every guest is called
+    /// "Guest nnnn", and a name-keyed bucket would let thousands of them share one. The address is
+    /// the fallback for the anonymous endpoints.
     /// </summary>
     private static string PartitionKey(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } user
+        => PoUser.IdOf(context.User) is { } user
             ? $"user:{user}"
             : $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
 }

@@ -115,12 +115,11 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: sharedKeyVault.properties.vaultUri
         }
         {
-          // Deliberately not Production. Program.cs throws on startup in Production because
-          // FakeAuthHandler is the only authentication configured, so shipping Production here
-          // crash-looped the container on every deploy. Change this the same day a real identity
-          // provider is wired up, not before.
+          // Production: guest and Microsoft sign-in are real, and the FakeAuth header scheme is not
+          // registered outside Development/Test. Microsoft sign-in switches on when
+          // PoMode--AzureAd--ClientSecret exists in the shared vault and the ClientId is in appsettings.
           name: 'ASPNETCORE_ENVIRONMENT'
-          value: 'Staging'
+          value: 'Production'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'

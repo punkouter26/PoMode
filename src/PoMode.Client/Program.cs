@@ -11,13 +11,9 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<MockDataState>();
 builder.Services.AddScoped<AnalysisClient>();
-builder.Services.AddScoped(_ =>
-{
-    var http = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
-    // Dev/test FakeAuth: the API's write endpoints (cancel, client-result, from-url)
-    // require an authenticated caller. Production replaces this with a real auth provider.
-    http.DefaultRequestHeaders.Add("X-Fake-User", "guest");
-    return http;
-});
+builder.Services.AddScoped<SessionState>();
+// Same-origin, so the session cookie rides on every request with no header to add; the same is true
+// of the JS modules' fetch() calls and the browser's own uploads.
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
 await builder.Build().RunAsync();

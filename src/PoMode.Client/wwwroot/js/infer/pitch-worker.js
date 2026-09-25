@@ -64,8 +64,8 @@ export async function runDelegated(jobId) {
 
         const response = await fetch(`api/analysis/${jobId}/client-result`, {
             method: 'POST',
-            // X-Fake-User: dev/test auth — the endpoint requires an authenticated caller.
-            headers: { 'Content-Type': 'application/json', 'X-Fake-User': 'guest' },
+            // The session cookie authenticates this: a worker's same-origin fetch sends it by default.
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(notes),
         });
         if (!response.ok) {

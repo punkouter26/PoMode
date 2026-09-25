@@ -56,13 +56,14 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
 
     private SemaphoreSlim LockFor(string jobId) => _locks.GetOrAdd(jobId, _ => new SemaphoreSlim(1, 1));
 
-    public async Task<JobState> CreateAsync(string fileName, Stream content, CancellationToken ct)
+    public async Task<JobState> CreateAsync(string fileName, Stream content, CancellationToken ct, string? ownerId = null)
     {
         var state = new JobState
         {
             JobId = Guid.NewGuid().ToString("N"),
             InputFileName = fileName,
             CreatedAt = time.GetUtcNow(),
+            OwnerId = ownerId,
         };
         Directory.CreateDirectory(JobDir(state.JobId));
         await using (var file = File.Create(InputPath(state)))
@@ -75,6 +76,24 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
         }
         await SaveAsync(state, ct);
         return state;
+    }
+
+    /// <summary>Moves every job owned by <paramref name="fromOwner"/> to <paramref name="toOwner"/>.
+    /// A guest who signs in with Microsoft keeps what they made as a guest; without this the sign-in
+    /// that was meant to protect a library would hand them an empty one.</summary>
+    public async Task<int> ReassignOwnerAsync(string fromOwner, string toOwner, CancellationToken ct)
+    {
+        var moved = 0;
+        foreach (var jobId in ListJobIds())
+        {
+            if (await LoadAsync(jobId, ct) is { } state && state.OwnerId == fromOwner)
+            {
+                state.OwnerId = toOwner;
+                await SaveAsync(state, ct);
+                moved++;
+            }
+        }
+        return moved;
     }
 
     public Task SaveAsync(JobState state, CancellationToken ct)

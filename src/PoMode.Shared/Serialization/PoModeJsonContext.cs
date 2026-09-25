@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using PoMode.Shared.Account;
 using PoMode.Shared.Analysis;
 using PoMode.Shared.Diagnostics;
 using PoMode.Shared.Hardware;
@@ -7,6 +8,7 @@ namespace PoMode.Shared.Serialization;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiagnosticsReport))]
+[JsonSerializable(typeof(SessionDto))]
 [JsonSerializable(typeof(JobStatusDto))]
 [JsonSerializable(typeof(TakeOrigin))]
 [JsonSerializable(typeof(List<LibraryEntryDto>))]

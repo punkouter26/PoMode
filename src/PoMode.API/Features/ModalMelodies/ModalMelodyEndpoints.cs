@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Features.Auth;
 using PoMode.API.Features.Export;
 using PoMode.Shared.Analysis;
 
@@ -78,6 +79,7 @@ public static class ModalMelodyEndpoints
         .WithSummary("Synthesizes and exports the generated modal melody and chords as a 44.1kHz 16-bit PCM WAV file (GET).");
 
         group.MapPost("/analyze", async (
+            HttpContext context,
             ModalMelodyRequest request,
             ModalMelodyGenerator generator,
             AnalysisIntake intake,
@@ -97,10 +99,12 @@ public static class ModalMelodyEndpoints
                 fileName: fileName,
                 content: stream,
                 clientCanInfer: false,
-                ct: ct);
+                ct: ct,
+                ownerId: PoUser.IdOf(context.User));
 
             return TypedResults.Ok(state.ToDto());
         })
+        .RequireAuthorization()
         .WithName("AnalyzeModalMelodyInAnalyzer")
         .WithSummary("Synthesizes the melody and chords into WAV audio and queues an end-to-end analysis job in the Song Analyzer.");
 
@@ -166,7 +170,8 @@ public static class ModalMelodyEndpoints
                 content: stream,
                 clientCanInfer: false,
                 ct: ct,
-                seed: (job, token) => seeder.SeedAsync(job, backing, token));
+                seed: (job, token) => seeder.SeedAsync(job, backing, token),
+                ownerId: PoUser.IdOf(httpRequest.HttpContext.User));
 
             return TypedResults.Ok(state.ToDto());
         })

@@ -91,6 +91,13 @@
     position: relative;
 }
 
+.session-name {
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg-muted);
+    max-width: 14rem;
+    overflow-wrap: anywhere;
+}
+
 .nav-scene-switcher {
     display: inline-flex;
     background: var(--pm-surface);
@@ -263,6 +270,17 @@
     color: var(--pm-fg-muted);
 }
 
+/* First group in the menu, so it drops the separator every later group draws above itself. */
+.overflow-account {
+    border-top: 0;
+    margin-top: 0;
+}
+
+.overflow-who {
+    color: var(--pm-fg);
+    overflow-wrap: anywhere;
+}
+
 .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -355,6 +373,11 @@
     }
 
     .actions ::deep .nav-wide {
+        display: none;
+    }
+
+    /* The name is in the menu too; on a phone the header row needs the room for the brand. */
+    .session-name {
         display: none;
     }
 

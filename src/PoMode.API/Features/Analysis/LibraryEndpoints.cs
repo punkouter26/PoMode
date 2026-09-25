@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using PoMode.API.Features.Auth;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -7,11 +8,13 @@ public static class LibraryEndpoints
 {
     public static IEndpointRouteBuilder MapLibrary(this IEndpointRouteBuilder app)
     {
-        // Requires auth: listing enumerates every job id, and unguessable ids are the only gate
-        // on the anonymous per-job read endpoints — an open listing would defeat that.
+        // The caller's own jobs only. Unguessable ids are the only gate on the per-job read endpoints,
+        // so a listing that enumerated anyone else's would defeat that. Jobs from before ownership
+        // existed belong to nobody and are listed for nobody.
         app.MapGet("/api/library", async Task<Ok<List<LibraryEntryDto>>> (
-            JobStore store, CancellationToken ct) =>
+            HttpContext context, JobStore store, CancellationToken ct) =>
         {
+            var owner = PoUser.IdOf(context.User);
             var entries = new List<LibraryEntryDto>();
             foreach (var jobId in store.ListJobIds())
             {
@@ -20,7 +23,7 @@ public static class LibraryEndpoints
                     continue; // a stray folder (temp dir, manual copy) is not a job
                 }
                 var state = await store.LoadAsync(jobId, ct);
-                if (state is null)
+                if (state is null || owner is null || state.OwnerId != owner)
                 {
                     continue;
                 }
