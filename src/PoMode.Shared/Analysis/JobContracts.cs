@@ -82,6 +82,10 @@ public sealed record TakeOrigin(string Kind, string Description, ModalMelodyRequ
 {
     /// <summary>Sung or hummed over a Mode Lab progression.</summary>
     public const string HumTake = "HumTake";
+
+    /// <summary>The first-run example: a piece the server synthesized in a known mode and analyzed
+    /// once, copied into a new user's library so they see a finished result before uploading.</summary>
+    public const string Demo = "Demo";
 }
 
 /// <summary><paramref name="IsPlaceholder"/> mirrors the executor's own placeholder flag so the

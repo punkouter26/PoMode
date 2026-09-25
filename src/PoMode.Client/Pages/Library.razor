@@ -56,11 +56,17 @@
                             {
                                 <span class="library-runs-badge" title="This song was analyzed more than once">×@runs</span>
                             }
-                            @* A sung take is not an uploaded song, and the row should not read like one —
-                               its whole meaning is the progression the singer was hearing. *@
-                            @if (entry.Origin is { } origin)
+                            @* A sung take or the first-run demo is not an uploaded song, and the row should
+                               not read like one; the tooltip carries the server's sentence about it. *@
+                            @if (entry.Origin is { Kind: TakeOrigin.Demo } demo)
                             {
-                                <span class="library-origin-badge" title="@origin.Description">🎤 hum</span>
+                                <span class="library-origin-badge library-origin-badge--demo" title="@demo.Description"
+                                      data-origin-kind="@demo.Kind">🎹 demo</span>
+                            }
+                            else if (entry.Origin is { } origin)
+                            {
+                                <span class="library-origin-badge" title="@origin.Description"
+                                      data-origin-kind="@origin.Kind">🎤 hum</span>
                             }
                         </Template>
                     </RadzenDataGridColumn>

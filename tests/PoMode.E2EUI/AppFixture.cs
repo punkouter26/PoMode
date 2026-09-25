@@ -70,6 +70,9 @@ public class AppFixture : IAsyncLifetime
                 // per-minute limits would be measuring the harness. Off rather than raised — see
                 // PoRateLimits.IsEnabled.
                 ["RateLimits__Enabled"] = "false",
+                // No first-run demo: its template build would take the single worker ahead of the
+                // uploads under test, and its row and Home-page pointer are not what these assert on.
+                ["Demo__Enabled"] = "false",
                 // And nothing here may call out to MusicBrainz or AcousticBrainz: a suite that
                 // depends on a third party's uptime is a suite that fails for reasons of its own.
             },

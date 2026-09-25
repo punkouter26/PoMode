@@ -56,11 +56,14 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
 
     private SemaphoreSlim LockFor(string jobId) => _locks.GetOrAdd(jobId, _ => new SemaphoreSlim(1, 1));
 
-    public async Task<JobState> CreateAsync(string fileName, Stream content, CancellationToken ct, string? ownerId = null)
+    /// <param name="jobId">A fixed id instead of a fresh one. Only the demo template passes it: a
+    /// well-known id is how the server finds its own template again after a restart.</param>
+    public async Task<JobState> CreateAsync(
+        string fileName, Stream content, CancellationToken ct, string? ownerId = null, string? jobId = null)
     {
         var state = new JobState
         {
-            JobId = Guid.NewGuid().ToString("N"),
+            JobId = jobId ?? Guid.NewGuid().ToString("N"),
             InputFileName = fileName,
             CreatedAt = time.GetUtcNow(),
             OwnerId = ownerId,
@@ -95,6 +98,50 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
         }
         return moved;
     }
+
+    /// <summary>
+    /// A finished job copied under a new id for <paramref name="ownerId"/>: every artifact file, plus
+    /// the state rewritten by <see cref="JobState.CopyAs"/>. Artifacts are copied rather than
+    /// regenerated, which is what makes handing one analysis to many users cost a file copy instead
+    /// of a pipeline run. The source's lock is held while its folder is read, so a concurrent write
+    /// to the source can never leave the copy with half a file.
+    /// </summary>
+    public async Task<JobState> CopyAsync(JobState source, string ownerId, CancellationToken ct)
+    {
+        var copy = source.CopyAs(Guid.NewGuid().ToString("N"), ownerId, time.GetUtcNow());
+        var targetDir = JobDir(copy.JobId);
+        Directory.CreateDirectory(targetDir);
+        var gate = LockFor(source.JobId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(JobDir(source.JobId)))
+            {
+                var name = Path.GetFileName(file);
+                // job.json is rewritten below with the copy's own id and owner; a .tmp is a write
+                // that never finished and is not part of the job.
+                if (name != "job.json" && Path.GetExtension(name) != ".tmp")
+                {
+                    File.Copy(file, Path.Combine(targetDir, name));
+                }
+            }
+        }
+        catch
+        {
+            TryDeleteJobDir(targetDir); // no half-copied job left behind to surface in a library
+            throw;
+        }
+        finally
+        {
+            gate.Release();
+        }
+        await SaveAsync(copy, ct);
+        await MirrorToBlobAsync(copy.JobId, ct);
+        return copy;
+    }
+
+    /// <summary>Deletes one job's folder and blob mirror. False when a file in it is still open.</summary>
+    public bool TryDelete(string jobId) => TryDeleteJobDir(JobDir(jobId));
 
     public Task SaveAsync(JobState state, CancellationToken ct)
         => WriteArtifactAsync(state.JobId, "job.json", state, ct);
@@ -257,10 +304,14 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
             DateTimeOffset createdAt;
             try
             {
-                createdAt = File.Exists(statePath)
-                    ? JsonSerializer.Deserialize<JobState>(File.ReadAllText(statePath), JsonOptions)?.CreatedAt
-                      ?? File.GetLastWriteTimeUtc(dir)
-                    : File.GetLastWriteTimeUtc(dir);
+                var state = File.Exists(statePath)
+                    ? JsonSerializer.Deserialize<JobState>(File.ReadAllText(statePath), JsonOptions)
+                    : null;
+                if (state is { IsServerOwned: true })
+                {
+                    continue; // the demo template: the server's own, and a pipeline run to rebuild
+                }
+                createdAt = state?.CreatedAt ?? File.GetLastWriteTimeUtc(dir);
             }
             catch (JsonException)
             {
@@ -301,7 +352,8 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
                     && JsonSerializer.Deserialize<JobState>(File.ReadAllText(statePath), JsonOptions) is { } state)
                 {
                     createdAt = state.CreatedAt;
-                    terminal = PoMode.Shared.Analysis.JobStageExtensions.IsTerminal(state.Stage);
+                    // A server-owned job counts toward the total but is never a candidate.
+                    terminal = PoMode.Shared.Analysis.JobStageExtensions.IsTerminal(state.Stage) && !state.IsServerOwned;
                 }
             }
             catch (JsonException)

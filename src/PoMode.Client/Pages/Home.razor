@@ -50,6 +50,18 @@
                 <RadzenText class="upload-error" Text="@_recordError" />
             }
 
+            @* First run: a finished analysis is one click away, so the canvas, mixer and stats can be
+               seen in seconds instead of after a multi-minute first upload. Only while the demo is all
+               the library holds — once the user has songs of their own, the Library still lists it. *@
+            @if (_demo is { Origin: { } demoOrigin } demo)
+            {
+                <div class="demo-pointer" data-demo-job="@demo.JobId">
+                    <RadzenButton Text="See a finished example" Icon="play_circle" ButtonStyle="ButtonStyle.Light"
+                                  Click="@(() => OpenDemoAsync(demo.JobId))" />
+                    <RadzenText class="demo-pointer-sub" Text="@demoOrigin.Description" />
+                </div>
+            }
+
             @if (_executorStages is not null)
             {
                 @* One chooser per pipeline stage. "Auto" keeps the server's ranked default; a pick
@@ -100,11 +112,11 @@
 
 @* Where this audio came from, when the server knows. A hum take is a melody the user sang over a
    progression this app chose for them, and the mode below is a fact about that melody — without the
-   provenance the page reports a mode on an unexplained file. *@
+   provenance the page reports a mode on an unexplained file. The demo says it was synthesized. *@
 @if (_status?.Origin is { } origin)
 {
     <div class="take-origin" role="note" data-take-origin="@origin.Kind">
-        <span class="take-origin-icon" aria-hidden="true">🎤</span>
+        <span class="take-origin-icon" aria-hidden="true">@(origin.Kind == TakeOrigin.Demo ? "🎹" : "🎤")</span>
         <span class="take-origin-text">@origin.Description</span>
     </div>
 }
@@ -286,10 +298,50 @@
         }
     }
 
+    /// <summary>The library's demo row, when it is the only row: what the empty state points at.</summary>
+    private LibraryEntryDto? _demo;
+
+    /// <summary>
+    /// Reads the library for its demo row. The read is also what seeds a new user's demo on the server,
+    /// so a first visit that lands here rather than on the Library still gets one. Best-effort: with no
+    /// demo the intake card is simply what it always was.
+    /// </summary>
+    private async Task LoadDemoAsync()
+    {
+        try
+        {
+            if (await Analysis.GetLibraryAsync() is [{ Origin.Kind: TakeOrigin.Demo, Stage: JobStage.Complete } only])
+            {
+                _demo = only;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            // Same wide filter as the choosers: a missing pointer must never fault the home page.
+        }
+    }
+
+    private async Task OpenDemoAsync(string jobId)
+    {
+        try
+        {
+            if (await Analysis.GetStatusAsync(jobId) is { } status)
+            {
+                await TrackJobAsync(status);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // Swept since the page loaded: drop the pointer rather than offer a dead button.
+            _demo = null;
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // The choosers' data loads concurrently with the job-resume path; they pop in when ready.
         var executorsTask = LoadExecutorsAsync();
+        var demoTask = string.IsNullOrWhiteSpace(Job) ? LoadDemoAsync() : Task.CompletedTask;
         if (!string.IsNullOrWhiteSpace(Job))
         {
             try
@@ -304,7 +356,7 @@
                 // A stale or mistyped link: the page simply starts empty, same as no query at all.
             }
         }
-        await executorsTask;
+        await Task.WhenAll(executorsTask, demoTask);
     }
 
     private async Task LoadExecutorsAsync()

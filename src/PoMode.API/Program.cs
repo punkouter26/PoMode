@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
 using PoMode.API.Features.ChordRecognition;
+using PoMode.API.Features.Demo;
 using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Export;
 using PoMode.API.Features.ModalAnalysis;
@@ -80,6 +81,9 @@ builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddHostedService<AnalysisWorker>();
 builder.Services.AddHostedService<JobRecoveryService>();
 builder.Services.AddHostedService<JobCleanupService>();
+// The first-run demo: one real pipeline run into a template, then a file copy per new library.
+builder.Services.AddSingleton<DemoLibrary>();
+builder.Services.AddHostedService<DemoTemplateService>();
 builder.Services.AddHostedService<ModelWarmupService>();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(

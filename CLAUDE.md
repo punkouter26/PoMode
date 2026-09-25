@@ -257,6 +257,39 @@ replaces it with an offline pitch track once the take is decoded, because that p
 take at a steadier hop than a capture callback manages. Its consonance tick is silenced while a take
 is running, for the same reason the page carries no score.
 
+### First-run demo
+
+A new user would otherwise face an empty library and a multi-minute wait. `Features/Demo` gives every
+library one finished analysis instead. `DemoTemplateService` builds a **template** once at startup:
+`DemoSong` synthesizes about 45 s of F Lydian (the `lydian-space` vamp, fixed seeds) with
+`ModalMelodyGenerator` + `ModalWavSynthesizer`, and queues it through `AnalysisIntake` under the fixed
+id `DemoSong.TemplateJobId`, owned by `system:demo-template`. `JobState.IsServerOwned` (the `system:`
+prefix, which no sign-in can mint) keeps it out of every library and out of both purge sweeps. Because
+it is an ordinary job, an interrupted build is re-enqueued by `JobRecoveryService`; a finished one is
+found on the next start and left alone; a Failed or Cancelled one is rebuilt.
+
+The seed hook hands the job what the server wrote: melody and piano rendered separately as the two
+stems, the chord track and the tempo, with Separating and ChordDetecting marked provided as
+`DemoScore` (`JobState.MarkProvided`, shared with `HumTakeSeeder`). Estimating them measured the
+estimators instead: the vocal separator dropped most of the synthesized flute and the chord recognizer
+heard chords that were never played. Melody transcription and the modal analysis run for real.
+Not D Dorian, the obvious first pick: the analyzer puts the Dorian i–IV vamp's tonic on G even from the
+generator's exact notes (as it does for the Mixolydian, Aeolian and Locrian signatures). A first-run
+example has to be one it gets right.
+
+Users get a **copy**, never a run: `JobStore.CopyAsync` copies the artifact files, rewrites `job.json`
+via `JobState.CopyAs` (new id, owner, `CreatedAt`), and mirrors the copy to blob. `DemoLibrary` seeds
+from `GET /api/library`, the one place an empty library is actually observed. Guest creation would
+miss Microsoft sign-ins and anyone who arrived while the template was building. An explicit endpoint
+would put the "is it empty" decision in the client. Seeding happens on the first empty read once the
+template is Complete. A ledger (`demo-seeded.txt` in the jobs root, mirrored to blob as
+`_demo/demo-seeded.txt`) records each owner, so a purged or deleted demo never comes back. Until the
+template is ready the library is simply demo-less. The copy carries `TakeOrigin.Demo`, worded
+server-side ("Demo · synthesized in F Lydian so you can see a finished analysis"). The Library badges
+it, and the Home intake card shows "See a finished example" (`data-demo-job`) while the demo is the
+library's only row. `Demo:Enabled` (default true) is off in both test fixtures, like
+`RateLimits:Enabled`.
+
 ### What is deliberately not here
 
 Each of these existed and was removed, with the reason, so nobody rebuilds one by accident:

@@ -33,6 +33,24 @@
     margin-top: 0.5rem;
 }
 
+.demo-pointer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--pm-info-edge);
+    border-radius: 0.5rem;
+    background: var(--pm-info-bg);
+}
+
+.demo-pointer-sub {
+    min-width: 0;
+    color: var(--pm-info);
+    font-size: var(--pm-text-sm);
+}
+
 .recording-hint {
     color: var(--pm-note-outside);
 }

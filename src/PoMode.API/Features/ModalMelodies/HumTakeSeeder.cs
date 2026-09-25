@@ -64,8 +64,9 @@ public sealed class HumTakeSeeder(ModalMelodyGenerator generator, JobStore store
         await store.WriteArtifactAsync(
             state.JobId, "beats.json", new BeatGridDto(generated.Bpm, 0.0, 1.0), ct);
 
-        MarkProvided(state, StageNames.Separating, SkippedSeparationExecutor);
-        MarkProvided(state, StageNames.ChordDetecting, ProvidedChordsExecutor);
+        var now = time.GetUtcNow();
+        state.MarkProvided(StageNames.Separating, SkippedSeparationExecutor, now);
+        state.MarkProvided(StageNames.ChordDetecting, ProvidedChordsExecutor, now);
 
         // The backing is stored with its progression id canonicalised, so a take filed under a
         // differently-cased or unknown id is still found by the history of the loop it actually played.
@@ -117,33 +118,5 @@ public sealed class HumTakeSeeder(ModalMelodyGenerator generator, JobStore store
             }
         }
         return tiled;
-    }
-
-    /// <summary>
-    /// Marks a stage done without running it, and rewrites its plan entry to name what actually
-    /// happened. The plan is what the client reports as "who ran" (and what the mock-data banner
-    /// reads), so leaving the planned executor in place would be a false claim about the job.
-    /// </summary>
-    private void MarkProvided(JobState state, string stage, string executor)
-    {
-        if (state.CompletedStages.Contains(stage))
-        {
-            return;
-        }
-
-        var now = time.GetUtcNow();
-        state.StageHistory.Add(new StageRecord(stage, ExecutionTier.Local, executor, now, now));
-        state.CompletedStages.Add(stage);
-
-        var index = state.Plan.FindIndex(p => p.Stage == stage);
-        if (index >= 0)
-        {
-            state.Plan[index] = state.Plan[index] with
-            {
-                Tier = ExecutionTier.Local,
-                Executor = executor,
-                IsPlaceholder = false,
-            };
-        }
     }
 }

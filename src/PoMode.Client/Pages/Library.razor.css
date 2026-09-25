@@ -271,4 +271,11 @@
     cursor: help;
 }
 
+/* The demo is the app's own example, not something the user made — a calmer tone than a take. */
+.library-origin-badge--demo {
+    border-color: var(--pm-info-edge);
+    background: var(--pm-info-bg);
+    color: var(--pm-info);
+}
+
 /* ---- Wall view ---- */

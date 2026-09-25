@@ -16,6 +16,9 @@ public sealed class AuthedFactory : WebApplicationFactory<Program>
         // test runner rather than the app. Switched off rather than raised, because a limit set high
         // enough for a test suite protects nothing in production.
         builder.UseSetting("RateLimits:Enabled", "false");
+        // No first-run demo: its template build would hold the single worker the tests' own jobs
+        // queue on, and a seeded row would sit in libraries they assert on. DemoSongTests turns it on.
+        builder.UseSetting("Demo:Enabled", "false");
     }
 
     protected override void ConfigureClient(HttpClient client)

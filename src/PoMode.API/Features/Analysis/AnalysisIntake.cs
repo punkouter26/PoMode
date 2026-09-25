@@ -24,9 +24,10 @@ public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlan
         CancellationToken ct,
         IReadOnlyDictionary<string, string>? preferredExecutors = null,
         Func<JobState, CancellationToken, Task>? seed = null,
-        string? ownerId = null)
+        string? ownerId = null,
+        string? jobId = null)
     {
-        var state = await store.CreateAsync(fileName, content, ct, ownerId);
+        var state = await store.CreateAsync(fileName, content, ct, ownerId, jobId);
         try
         {
             state.Plan = await planner.PlanAsync(clientCanInfer, preferredExecutors, ct);
