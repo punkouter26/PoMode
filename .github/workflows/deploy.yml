@@ -109,8 +109,8 @@ jobs:
       # Always, not only when infra/ changed. Bicep is the source of truth for the app settings the
       # code depends on, and it is idempotent, so running it costs a minute and removes an outage
       # path: a push that did not touch infra/ used to skip this and leave whatever settings the App
-      # Service happened to carry. That matters because Program.cs throws on startup in Production by
-      # design, so a stale ASPNETCORE_ENVIRONMENT takes the site down instead of failing the build.
+      # Service happened to carry. That matters because Production refuses to start without
+      # Jobs__Storage__AccountUri, which only this template sets.
       - name: Provision infra (Bicep)
         run: |
           az deployment sub create \
@@ -119,17 +119,6 @@ jobs:
             --name pomode-${{ github.run_id }} \
             --parameters assignStorageRole=false \
             -o none
-
-      - name: Verify the settings the app refuses to start without
-        run: |
-          set -euo pipefail
-          env_name=$(az webapp config appsettings list -n ${{ env.AZURE_WEBAPP_NAME }} -g PoMode \
-            --query "[?name=='ASPNETCORE_ENVIRONMENT'].value | [0]" -o tsv)
-          echo "ASPNETCORE_ENVIRONMENT=$env_name"
-          if [ "$env_name" = "Production" ]; then
-            echo "::error::Production is the one value Program.cs throws on. Refusing to deploy over a working site."
-            exit 1
-          fi
 
       - name: Package and zip deploy
         run: |
