@@ -113,7 +113,7 @@ public class ClientDelegatedFlowTests(ClientDelegatedAppFixture app)
         try
         {
             var uploadResponse = await page.RunAndWaitForResponseAsync(
-                () => page.Locator("input[type=file]").SetInputFilesAsync(wavPath),
+                () => page.Locator("input.upload-input").SetInputFilesAsync(wavPath),
                 r => r.Url.Contains("/api/analysis") && r.Request.Method == "POST",
                 new() { Timeout = AppFixture.ExpectTimeoutMs });
 

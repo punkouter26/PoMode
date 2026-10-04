@@ -22,7 +22,7 @@ public class StemMixerTests(AppFixture app)
         await File.WriteAllBytesAsync(wavPath, EightSeconds());
         try
         {
-            await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
+            await page.Locator("input.upload-input").SetInputFilesAsync(wavPath);
             await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
             // The module reports 'ready' once all three stems are fetched and decoded.
             await Assertions.Expect(page.Locator(".mixer"))

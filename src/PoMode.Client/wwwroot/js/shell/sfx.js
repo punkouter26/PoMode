@@ -57,10 +57,6 @@ export function setPalette(pitches) {
     }
 }
 
-export function hasPalette() {
-    return palette !== null;
-}
-
 function freqOf(midi) {
     return 440 * Math.pow(2, (midi - 69) / 12);
 }
@@ -206,30 +202,6 @@ export function whoosh() {
     }
 }
 
-/// New-personal-best celebration: a fast rising arpeggio blooming into a high shimmer. Louder than
-/// the other UI sounds on purpose — it fires rarely and it is the reward. Climbs the mode's own
-/// degrees when there is a palette, so a Phrygian best sounds like Phrygian.
-export function cheer() {
-    const ctx = ensureContext();
-    if (!ctx) {
-        return;
-    }
-    try {
-        const now = ctx.currentTime;
-        const keyless = [523, 659, 784, 1046, 1318];
-        for (let i = 0; i < 5; i++) {
-            const freq = paletteFreq(i) !== null ? paletteFreq(i) * 2 : keyless[i];
-            voice(ctx, { type: 'triangle', freq, when: now + (i * 0.07), duration: 0.3, peak: 0.11 });
-        }
-        for (let i = 0; i < 6; i++) {
-            const shimmer = paletteFreq(i + 5) !== null ? paletteFreq(i + 5) * 4 : 2093 + (i * 392);
-            voice(ctx, { type: 'sine', freq: shimmer, when: now + 0.35 + (i * 0.05), duration: 0.5, peak: 0.05 });
-        }
-    } catch {
-        // Fail silent.
-    }
-}
-
 /// A short ascending arpeggio for job completion: tonic, fifth, octave. Deliberately no third — the
 /// client must not decide major versus minor; that call belongs to the server's analysis.
 export function fanfare(tonicMidi) {
@@ -345,9 +317,4 @@ export function tap() {
 /// A firmer confirmation: a recording stopped, a score arrived.
 export function thud() {
     vibrate(28);
-}
-
-/// Two quick pulses for a celebration, matched to the confetti.
-export function doubleTap() {
-    vibrate([18, 60, 18]);
 }

@@ -5,6 +5,9 @@ public enum UploadRejection
 {
     TooLarge,
     UnsupportedFormat,
+
+    /// <summary>An MP4/M4A the browser could not decode and this host has no ffmpeg to convert.</summary>
+    CannotConvert,
 }
 
 /// <summary>Magic-byte sniffing for uploads; extension is never trusted.</summary>
@@ -47,7 +50,8 @@ public static class AudioFormatValidator
             return true;
         }
 
-        if (header.Length >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0)
+        // Frame sync plus a non-zero layer: raw AAC (ADTS) carries the same sync bits with layer 00.
+        if (header.Length >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 && (header[1] & 0x06) != 0)
         {
             format = "mp3";
             return true;

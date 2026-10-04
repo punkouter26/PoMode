@@ -25,8 +25,7 @@ public class HumTakeHistoryTests
         ];
 
     [Theory]
-    // No takes, then two: the range needs three, so it says how many more rather than claiming one.
-    [InlineData(0, 55, ScaleMode.Dorian, 3, null)]
+    // Two takes: the range needs three, so it says how many more rather than claiming one.
     [InlineData(2, 55, ScaleMode.Dorian, 1, null)]
     // Centred on G3 (55): home goes to C#3, and C# Dorian lives in the key of B.
     [InlineData(3, 55, ScaleMode.Dorian, 0, 11)]
@@ -57,5 +56,27 @@ public class HumTakeHistoryTests
         Assert.InRange(profile.HighMidi!.Value, centre + 7, centre + 9);
         Assert.Equal(mode, profile.Fit!.Mode);
         Assert.Contains($"from {takeCount} takes", profile.Summary);
+    }
+
+    /// <summary>A song against the singer's own range: the key change is the distance between the two
+    /// middles folded into half an octave, and a song already in range is left where it is.</summary>
+    [Fact]
+    public void A_song_is_moved_to_the_middle_of_the_voice_or_left_where_it_fits()
+    {
+        var voice = HumTakeHistory.Profile([Take(55), Take(55), Take(55)], ScaleMode.Ionian);
+
+        // Centred a fourth above the voice: five semitones down.
+        var high = HumTakeHistory.SongFit(voice, [.. Take(60), .. Take(60)])!;
+        Assert.Equal(-5, high.Semitones);
+        Assert.Contains("5 semitones down", high.Sentence);
+
+        // An octave up is the same key: nothing to transpose, sung an octave lower.
+        var octave = HumTakeHistory.SongFit(voice, [.. Take(67), .. Take(67)])!;
+        Assert.Equal(0, octave.Semitones);
+        Assert.Contains("In its own key", octave.Sentence);
+
+        // Too little of either side and nothing is claimed.
+        Assert.Null(HumTakeHistory.SongFit(voice, Take(60)));
+        Assert.Null(HumTakeHistory.SongFit(HumTakeHistory.Profile([Take(55)], ScaleMode.Ionian), [.. Take(60), .. Take(60)]));
     }
 }

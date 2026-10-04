@@ -1,4 +1,5 @@
 @page "/"
+@page "/library"
 @using System.Text.Json
 @using Microsoft.AspNetCore.SignalR.Client
 @using PoMode.Shared.Analysis
@@ -29,31 +30,51 @@
             <div class="upload-hero">
                 <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
                 <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H1" Text="Drop a track, get the theory" />
-                <RadzenText class="upload-hero-sub" Text=".mp3 or .wav · up to 100 MB" />
+                <RadzenText class="upload-hero-sub" Text=".mp3, .wav or .m4a · up to 100 MB" />
                 @* A plain file input dressed as a Radzen button rather than RadzenUpload: RadzenUpload
                    POSTs the file itself in one request, and the point here is that the bytes go over tus
                    (js/upload/resumable-upload.js) so a dropped connection resumes instead of restarting.
                    The input covers the button, so a click or a dropped file both land on it. Recording sits
                    beside it: both ways in on one row. *@
                 <div class="intake-actions">
+                    @* A beat is not a song: it is not here to be read for its mode but to be cut to a
+                       tempo, so it uploads the same way and then opens in the Mode Lab, under its chords, instead of on
+                       the analysis page. *@
+                    <label class="rz-button rz-button-md rz-variant-filled rz-light rz-shade-default upload-choose"
+                           title="A drum beat recorded without a click: it opens in the Mode Lab, cut to a loop at the lab's tempo and played with the chords">
+                        <RadzenIcon Icon="album" />
+                        <span>Choose a beat</span>
+                        <input type="file" class="beat-input" accept="audio/*,.mp3,.wav,.m4a"
+                               aria-label="Choose a beat" disabled="@_uploading"
+                               @ref="_beatInput" @onchange="OnBeatChosenAsync" />
+                    </label>
+                    @if (!_recording)
+                    {
+                        <RadzenButton Text="Record a beat" Icon="graphic_eq" ButtonStyle="ButtonStyle.Light"
+                                      Click="@(() => OnStartRecording(beat: true))" Disabled="@_uploading" id="record-beat"
+                                      title="Tap or play a beat into the microphone, no click needed: it opens in the Mode Lab, cut to a loop at 120 BPM that you can change" />
+                    }
                     <label class="rz-button rz-button-md rz-variant-filled rz-primary rz-shade-default upload-choose"
                            data-upload-state="@(_uploading ? (_uploadResuming ? "resuming" : "uploading") : "idle")">
                         <RadzenIcon Icon="upload_file" />
-                        <span>Choose audio file</span>
-                        <input type="file" class="upload-input" accept=".mp3,.wav,audio/mpeg,audio/wav"
-                               aria-label="Choose audio file" disabled="@_uploading"
+                        <span>Choose a song</span>
+                        <input type="file" class="upload-input" accept="audio/*,.mp3,.wav,.m4a"
+                               aria-label="Choose a song" disabled="@_uploading"
                                @ref="_fileInput" @onchange="OnFileChosenAsync" />
                     </label>
                     @if (!_recording)
                     {
-                        <RadzenButton Text="Record" Icon="mic" ButtonStyle="ButtonStyle.Light" Click="@OnStartRecording"
+                        <RadzenButton Text="Record a song" Icon="mic" ButtonStyle="ButtonStyle.Light"
+                                      Click="@(() => OnStartRecording(beat: false))" Disabled="@_uploading" id="record-song"
                                       title="Record from your microphone and analyze it" />
                     }
                     else
                     {
-                        <RadzenButton Text="Stop and analyze" Icon="stop" ButtonStyle="ButtonStyle.Danger"
-                                      Click="@OnStopRecording" />
-                        <RadzenText class="recording-hint" Text="Recording…" />
+                        @* One microphone, so one Stop: it says where the take is going. *@
+                        <RadzenButton Text="@(_recordingBeat ? "Stop and open in Mode Lab" : "Stop and analyze")" Icon="stop"
+                                      ButtonStyle="ButtonStyle.Danger" Click="@OnStopRecording" id="record-stop" />
+                        <RadzenText class="recording-hint" role="status"
+                                    Text="@(_recordingBeat ? "Recording a beat…" : "Recording a song…")" />
                     }
                 </div>
                 @if (_recordError is not null)
@@ -116,13 +137,16 @@
                 }
                 @if (_uploadError is not null)
                 {
-                    <RadzenText class="upload-error" Text="@_uploadError" />
+                    <RadzenText class="upload-error" Text="@_uploadError" role="alert" />
                 }
             </div>
             @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
                declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
             <span class="client-capability" hidden data-capability="@(_probed ? _clientCapability ?? "none" : "")"></span>
         </RadzenCard>
+        @* The same page lists what is already here: adding a song and finding one again are one
+           job, so the songs sit under the ways to add one rather than on a page of their own. *@
+        <LibraryList />
     </div>
 }
 
@@ -139,7 +163,7 @@
 
 @if (_status is not null && (_status.Stage != JobStage.Complete || _visual is null))
 {
-    <JobProgress Status="_status" OnCancel="@CancelJobAsync" />
+    <JobProgress Status="_status" OnCancel="@CancelJobAsync" QueueAhead="_queueAhead" />
     @if (_status.Stage is JobStage.Failed or JobStage.Cancelled)
     {
         @* The intake card only shows with no job; without this a failed or cancelled job is a dead end. *@
@@ -202,12 +226,16 @@
     private bool _uploading;
     private bool _uploadResuming;
     private ElementReference _fileInput;
+    private ElementReference _beatInput;
     private IJSObjectReference? _uploader;
     private DotNetObjectReference<Home>? _self;
     private int _uploadPercent;
     private long _uploadLoaded;
     private long _uploadTotal;
     private HubConnection? _hub;
+
+    /// <summary>Jobs that will run before the tracked one, while it waits; pushed by the hub.</summary>
+    private int? _queueAhead;
     private int? _selectedWindow;
     private double _playheadSec;
     private IJSObjectReference? _pitchWorker;
@@ -299,6 +327,44 @@
         else
         {
             _executorChoices[stage] = name;
+        }
+        _ = SavePinsAsync();
+    }
+
+    private const string PinsKey = "pm-executor-pins";
+
+    /// <summary>Pins are a standing preference ("always the DSP chords on this machine"), so they
+    /// outlive the visit. Fire-and-forget: a browser that refuses storage just forgets them.</summary>
+    private async Task SavePinsAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", PinsKey,
+                string.Join(';', _executorChoices.Select(pin => $"{pin.Key}={pin.Value}")));
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>Restores the saved pins, keeping only those naming an executor the server still lists;
+    /// the planner would ignore a stale one anyway, but the summary line should not count it.</summary>
+    private async Task RestorePinsAsync()
+    {
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", PinsKey);
+            foreach (var pin in (saved ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (pin.Split('=') is [var stage, var name]
+                    && _rawExecutorStages?.Any(s => s.Stage == stage && s.Executors.Any(e => e.Name == name)) == true)
+                {
+                    _executorChoices[stage] = name;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
         }
     }
 
@@ -403,6 +469,7 @@
         try
         {
             _rawExecutorStages = await Analysis.GetExecutorsAsync();
+            await RestorePinsAsync();
             RebuildExecutorChoices();
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
@@ -428,6 +495,31 @@
         // After the probe, not before: a shared file should get the same browser-tier treatment
         // as one dropped on the page, and that is only known once the capability is in.
         await TakeSharedFileAsync();
+        await ResumeUnsentAsync();
+    }
+
+    /// <summary>A recording or shared file whose upload an earlier visit never finished: the uploader
+    /// kept it, and it carries on from the byte the server last confirmed. Only on an idle page; a job
+    /// being opened or an upload already running is what the person came for.</summary>
+    private async Task ResumeUnsentAsync()
+    {
+        if (_status is not null || _uploading || Job is { Length: > 0 })
+        {
+            return;
+        }
+        try
+        {
+            _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
+            if (await _uploader.InvokeAsync<string?>("unsentName") is { Length: > 0 } name)
+            {
+                await using var file = await _uploader.InvokeAsync<IJSObjectReference>("takeUnsent");
+                await UploadAndAnalyzeAsync(file, name);
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
+            // Nothing kept, or nothing readable: the page is simply idle.
+        }
     }
 
     /// <summary>Fire-and-forget UI sound; any failure (autoplay policy, torn-down circuit) is silent.</summary>
@@ -474,13 +566,17 @@
 
     private Task OnFileChosenAsync() => UploadAndAnalyzeAsync(_fileInput, name: null);
 
+    private Task OnBeatChosenAsync() => UploadAndAnalyzeAsync(_beatInput, name: null, asBeat: true);
+
     /// <summary>
     /// Every intake path's one route to a job: the bytes go over tus, then the finished upload is
     /// handed to the analyzer with this browser's capability and model picks. <paramref name="source"/>
     /// is whatever resumable-upload.js accepts — the file input, a Blob reference, or a recording's
     /// bytes. Returns false when nothing was started, with the reason in <c>_uploadError</c>.
+    /// A beat takes the same route in, because the Mode Lab fetches it back out of the library, and
+    /// then goes there rather than to its own analysis.
     /// </summary>
-    private async Task<bool> UploadAndAnalyzeAsync(object source, string? name)
+    private async Task<bool> UploadAndAnalyzeAsync(object source, string? name, bool asBeat = false)
     {
         _uploading = true;
         _uploadResuming = false;
@@ -502,6 +598,11 @@
             }
             _uploading = false;
             await PlaySfxAsync("chime");
+            if (asBeat)
+            {
+                Navigation.NavigateTo($"modes?beat={Uri.EscapeDataString(status.JobId)}");
+                return true;
+            }
             await TrackJobAsync(status);
             return true;
         }
@@ -540,9 +641,13 @@
             "The job stops at the next safe point.");
     }
 
-    private async Task OnStartRecording()
+    /// <summary>Which of the two recordings is running: a beat goes to the Mode Lab, a song is analysed.</summary>
+    private bool _recordingBeat;
+
+    private async Task OnStartRecording(bool beat)
     {
         _recordError = null;
+        _recordingBeat = beat;
         try
         {
             _recorder ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/capture/audio-recorder.js");
@@ -569,7 +674,7 @@
             _recordError = "Nothing was recorded.";
             return;
         }
-        await UploadAndAnalyzeAsync(wavBytes, "recording.wav");
+        await UploadAndAnalyzeAsync(wavBytes, _recordingBeat ? "beat.wav" : "recording.wav", asBeat: _recordingBeat);
     }
 
     /// <summary>
@@ -621,6 +726,7 @@
         _selectedWindow = null;
         _playheadSec = 0;
         _preview = null;
+        _queueAhead = null;
         _status = status;
         // Put the job in the address bar: an analysis runs for minutes, and a reload, a phone that
         // discarded the tab or a copied link must come back to it rather than to an empty intake.
@@ -638,6 +744,14 @@
                 .WithAutomaticReconnect()
                 .Build();
             _hub.On<JobStatusDto>("JobStatusChanged", OnStatusChanged); // register once, not per upload
+            _hub.On<string, int>("QueuePosition", (jobId, ahead) =>
+            {
+                if (_status?.JobId == jobId)
+                {
+                    _queueAhead = ahead;
+                    InvokeAsync(StateHasChanged);
+                }
+            });
             _hub.Reconnected += _ => _status is { } tracked ? SubscribeAndReconcileAsync(tracked.JobId) : Task.CompletedTask;
         }
         if (_hub.State == HubConnectionState.Disconnected)

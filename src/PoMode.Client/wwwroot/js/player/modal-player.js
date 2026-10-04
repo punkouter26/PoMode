@@ -12,7 +12,6 @@ let masterGain = null;
 /// actually sounding rather than to a timer. Created with the graph, tapped only when something
 /// asks — an unread analyser costs a copy the audio thread was making anyway.
 let analyser = null;
-let levelData = null;
 let isPlaying = false;
 let isLooping = true;
 let loopDuration = 0;
@@ -60,7 +59,6 @@ function ensureContext() {
         masterGain.gain.value = 1.0;
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 512;
-        levelData = new Uint8Array(analyser.fftSize);
         // In series, not a side branch: the analyser passes audio through untouched, and putting it
         // on the path means it sees exactly what reaches the speakers.
         masterGain.connect(analyser);
@@ -95,21 +93,6 @@ export function getPlaybackStartTime() {
     return isPlaying && audioCtx ? playbackStartTime : null;
 }
 
-/// 0..1 RMS of what the player is currently sounding, or 0 when it is silent. The Mode Lab's mode
-/// chips breathe on this, the same way fx-background.js breathes on the mixer's own master level.
-export function playbackLevel() {
-    if (!analyser || !levelData || !isPlaying) {
-        return 0;
-    }
-    analyser.getByteTimeDomainData(levelData);
-    let sum = 0;
-    for (let i = 0; i < levelData.length; i++) {
-        const v = (levelData[i] - 128) / 128;
-        sum += v * v;
-    }
-    return Math.sqrt(sum / levelData.length);
-}
-
 /// MIDI pitches sounding at this instant, melody first, each with the part it belongs to. The Mode
 /// Lab's home-note view lights the matching bodies from this; reading it is a scan of the current
 /// arrangement against the playhead, nothing more.
@@ -133,10 +116,16 @@ export function soundingPitches() {
 
 /// Sounds one reference note through the player's own bus, so an audition shares the loop's room and
 /// level: the home-note view plays a body's pitch when it is tapped.
-export function audition(midiPitch) {
+/// `pan` (-1 left to 1 right) places it where the tapped body sits on the clock, so the picture and
+/// the sound agree about where a note is.
+export function audition(midiPitch, pan = 0) {
     const ctx = ensureContext();
     if (!ctx) return;
-    epiano(ctx, masterGain, midiPitch, ctx.currentTime + 0.01, 0.9, 0.3);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    panner.connect(masterGain);
+    epiano(ctx, panner, midiPitch, ctx.currentTime + 0.01, 0.9, 0.3);
+    setTimeout(() => panner.disconnect(), 3000);
 }
 
 /// Concert Flute Synthesizer: simulates a wooden/silver concert flute

@@ -1,13 +1,17 @@
-@page "/library"
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
-@inject MockDataState MockData
+@inject IJSRuntime JS
 
-<PageTitle>PoMode</PageTitle>
+@* The songs already here, under the ways to add one. This was a page of its own beside Analyze; both
+   were about getting audio in and finding it again, so they are one page (Home) and this is its list.
+   An empty library draws nothing: the intake card above is already the invitation to add a song. *@
+@if (_entries is { Count: 0 })
+{
+    return;
+}
 
-<h1 class="pm-sr-only">Library</h1>
-
-<RadzenCard>
+<RadzenCard class="library-card">
+    <h2 class="pm-sr-only">Your songs</h2>
     @if (_entries is null)
     {
         <div class="library-skeletons" aria-hidden="true">
@@ -16,31 +20,22 @@
             <div class="pm-skeleton"></div>
         </div>
     }
-    else if (_entries.Count == 0)
-    {
-        <div class="library-empty">
-            <RadzenText class="library-empty-headline" Text="No songs yet" />
-            <RadzenText class="library-empty-sub"
-                        Text="Analyzed songs will show up here." />
-            <a class="library-empty-cta" href="">Upload your first track →</a>
-        </div>
-    }
     else
     {
-        @* Compare only makes sense with 2+ completed jobs — hide the column when there's only one. *@
-        var canCompare = _entries.Count(e => e.Stage == JobStage.Complete) >= 2;
+        @* One tick previews a song under the table, two put them side by side. *@
+        var canCompare = _entries.Any(e => e.Stage == JobStage.Complete);
         <div class="library-filters" role="search" aria-label="Filter songs">
             <RadzenTextBox @bind-Value="_search" Placeholder="Search songs…" aria-label="Search by file name"
-                           class="library-search" @oninput="@(e => _search = e.Value?.ToString() ?? "")" />
+                           class="library-search" @oninput="@(e => SetFiltersAsync(e.Value?.ToString() ?? "", _keyFilter, _modeFilter))" />
             <RadzenDropDown TValue="string" Data="@KeyChoices" Value="@_keyFilter" AllowClear="true"
-                            Placeholder="Any key" Change="@(v => _keyFilter = v as string)" class="library-filter" />
+                            Placeholder="Any key" Change="@(v => SetFiltersAsync(_search, v as string, _modeFilter))" class="library-filter" />
             <RadzenDropDown TValue="string" Data="@ModeChoices" Value="@_modeFilter" AllowClear="true"
-                            Placeholder="Any mode" Change="@(v => _modeFilter = v as string)" class="library-filter" />
+                            Placeholder="Any mode" Change="@(v => SetFiltersAsync(_search, _keyFilter, v as string))" class="library-filter" />
             <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
         </div>
         <div class="library-grid" data-library-count="@_entries.Count">
             <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
-                            AllowPaging="true" PageSize="15" PagerHorizontalAlign="HorizontalAlign.Center">
+                            AllowPaging="true" PageSize="8" PagerHorizontalAlign="HorizontalAlign.Center">
                 <Columns>
                     @* A tick per row rather than a toggle button beside an Open button: two ticked rows
                        are the comparison, and the song name itself is the way in. *@
@@ -51,8 +46,8 @@
                                 <RadzenCheckBox TValue="bool" Value="@_compare.Contains(entry.JobId)"
                                                 Change="@(_ => ToggleCompareAsync(entry))"
                                                 Disabled="@(entry.Stage != JobStage.Complete || (_compare.Count == 2 && !_compare.Contains(entry.JobId)))"
-                                                title="Compare with another song"
-                                                aria-label="@($"Compare {entry.FileName}")" />
+                                                title="Preview this song; tick a second to compare"
+                                                aria-label="@($"Preview or compare {entry.FileName}")" />
                             </Template>
                         </RadzenDataGridColumn>
                     }
@@ -124,15 +119,19 @@
     }
 </RadzenCard>
 
-@if (_compareResults.Count == 2)
+@if (_compareResults.Count > 0)
 {
-    <RadzenCard class="compare-panel" data-compare-count="2">
-        <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H2" Text="Side by side" />
+    <RadzenCard class="compare-panel" data-compare-count="@_compareResults.Count">
+        <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H2" Text="@(_compareResults.Count == 2 ? "Side by side" : "Preview")" />
         <div class="compare-cards">
             @foreach (var (entry, result) in _compareResults)
             {
                 <div class="compare-card">
-                    <div class="compare-title">@entry.FileName</div>
+                    <div class="compare-title"><a class="library-open" href="@($"/?job={entry.JobId}")">@entry.FileName</a></div>
+                    @if (entry.Origin is { } sung)
+                    {
+                        <div class="compare-facts">@sung.Description</div>
+                    }
                     <div class="compare-facts">
                         <span>@result.TonicName @(result.PrimaryMode is { } primary ? ScaleModes.DisplayName(primary.ToString()) : "unclear")</span>
                         <span>@($"{result.TempoBpm:0} BPM")</span>
@@ -238,10 +237,36 @@
     protected override async Task OnInitializedAsync()
     {
         _entries = await Analysis.GetLibraryAsync() ?? [];
-        // The library lists persisted jobs — the data is real persistence, not placeholders.
-        // The mock banner is the Analyze page's "I haven't shown you a real result yet" hint;
-        // showing it here implies the library is mocked, which it isn't.
-        MockData.SetLive();
+        try
+        {
+            // The filters as they were left: "my Dorian songs" should not need picking again each visit.
+            if (await JS.InvokeAsync<string?>("localStorage.getItem", FiltersKey) is { } saved
+                && saved.Split('\t') is [var search, var key, var mode])
+            {
+                _search = search;
+                _keyFilter = KeyChoices.Contains(key) ? key : null;
+                _modeFilter = ModeChoices.Contains(mode) ? mode : null;
+            }
+        }
+        catch (JSException)
+        {
+            // Blocked site data: the filters simply start empty.
+        }
+    }
+
+    private const string FiltersKey = "pm-library-filters";
+
+    private async Task SetFiltersAsync(string search, string? key, string? mode)
+    {
+        (_search, _keyFilter, _modeFilter) = (search, key, mode);
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", FiltersKey, $"{search}\t{key}\t{mode}");
+        }
+        catch (JSException)
+        {
+            // Not persisted; still applied for this visit.
+        }
     }
 
     private async Task ToggleCompareAsync(LibraryEntryDto entry)
@@ -256,7 +281,7 @@
         }
 
         _compareResults.Clear();
-        if (_compare.Count == 2 && _entries is not null)
+        if (_entries is not null)
         {
             foreach (var selected in _entries.Where(e => _compare.Contains(e.JobId)))
             {

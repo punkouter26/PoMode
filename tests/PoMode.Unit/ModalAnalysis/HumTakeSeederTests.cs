@@ -43,25 +43,26 @@ public class HumTakeSeederTests
     [Fact]
     public void A_take_stopped_mid_bar_ends_with_the_audio_rather_than_with_the_loop()
     {
-        // Stop pressed 1 second into the second pass's first bar.
-        var tiled = HumTakeSeeder.TileOverTake(Loop(), loopSeconds: 4.0, takeSeconds: 5.0);
+        {
+            // Stop pressed 1 second into the second pass's first bar.
+            var tiled = HumTakeSeeder.TileOverTake(Loop(), loopSeconds: 4.0, takeSeconds: 5.0);
 
-        Assert.Equal(3, tiled.Count);
-        Assert.Equal("Dm", tiled[^1].Symbol);
-        Assert.Equal(4.0, tiled[^1].StartSec, precision: 6);
-        // Clipped to the recording, not run out to 6.0s where the bar would have ended: nobody sang
-        // that second, so no window may claim it.
-        Assert.Equal(5.0, tiled[^1].EndSec, precision: 6);
-    }
+            Assert.Equal(3, tiled.Count);
+            Assert.Equal("Dm", tiled[^1].Symbol);
+            Assert.Equal(4.0, tiled[^1].StartSec, precision: 6);
+            // Clipped to the recording, not run out to 6.0s where the bar would have ended: nobody sang
+            // that second, so no window may claim it.
+            Assert.Equal(5.0, tiled[^1].EndSec, precision: 6);
+        }
 
-    [Fact]
-    public void A_sliver_left_over_at_the_end_is_dropped_rather_than_scored()
-    {
-        // Stop pressed a tenth of a second into a new bar — too little to say anything about a mode.
-        var tiled = HumTakeSeeder.TileOverTake(Loop(), loopSeconds: 4.0, takeSeconds: 4.1);
+        // A sliver left over at the end is dropped rather than scored
+        {
+            // Stop pressed a tenth of a second into a new bar — too little to say anything about a mode.
+            var tiled = HumTakeSeeder.TileOverTake(Loop(), loopSeconds: 4.0, takeSeconds: 4.1);
 
-        Assert.Equal(2, tiled.Count);
-        Assert.Equal(4.0, tiled[^1].EndSec, precision: 6);
+            Assert.Equal(2, tiled.Count);
+            Assert.Equal(4.0, tiled[^1].EndSec, precision: 6);
+        }
     }
 
     [Fact]

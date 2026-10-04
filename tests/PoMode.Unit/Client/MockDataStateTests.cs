@@ -13,20 +13,19 @@ public sealed class MockDataStateTests
         // client is misleading. SetMock() flips it on when a completed job's plan actually contains
         // a placeholder, which is the only honest trigger.
         Assert.False(new MockDataState().IsMockData);
-    }
 
-    [Fact]
-    public void Plan_with_a_placeholder_executor_is_mock()
-    {
-        var plan = new[]
+        // Plan with a placeholder executor is mock
         {
-            new StagePlan(StageNames.Separating, ExecutionTier.Local, "OnnxStemSeparator"),
-            new StagePlan(StageNames.PitchTracking, ExecutionTier.Local, "FakePitchTracker", IsPlaceholder: true),
-            new StagePlan(StageNames.ChordDetecting, ExecutionTier.Local, "RealChordRecognizer"),
-            new StagePlan(StageNames.ModalAnalysis, ExecutionTier.Local, "ModalAnalysisEngine"),
-        };
+            var plan = new[]
+            {
+                new StagePlan(StageNames.Separating, ExecutionTier.Local, "OnnxStemSeparator"),
+                new StagePlan(StageNames.PitchTracking, ExecutionTier.Local, "FakePitchTracker", IsPlaceholder: true),
+                new StagePlan(StageNames.ChordDetecting, ExecutionTier.Local, "RealChordRecognizer"),
+                new StagePlan(StageNames.ModalAnalysis, ExecutionTier.Local, "ModalAnalysisEngine"),
+            };
 
-        Assert.True(MockDataState.PlanContainsFakeExecutor(plan));
+            Assert.True(MockDataState.PlanContainsFakeExecutor(plan));
+        }
     }
 
 }

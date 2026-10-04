@@ -498,3 +498,13 @@ img, svg, video, canvas {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
 }
+
+/* Fingers, not cursors. The 24px floor is sized for a pointer; on a touch screen the full-size
+   buttons and every disclosure get the 44px a thumb needs. Small and extra-small buttons sit in
+   dense rows that carry their own phone layout, so they are left to it. */
+@media (pointer: coarse) {
+    .rz-button:not(.rz-button-sm):not(.rz-button-xs),
+    summary {
+        min-height: 2.75rem;
+    }
+}

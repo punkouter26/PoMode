@@ -103,6 +103,51 @@
         </BackingControls>
     </div>
 
+    @* A beat from the library, spliced to the tempo above and played under the chords and melody on
+       the same clock. The recording comes in through the Library page like every other; this only
+       picks one and cuts it, in the browser (drum-loop.js, loop-cut.js). The WAV is the drums alone. *@
+    <div class="studio-drums-panel pm-panel" data-drum-job="@_drumJobId">
+        <div class="drums-row">
+            <div class="drums-field drums-pick">
+                <span class="drums-label" id="drums-label">Drums</span>
+                @if (_drumChoices.Count > 0)
+                {
+                    <RadzenDropDown TValue="string" Data="@_drumChoices" TextProperty="Label" ValueProperty="JobId"
+                                    Value="@_drumJobId" Change="@(value => OnDrumsPickedAsync((string?)value))"
+                                    AllowClear="true" Placeholder="None" Disabled="@_drumsBusy"
+                                    class="drums-dd" id="drums-select" aria-labelledby="drums-label" />
+                }
+                else
+                {
+                    <span class="drums-none">Use "Choose a beat" on the <a href="">Library</a> page and it appears here.</span>
+                }
+            </div>
+            @if (_drumsReady)
+            {
+                <div class="drums-field">
+                    <span class="drums-label" id="drums-bars-label">Bars</span>
+                    <RadzenNumeric TValue="int" Value="@_drumBars" Change="@OnDrumBarsChangedAsync" Min="1" Max="MaxDrumBars"
+                                   class="drums-bars" id="drums-bars" aria-labelledby="drums-bars-label"
+                                   title="How many bars to keep from the start. Set from what was played; fewer drops the rest." />
+                </div>
+                <RadzenButton Text="Export WAV" Icon="download" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                              Click="@ExportDrumsAsync" id="drums-export"
+                              title="Save the drum loop alone, cut to this tempo" />
+            }
+        </div>
+        @* In the page whether or not a beat is picked, so drum-loop.js always has it to draw on; it
+           takes room only once there is a loop to show. *@
+        <canvas class="drums-wave @(_drumsReady ? "" : "drums-wave-empty")" @ref="_drumCanvas" aria-hidden="true"></canvas>
+        @if (_drumsReady)
+        {
+            <p class="drums-readout">@DrumReadout</p>
+        }
+        @if (_drumError is { } drumError)
+        {
+            <p class="drums-error" role="alert">@drumError</p>
+        }
+    </div>
+
     @* The seven relative modes and the two pentatonics: one scale read nine ways, side by side. The
        pentatonics used to be two buttons in a ribbon of their own; they are modes of the same key, so
        they are cards like the rest. *@
@@ -255,6 +300,156 @@
     private int? _activeWindowIndex;
 
     private IJSObjectReference? _playerModule;
+
+    // ---- Drum loop ----
+
+    private sealed record DrumChoice(string JobId, string Label);
+
+    private const int MaxDrumBars = 16;
+
+    /// <summary>Where a beat's tempo is looked for: its pulse is read as the note value that lands
+    /// nearest this, so a take comes out between about 85 and 170 BPM.</summary>
+    private const double BeatStartBpm = 120;
+
+    /// <summary>The library job to open as the drums, set by the Library page's "Choose a beat".</summary>
+    [SupplyParameterFromQuery] public string? Beat { get; set; }
+
+    private IReadOnlyList<DrumChoice> _drumChoices = [];
+    private IJSObjectReference? _drumModule;
+    private ElementReference _drumCanvas;
+    private string? _drumJobId;
+    private bool _drumsReady;
+    private bool _drumsBusy;
+    private string? _drumError;
+    private int _drumBars = 1;
+    private int _drumHits;
+    private double _drumPlayedBpm;
+
+    /// <summary>The tempo the loop on screen was cut at; a different <see cref="_bpm"/> means a recut.</summary>
+    private double _drumCutBpm;
+
+    /// <summary>Set when a beat has just loaded: its canvas has no size until the render that shows
+    /// it, so the first cut waits for that render.</summary>
+    private bool _drumCutPending;
+
+    /// <summary>True until the bar count is typed in. While it holds, the count follows what was
+    /// played, which matters when a large tempo change reads the same take in double time.</summary>
+    private bool _drumBarsAuto = true;
+
+    private string DrumReadout
+        => $"{_drumHits} {(_drumHits == 1 ? "hit" : "hits")}, played at about {_drumPlayedBpm:0} BPM. "
+            + $"Each now starts on its sixteenth at {_drumCutBpm:0.#} BPM: {_drumBars} {(_drumBars == 1 ? "bar" : "bars")}. "
+            + "It plays with the chords and melody.";
+
+    private async Task LoadDrumChoicesAsync()
+    {
+        try
+        {
+            // File names repeat (every microphone take is "recording.wav"), so the time tells them apart.
+            _drumChoices = [.. (await Analysis.GetLibraryAsync() ?? [])
+                .Where(entry => entry.Origin?.Kind != TakeOrigin.Demo)
+                .Select(entry => new DrumChoice(entry.JobId, $"{entry.FileName} · {entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}"))];
+        }
+        catch (HttpRequestException)
+        {
+            // The lab works without drums; the strip just has nothing to offer.
+        }
+        if (Beat is { Length: > 0 } beat && _drumChoices.Any(choice => choice.JobId == beat))
+        {
+            await OnDrumsPickedAsync(beat);
+        }
+    }
+
+    private async Task OnDrumsPickedAsync(string? jobId)
+    {
+        _drumJobId = jobId;
+        _drumsReady = false;
+        _drumError = null;
+        _drumsBusy = true;
+        try
+        {
+            // The player first: the loop is decoded and played on its AudioContext.
+            await EnsurePlayerAsync();
+            _drumModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/drum-loop.js");
+            if (string.IsNullOrEmpty(jobId))
+            {
+                await _drumModule.InvokeVoidAsync("clear");
+                return;
+            }
+            var status = await _drumModule.InvokeAsync<string>("load", jobId);
+            if (status != "ok")
+            {
+                _drumError = status switch
+                {
+                    "long" => "That recording is over two minutes. A loop wants a few bars.",
+                    "empty" => "No hits were found in that recording.",
+                    _ => "That recording could not be read.",
+                };
+                return;
+            }
+            _drumsReady = true;
+            _drumBarsAuto = true;
+            _drumCutPending = true;
+            // The beat sets the tempo: the lab moves to the whole BPM nearest what was played (87.8
+            // becomes 88), the chords and melody are regenerated there, and the drums are then cut
+            // to that same figure, so the hits move as little as they can. The slider still changes it.
+            var played = await _drumModule.InvokeAsync<double>("playedBpm", BeatStartBpm);
+            if (played > 0)
+            {
+                _bpm = Math.Clamp(Math.Round(played), BackingControls.MinBpm, BackingControls.MaxBpm);
+                await RefreshMelodyAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away mid-decode.
+        }
+        finally
+        {
+            _drumsBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnDrumBarsChangedAsync(int bars)
+    {
+        _drumBars = Math.Clamp(bars, 1, MaxDrumBars);
+        _drumBarsAuto = false;
+        await CutDrumsAsync();
+    }
+
+    /// <summary>Splices the picked recording at the lab's tempo. The recording stays decoded in the
+    /// module, so a tempo change is a recut, and the module restarts it in step if the loop is playing.</summary>
+    private async Task CutDrumsAsync()
+    {
+        if (_drumModule is null || !_drumsReady)
+        {
+            return;
+        }
+        _drumCutBpm = _bpm;
+        await _drumModule.InvokeVoidAsync("build", _bpm, _drumBarsAuto ? 0 : _drumBars, _drumCanvas);
+        _drumBars = await _drumModule.InvokeAsync<int>("bars");
+        _drumHits = await _drumModule.InvokeAsync<int>("hits");
+        _drumPlayedBpm = await _drumModule.InvokeAsync<double>("sourceBpm");
+    }
+
+    /// <summary>Tells the drum loop the transport moved: it starts from the chord loop's own downbeat
+    /// when that is playing and falls silent when it is not.</summary>
+    private async Task SyncDrumsAsync()
+    {
+        if (_drumModule is not null && _drumsReady)
+        {
+            await _drumModule.InvokeVoidAsync("sync");
+        }
+    }
+
+    private async Task ExportDrumsAsync()
+    {
+        if (_drumModule is not null)
+        {
+            await _drumModule.InvokeVoidAsync("exportWav");
+        }
+    }
     private DotNetObjectReference<ModeLab>? _selfRef;
 
     /// <summary>One body per note of the mode on screen, as the home-note view draws it.</summary>
@@ -303,6 +498,13 @@
         try
         {
             await SyncGravityAsync();
+            if (_drumCutPending)
+            {
+                // The render that just finished gave the loop's canvas its size.
+                _drumCutPending = false;
+                await CutDrumsAsync();
+                StateHasChanged();
+            }
         }
         catch (JSDisconnectedException)
         {
@@ -357,8 +559,15 @@
                 // Open on the harmony that matches the mode the strip starts on, so the first thing
                 // heard is already the mode rather than the parent key.
                 ApplyModeHarmony(_selectedMode);
+                if (Beat is { Length: > 0 })
+                {
+                    // Arriving with a beat: 120 only until the recording has been read, and as the
+                    // hint for which note value its pulse is. The beat's own tempo replaces it.
+                    _bpm = BeatStartBpm;
+                }
             }
             await RefreshMelodyAsync();
+            await LoadDrumChoicesAsync();
         }
         catch (Exception ex)
         {
@@ -400,6 +609,11 @@
             {
                 await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec);
             }
+        }
+        // Every setting that can move the tempo comes through here, so this is where the drums follow it.
+        if (_drumsReady && !_drumCutPending && _drumCutBpm != _bpm)
+        {
+            await CutDrumsAsync();
         }
     }
 
@@ -609,6 +823,7 @@
 
         _isPlaying = true;
         await _playerModule.InvokeVoidAsync("play", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec, _selfRef);
+        await SyncDrumsAsync();
     }
 
     private async Task PauseAsync()
@@ -616,6 +831,7 @@
         if (_playerModule is null) return;
         _isPlaying = false;
         await _playerModule.InvokeVoidAsync("pause");
+        await SyncDrumsAsync();
     }
 
     private async Task StopAsync()
@@ -625,6 +841,7 @@
         _playheadSec = 0;
         _activeWindowIndex = null;
         await _playerModule.InvokeVoidAsync("stop");
+        await SyncDrumsAsync();
     }
 
     private async Task ToggleMatchHarmonyAsync()
@@ -662,24 +879,26 @@
         }
     }
 
-    private void OnSeek(double seekSec)
+    private async Task OnSeek(double seekSec)
     {
         _playheadSec = seekSec;
+        UpdateActiveWindow(seekSec);
         if (_playerModule is not null)
         {
-            _ = _playerModule.InvokeVoidAsync("seek", seekSec);
+            await _playerModule.InvokeVoidAsync("seek", seekSec);
+            await SyncDrumsAsync();
         }
-        UpdateActiveWindow(seekSec);
     }
 
     /// <summary>Raised by the player when a non-looping take runs off its end.</summary>
     [JSInvokable]
-    public void OnPlaybackEnded()
+    public async Task OnPlaybackEnded()
     {
         _isPlaying = false;
         _playheadSec = 0;
         _activeWindowIndex = null;
         StateHasChanged();
+        await SyncDrumsAsync();
     }
 
     [JSInvokable]
@@ -702,6 +921,12 @@
     {
         try
         {
+            if (_drumModule is not null)
+            {
+                // Before the player: the loop sounds on the player's context.
+                await _drumModule.InvokeVoidAsync("dispose");
+                await _drumModule.DisposeAsync();
+            }
             if (_playerModule is not null)
             {
                 await _playerModule.InvokeVoidAsync("dispose");

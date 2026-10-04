@@ -16,15 +16,14 @@ public class ModeDefinitionsTests
             Assert.All(ModeDefinitions.Intervals(mode), i => Assert.InRange(i, 0, 11));
             Assert.Equal(ModeDefinitions.Intervals(mode).Count, ModeDefinitions.Intervals(mode).Distinct().Count());
         }
-    }
 
-    [Fact]
-    public void Characteristic_intervals_and_labels_are_accurate()
-    {
-        Assert.Contains(9, ModeDefinitions.CharacteristicIntervals(ScaleMode.Dorian));
-        Assert.Contains(6, ModeDefinitions.CharacteristicIntervals(ScaleMode.Locrian));
+        // Characteristic intervals and labels are accurate
+        {
+            Assert.Contains(9, ModeDefinitions.CharacteristicIntervals(ScaleMode.Dorian));
+            Assert.Contains(6, ModeDefinitions.CharacteristicIntervals(ScaleMode.Locrian));
 
-        Assert.Equal("b3", PitchNames.IntervalLabel(3));
-        Assert.Equal("#4", PitchNames.IntervalLabel(6));
+            Assert.Equal("b3", PitchNames.IntervalLabel(3));
+            Assert.Equal("#4", PitchNames.IntervalLabel(6));
+        }
     }
 }

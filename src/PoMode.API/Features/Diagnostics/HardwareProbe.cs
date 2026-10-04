@@ -9,8 +9,7 @@ public sealed class HardwareProbe(ModelRegistry modelRegistry)
     public Task<HardwareReport> ProbeAsync(CancellationToken ct)
     {
         var isAzure = EnvironmentDetector.IsAzureHosted();
-        var gpu = isAzure ? null : NvmlInterop.TryProbe();
         var models = modelRegistry.StatusFor(ModelCatalog.All);
-        return Task.FromResult(new HardwareReport(isAzure, gpu, models));
+        return Task.FromResult(new HardwareReport(isAzure, models));
     }
 }

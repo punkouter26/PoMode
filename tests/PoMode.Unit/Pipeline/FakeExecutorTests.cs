@@ -1,10 +1,6 @@
 using Xunit;
-using PoMode.API.Features.ChordRecognition;
-using PoMode.API.Features.ModalAnalysis;
-using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Separation;
 using PoMode.API.Pipeline;
-using PoMode.Shared.Analysis;
 using PoMode.TestCommon;
 
 namespace PoMode.Unit.Pipeline;

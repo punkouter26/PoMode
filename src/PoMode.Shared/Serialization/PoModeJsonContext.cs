@@ -35,6 +35,7 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(ModeFitDto))]
 [JsonSerializable(typeof(TakeHistoryDto))]
 [JsonSerializable(typeof(VocalRangeDto))]
+[JsonSerializable(typeof(SongVoiceFitDto))]
 [JsonSerializable(typeof(SongQuestionRequest))]
 [JsonSerializable(typeof(SongAnswerDto))]
 [JsonSerializable(typeof(InterpretationEvent))]

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging;
 using PoMode.Shared.Hardware;
 
 namespace PoMode.API.Infrastructure;

@@ -15,11 +15,17 @@
         }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
+    @* Only while nothing has started: the first stage push means the wait is over. *@
+    @if (QueueAhead is > 0 and var ahead && Status.Stage == JobStage.Uploaded)
+    {
+        <RadzenText class="current-step" data-queue-ahead="@ahead" role="status"
+                    Text="@($"Waiting: {ahead} {(ahead == 1 ? "analysis" : "analyses")} ahead of yours.")" />
+    }
     @* What the active stage is doing, in one line; the list below already says which step it is and
        how long it has taken. *@
     @if (ActiveStageDetail is { } detail)
     {
-        <div class="current-step-wrap">
+        <div class="current-step-wrap" role="status">
             <span class="active-pulse" aria-hidden="true"></span>
             <RadzenText class="current-step" Text="@detail" />
         </div>
@@ -82,6 +88,9 @@
 
     /// <summary>Raised by the Cancel button; the parent owns the actual API call.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Analyses that will run before this one, while it has not started; null otherwise.</summary>
+    [Parameter] public int? QueueAhead { get; set; }
 
     private Timer? _elapsedTimer;
     private IJSObjectReference? _sfx;

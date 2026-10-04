@@ -6,6 +6,10 @@ namespace PoMode.API.Features.Analysis;
 public interface IAnalysisNotifier
 {
     Task PublishAsync(JobStatusDto status, CancellationToken ct);
+
+    /// <summary>Tells a waiting job how many will run before it. Pushed when the queue moves, like
+    /// the stage progress; a notifier with no listeners has nothing to do.</summary>
+    Task PublishQueueAsync(string jobId, int ahead, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>

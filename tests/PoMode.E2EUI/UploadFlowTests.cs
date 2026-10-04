@@ -24,7 +24,7 @@ public class UploadFlowTests(AppFixture app)
             // Cold load: no data on screen yet, mock or otherwise, so the banner is hidden.
             await Assertions.Expect(page.GetByText("USING MOCK DATA")).ToBeHiddenAsync(hidden);
 
-            await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
+            await page.Locator("input.upload-input").SetInputFilesAsync(wavPath);
 
             // The result itself is the signal: JobProgress folds away the moment it renders.
             await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(visible);

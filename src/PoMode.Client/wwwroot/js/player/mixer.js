@@ -8,7 +8,7 @@
 
 import {
     setPlayhead, setOverlay as canvasSetOverlay,
-    setWaveform, dropNotes, resetFx,
+    setWaveform, dropNotes, resetFx, sectionBoundsAt,
 } from './canvas.js';
 import { VOICES, bus } from './voices.js';
 import { tap } from '../shell/sfx.js';
@@ -433,6 +433,11 @@ function tick(state) {
         hapticDownbeats(state, state.lastTickSeconds, seconds);
         state.lastTickSeconds = seconds;
         state.root.dataset.mixerTime = seconds.toFixed(3);
+        if (state.loop && seconds >= state.loop.endSec) {
+            seekInternal(state, state.loop.startSec);
+            state.frame = requestAnimationFrame(() => tick(state));
+            return;
+        }
         if (seconds >= state.duration) {
             pauseInternal(state, state.duration);
             report(state, 'ended');
@@ -480,6 +485,10 @@ function seekInternal(state, seconds) {
         return;
     }
     const target = Math.min(Math.max(seconds, 0), state.duration);
+    // Leaving the looped section by hand ends the loop; it would otherwise never come round again.
+    if (state.loop && (target < state.loop.startSec || target >= state.loop.endSec)) {
+        setLoop(state, null);
+    }
     state.lastTickSeconds = target; // a jump is not a crossing: no buzz for the bar lines skipped
     if (state.playing) {
         startSources(state, target);
@@ -491,7 +500,20 @@ function seekInternal(state, seconds) {
     refresh(state);
 }
 
-/// The whole keyboard surface: Space toggles play/pause, comma jumps back to the start. Every other
+/// Loops the section under the playhead, or stops looping. The section comes from the canvas, which
+/// holds the server's sections; a song without any has nothing to loop and this does nothing.
+function toggleLoopInternal(state) {
+    setLoop(state, state.loop ? null : sectionBoundsAt(state.canvas, currentSeconds(state)));
+}
+
+function setLoop(state, loop) {
+    state.loop = loop;
+    state.root.dataset.loopSection = loop ? loop.label : '';
+    state.dotNet?.invokeMethodAsync('OnLoopChanged', loop ? loop.label : null);
+}
+
+/// The whole keyboard surface: Space toggles play/pause, comma jumps back to the start, L loops the
+/// section under the playhead. Every other
 /// control is a visible button — deliberately, so there is nothing to memorise and nothing that can
 /// silently disagree with what the buttons show. Skipped while the user is typing. preventDefault on
 /// Space stops the page scrolling and stops a focused button firing its own click on keyup, which
@@ -513,6 +535,8 @@ function onKeyDown(state, event) {
         togglePlayback(state);
     } else if (event.key === ',') {
         seekInternal(state, 0);
+    } else if (event.key === 'l' || event.key === 'L') {
+        toggleLoopInternal(state);
     }
 }
 
@@ -578,6 +602,7 @@ export function init(root, canvas, dotNetRef) {
         levelData: null,
         stemMeters: {},
         lastTickSeconds: 0,
+        loop: null,
         synthShaper: null,
     };
     state.onKeyDown = event => onKeyDown(state, event);
@@ -762,6 +787,13 @@ export function seek(root, seconds) {
 
 /// Switches which stem is audible. Deliberately does NOT restart the sources, so the position is
 /// preserved exactly and the change is inaudible apart from the crossfade.
+export function toggleLoop(root) {
+    const state = states.get(root);
+    if (state) {
+        toggleLoopInternal(state);
+    }
+}
+
 export function setMode(root, mode) {
     const state = states.get(root);
     if (!state || !(mode in MODE_GAINS)) {

@@ -110,6 +110,60 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
         return range with { Voice = VoiceProfiler.Build(sung, VoiceSubject.You) };
     }
 
+    /// <summary>An analysed song's melody against the caller's own range: the transposition that would
+    /// centre it on where they sing. Null when there is nothing honest to say - too few takes, too few
+    /// notes in the song, or a job that is itself a take or the demo.</summary>
+    public async Task<SongVoiceFitDto?> SongFitAsync(string? ownerId, string jobId, CancellationToken ct)
+    {
+        if (await store.LoadAsync(jobId, ct) is not { Stage: JobStage.Complete, Origin: null })
+        {
+            return null;
+        }
+        var takes = new List<IReadOnlyList<NoteEvent>>();
+        foreach (var state in (await OwnedTakesAsync(ownerId, ct)).Where(take => take.Stage == JobStage.Complete).Take(MaxTakes))
+        {
+            takes.Add(await store.ReadArtifactListAsync<NoteEvent>(state.JobId, "notes.json", ct));
+        }
+        return SongFit(Profile(takes, ScaleMode.Ionian), await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct));
+    }
+
+    /// <summary>
+    /// Compares the two comfortable spans (10th to 90th percentile, the same rule on both sides) by
+    /// their middles. The key change is that distance folded into half an octave either way, because
+    /// a singer takes a melody in whichever octave suits them; the range it would then run is spelled
+    /// out, which is what says which octave that is.
+    /// </summary>
+    public static SongVoiceFitDto? SongFit(VocalRangeDto voice, IReadOnlyList<NoteEvent> song)
+    {
+        var pitches = song.Where(note => note.DurationSec >= MinNoteSec).Select(note => note.MidiPitch).Order().ToArray();
+        if (voice.LowMidi is not { } myLow || voice.HighMidi is not { } myHigh || pitches.Length < MinNotes)
+        {
+            return null;
+        }
+        var low = SongStatsBuilder.Percentile(pitches, LowPercentile);
+        var high = SongStatsBuilder.Percentile(pitches, HighPercentile);
+        var move = (int)Math.Round(((myLow + myHigh) - (low + high)) / 2.0, MidpointRounding.AwayFromZero);
+        var shift = ((((move + 6) % 12) + 12) % 12) - 6;
+        var sung = $"{SongStatsBuilder.PitchLabel(low + move)}–{SongStatsBuilder.PitchLabel(high + move)}";
+
+        var sentence = $"This melody sits {SongStatsBuilder.PitchLabel(low)}–{SongStatsBuilder.PitchLabel(high)}; "
+            + $"your takes sit {voice.LowLabel}–{voice.HighLabel}.";
+        if (Math.Abs(shift) <= 1)
+        {
+            shift = 0;
+            sentence += move == 0 ? " It already sits in your range." : $" In its own key it fits your range, sung {sung}.";
+        }
+        else
+        {
+            sentence += $" Transposed {Math.Abs(shift)} semitones {(shift < 0 ? "down" : "up")}, it would run {sung} in your voice.";
+        }
+        if (high - low > myHigh - myLow)
+        {
+            sentence += " Its span is wider than your takes show, so one end will still reach.";
+        }
+        return new SongVoiceFitDto(shift, sentence);
+    }
+
     /// <summary>Every hum take the caller owns, newest first. Ownerless callers own nothing — same
     /// rule as the library, whose scan this mirrors.</summary>
     private async Task<List<JobState>> OwnedTakesAsync(string? ownerId, CancellationToken ct)

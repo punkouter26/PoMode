@@ -337,6 +337,13 @@ function drawSections(state, ctx, width, laneHeight, sections) {
     ctx.restore();
 }
 
+/// The section covering `seconds` as the mixer needs it to loop one: its edges and its caption.
+export function sectionBoundsAt(canvas, seconds) {
+    const state = states.get(canvas);
+    const section = state ? sectionAt(state, seconds) : null;
+    return section ? { startSec: section.startSec, endSec: section.endSec, label: section.label } : null;
+}
+
 /// The section covering `seconds`, or null. A song has a handful of sections, so a scan is fine.
 function sectionAt(state, seconds) {
     const sections = state.model && state.model.sections ? state.model.sections : [];
@@ -1081,6 +1088,32 @@ export function reveal(canvas, ink) {
     state.reveal = { start: performance.now(), ink: !!ink };
     canvas.dataset.reveal = ink ? 'inking' : 'running';
     invalidate(state);
+    countUp();
+}
+
+/// The headline figures arrive with the notes: every element marked data-count-up has the first
+/// number in its text run up from zero to what the server measured, over the reveal's own second.
+/// The text node is written in place, never replaced, so Blazor's later updates still reach it.
+function countUp() {
+    const start = performance.now();
+    for (const element of document.querySelectorAll('[data-count-up]')) {
+        const node = element.firstChild;
+        const final = node && node.nodeType === Node.TEXT_NODE ? node.nodeValue : null;
+        const target = final ? Number((final.match(/\d+/) || [])[0]) : NaN;
+        if (!Number.isFinite(target)) {
+            continue;
+        }
+        const frame = (now) => {
+            const t = Math.min((now - start) / 900, 1);
+            if (t >= 1 || !node.isConnected) {
+                node.nodeValue = final;
+                return;
+            }
+            node.nodeValue = final.replace(/\d+/, String(Math.round(target * (1 - ((1 - t) ** 3)))));
+            requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+    }
 }
 
 export function setSelection(canvas, index) {

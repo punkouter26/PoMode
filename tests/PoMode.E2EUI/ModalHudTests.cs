@@ -62,7 +62,7 @@ public class ModalHudTests(AppFixture app)
         await File.WriteAllBytesAsync(wavPath, audio);
         try
         {
-            await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
+            await page.Locator("input.upload-input").SetInputFilesAsync(wavPath);
             await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
             await Assertions.Expect(page.Locator("canvas.analysis-canvas"))
                 .ToHaveAttributeAsync("data-painted", "1", new() { Timeout = AppFixture.ExpectTimeoutMs });

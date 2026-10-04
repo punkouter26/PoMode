@@ -249,6 +249,16 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<VocalRangeDto?> GetVocalRangeAsync(ScaleMode mode)
         => http.GetFromJsonAsync<VocalRangeDto>($"api/modal-melodies/voice?mode={mode}");
 
+    /// <summary>How an analysed song sits against the caller's own range, or null when the server has
+    /// nothing to say (too few takes, or the job is itself a take).</summary>
+    public async Task<SongVoiceFitDto?> GetSongVoiceFitAsync(string jobId)
+    {
+        var response = await http.GetAsync($"api/modal-melodies/voice/song/{jobId}");
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<SongVoiceFitDto>()
+            : null;
+    }
+
     /// <summary>Synthesizes the melody and chords into WAV audio and queues an end-to-end analysis job in the Song Analyzer.</summary>
     public async Task<JobStatusDto?> AnalyzeModalMelodyAsync(ModalMelodyRequest request)
     {

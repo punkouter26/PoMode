@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using PoMode.API.Audio;
 using PoMode.API.Infrastructure;

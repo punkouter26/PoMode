@@ -57,7 +57,7 @@ public class TuningCorrectionTests(AppFixture app)
         try
         {
             var visible = new LocatorAssertionsToBeVisibleOptions { Timeout = AppFixture.ExpectTimeoutMs };
-            await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
+            await page.Locator("input.upload-input").SetInputFilesAsync(wavPath);
 
             var notice = page.Locator(".tuning-notice");
             await Assertions.Expect(notice).ToBeVisibleAsync(visible);

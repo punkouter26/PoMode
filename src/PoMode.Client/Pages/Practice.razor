@@ -241,8 +241,47 @@ else if (_loadError is { } loadError)
         // Start on the mode's own signature cadence — a mode is a tonal centre, and rooting the first
         // thing the singer hears on the parent key would put the wrong note under it.
         _progressionId = SignatureIdFor(_mode) ?? _progressions[0].Id;
+        await RestoreSettingsAsync();
         await ReloadAsync();
         await LoadVoiceAsync();
+    }
+
+    private const string SettingsKey = "pm-practice-backing";
+
+    /// <summary>The backing as it was left: a singer who found their key should come back to it.
+    /// Anything unreadable or out of range is ignored and the defaults stand.</summary>
+    private async Task RestoreSettingsAsync()
+    {
+        try
+        {
+            if (await JS.InvokeAsync<string?>("localStorage.getItem", SettingsKey) is { } saved
+                && saved.Split('|') is [var tonic, var mode, var progression, var bpm]
+                && int.TryParse(tonic, out var savedTonic) && savedTonic is >= 0 and < 12
+                && Enum.TryParse<ScaleMode>(mode, out var savedMode) && Enum.IsDefined(savedMode)
+                && _progressions.Any(p => p.Id == progression)
+                && double.TryParse(bpm, System.Globalization.CultureInfo.InvariantCulture, out var savedBpm))
+            {
+                (_tonic, _mode, _progressionId) = (savedTonic, savedMode, progression);
+                _bpm = Math.Clamp(savedBpm, BackingControls.MinBpm, BackingControls.MaxBpm);
+            }
+        }
+        catch (JSException)
+        {
+            // Blocked site data: the defaults stand.
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", SettingsKey,
+                FormattableString.Invariant($"{_tonic}|{_mode}|{_progressionId}|{_bpm}"));
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
+            // Not persisted; the settings still apply for this visit.
+        }
     }
 
     /// <summary>
@@ -380,6 +419,7 @@ else if (_loadError is { } loadError)
             return;
         }
         _loadError = null;
+        await SaveSettingsAsync();
         await LoadHistoryAsync();
         // The generated melody is ignored on purpose. /generate returns one because the Mode Lab
         // wants it; here the melody is the singer's job, and playing the server's would be handing

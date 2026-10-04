@@ -20,7 +20,7 @@
                     }
                     @if (Result.PrimaryMode is not null)
                     {
-                        <span class="basic-badge-sub">@($"{Result.PrimaryConfidence:P0} confidence")</span>
+                        <span class="basic-badge-sub" data-count-up>@($"{Result.PrimaryConfidence:P0} confidence")</span>
                     }
                     @if (Visual.Evidence is not null || _stats is not null)
                     {
@@ -33,7 +33,7 @@
 
                 <div class="basic-badge-item">
                     <span class="basic-badge-label">Tempo</span>
-                    <span class="basic-badge-value">@($"{DisplayBpm:0} BPM")</span>
+                    <span class="basic-badge-value" data-count-up>@($"{DisplayBpm:0} BPM")</span>
                     @if (_liveBpm > 0)
                     {
                         @* Only while a tempo map is driving it, so a steady song does not gain a
@@ -122,7 +122,7 @@
             @if (_canvasElement is { } canvasElement)
             {
                 <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
-                           HasTempoMap="@(Visual.Tempo.Count > 0)"
+                           HasTempoMap="@(Visual.Tempo.Count > 0)" HasSections="@(Visual.Sections.Count > 0)"
                            OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
             }
         </div>

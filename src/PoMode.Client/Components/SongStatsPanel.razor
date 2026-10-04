@@ -163,6 +163,11 @@
                 @if (_voice is { } singer)
                 {
                     <SingerCard Voice="singer" Id="voice-profile" />
+                    @* The same melody against the reader's own takes, when they have sung enough for a range. *@
+                    @if (_voiceFit is { } fit)
+                    {
+                        <p class="stats-fit" data-voice-fit="@fit.Semitones"><strong>For your voice.</strong> @fit.Sentence</p>
+                    }
                 }
                 else
                 {
@@ -229,15 +234,19 @@
                     </div>
                 }
 
-                @foreach (var turn in _conversation)
-                {
-                    <div class="ask-turn">
-                        <p class="ask-question">@turn.Question</p>
-                        <p class="ask-answer @(_ungrounded.Contains(turn.Question) ? "ungrounded" : "")">
-                            @turn.Answer
-                        </p>
-                    </div>
-                }
+                @* Finished answers are announced as they land; the draft being streamed is not, or a
+                   screen reader would read every fragment. *@
+                <div class="ask-log" role="log" aria-live="polite">
+                    @foreach (var turn in _conversation)
+                    {
+                        <div class="ask-turn">
+                            <p class="ask-question">@turn.Question</p>
+                            <p class="ask-answer @(_ungrounded.Contains(turn.Question) ? "ungrounded" : "")">
+                                @turn.Answer
+                            </p>
+                        </div>
+                    }
+                </div>
 
                 @if (_asking && _pendingQuestion is { } pending)
                 {
@@ -252,15 +261,18 @@
                     <div class="ask-starters">
                         @if (_interpretation is null)
                         {
-                            <button type="button" class="ask-starter ask-starter-summary" disabled="@(_busy || _asking)"
-                                    @onclick="InterpretAsync">@(_busy ? "Writing…" : SummaryStarter)</button>
+                            <RadzenButton class="ask-starter ask-starter-summary" Size="ButtonSize.Small"
+                                          ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
+                                          Disabled="@(_busy || _asking)" Click="@InterpretAsync"
+                                          Text="@(_busy ? "Writing…" : SummaryStarter)" />
                         }
                         @if (_conversation.Count == 0)
                         {
                             @foreach (var starter in Starters)
                             {
-                                <button type="button" class="ask-starter" disabled="@(_busy || _asking)"
-                                        @onclick="@(() => AskAsync(starter))">@starter</button>
+                                <RadzenButton class="ask-starter" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                                              Disabled="@(_busy || _asking)" Click="@(() => AskAsync(starter))"
+                                              Text="@starter" />
                             }
                         }
                     </div>
@@ -278,9 +290,16 @@
                                   Click="@(() => AskAsync(_question!))" id="ask-send" />
                 </div>
 
+                @if (_browserDownload is { } downloaded)
+                {
+                    <p class="stats-pending" role="status" data-browser-model-download="@downloaded">
+                        Downloading this browser's model: @downloaded%
+                    </p>
+                }
+
                 @if ((_error ?? _askError) is { } error)
                 {
-                    <p class="interpretation-error">@error</p>
+                    <p class="interpretation-error" role="alert">@error</p>
                 }
             </section>
         </div>
@@ -297,6 +316,7 @@
     private const string SummaryStarter = "Summarize this song";
 
     private VoiceProfileDto? _voice;
+    private SongVoiceFitDto? _voiceFit;
     private bool _voiceLoading;
     private List<InterpreterOptionDto>? _interpreters;
     private SongInterpretationDto? _interpretation;
@@ -316,6 +336,7 @@
 
         _loadedJobId = JobId;
         _voice = null;
+        _voiceFit = null;
         _interpretation = null;
         _error = null;
         // A different song is a different conversation; carrying the transcript over would put
@@ -352,9 +373,11 @@
         try
         {
             var voice = await Client.GetVoiceProfileAsync(jobId);
+            var fit = await Client.GetSongVoiceFitAsync(jobId);
             if (jobId == JobId)
             {
                 _voice = voice;
+                _voiceFit = fit;
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
@@ -512,6 +535,16 @@
             : new InterpretationEvent(Answer: new SongAnswerDto(
                 question, written.Trim(), BrowserInterpreter, ExecutionTier.ClientDelegated, true,
                 Grounded: !bool.TryParse(reply[QuestionPrompt.InDataField], out var inData) || inData));
+    }
+
+    /// <summary>Percent of the browser's model fetched, while its first use downloads it; null otherwise.</summary>
+    private int? _browserDownload;
+
+    [JSInvokable]
+    public void OnBrowserDownload(int percent)
+    {
+        _browserDownload = percent < 100 ? percent : null;
+        StateHasChanged();
     }
 
     [JSInvokable]

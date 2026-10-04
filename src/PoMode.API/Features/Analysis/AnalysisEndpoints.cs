@@ -53,6 +53,8 @@ public static class AnalysisEndpoints
                     $"The upload has {incomplete.Offset} of {incomplete.Length} bytes; resume it before starting the analysis."),
                 UploadHandoff.Rejected { Reason: UploadRejection.TooLarge } => TypedResults.BadRequest("File exceeds the 100 MB limit."),
                 UploadHandoff.Rejected { Reason: UploadRejection.UnsupportedFormat } => TypedResults.BadRequest("Only .mp3 and .wav files are supported."),
+                UploadHandoff.Rejected { Reason: UploadRejection.CannotConvert } => TypedResults.BadRequest(
+                    "Neither this browser nor this server can decode that file. Open PoMode in Chrome or Edge, or convert the file to WAV or MP3."),
                 _ => throw new InvalidOperationException($"Unhandled upload hand-off {handoff}."),
             };
         })

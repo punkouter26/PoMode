@@ -75,23 +75,6 @@
     color: var(--pm-danger);
 }
 
-.mixer-retry-btn {
-    min-height: 1.75rem;
-    background: transparent;
-    color: var(--pm-danger);
-    border: 1px solid var(--pm-danger-edge);
-    padding: 0.2rem 0.6rem;
-    border-radius: 4px;
-    font: inherit;
-    font-size: var(--pm-text-xs);
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.mixer-retry-btn:hover {
-    background: var(--pm-danger-bg);
-}
-
 .mixer-loading-slot {
     height: 0.25rem;
 }

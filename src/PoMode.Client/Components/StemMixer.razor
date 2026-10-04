@@ -23,7 +23,8 @@
         {
             <div class="mixer-error-bar">
                 <span class="mixer-error-msg">⚠️ @_loadError</span>
-                <button type="button" class="mixer-retry-btn" @onclick="RetryLoad">↻ Retry</button>
+                <RadzenButton class="mixer-retry-btn" Text="Retry" Icon="refresh" Size="ButtonSize.Small"
+                              ButtonStyle="ButtonStyle.Light" Click="@RetryLoad" />
             </div>
         }
     }
@@ -73,6 +74,19 @@
                           Shade="@(_metronomeOn ? Shade.Lighter : Shade.Default)"
                           aria-pressed="@(_metronomeOn ? "true" : "false")"
                           Text="@($"Click · {BpmReadout}")" title="@MetronomeTitle" class="mixer-click" />
+
+            @* Practising one chorus: the section under the playhead comes round until this is pressed
+               again or the playhead is put somewhere else. Only offered when the song has sections. *@
+            @if (HasSections)
+            {
+                <RadzenButton Click="@ToggleLoopAsync" Disabled="@Loading" Icon="repeat" Size="ButtonSize.Small"
+                              ButtonStyle="@(_loopLabel is null ? ButtonStyle.Light : ButtonStyle.Primary)"
+                              Variant="@(_loopLabel is null ? Variant.Filled : Variant.Flat)"
+                              Shade="@(_loopLabel is null ? Shade.Default : Shade.Lighter)"
+                              aria-pressed="@(_loopLabel is null ? "false" : "true")"
+                              Text="@(_loopLabel is null ? "Loop section" : $"Looping {_loopLabel}")"
+                              title="L = loop the section under the playhead" class="mixer-loop" />
+            }
         </div>
 
         @* The always-visible key legend is gone: the header's "Keyboard shortcuts" modal carries
@@ -364,6 +378,27 @@
         }
         _status = playing ? "playing" : "paused";
         StateHasChanged();
+    }
+
+    /// <summary>The section being looped, as mixer.js reports it (L key, the button, or a seek out of it).</summary>
+    private string? _loopLabel;
+
+    /// <summary>Whether the song divided into sections; without any there is nothing to loop.</summary>
+    [Parameter] public bool HasSections { get; set; }
+
+    [JSInvokable]
+    public void OnLoopChanged(string? label)
+    {
+        _loopLabel = label;
+        StateHasChanged();
+    }
+
+    private async Task ToggleLoopAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("toggleLoop", _root);
+        }
     }
 
     /// <summary>Fire-and-forget UI sound; failures (autoplay policy, teardown) stay silent.</summary>

@@ -433,3 +433,88 @@
         height: 180px !important;
     }
 }
+
+/* ---- Drums: a beat from the library, cut to the lab's tempo ---- */
+
+.drums-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--pm-space-2) var(--pm-space-3);
+    min-width: 0;
+}
+
+.drums-field {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.drums-label {
+    font-size: var(--pm-text-xs);
+    font-weight: 600;
+    color: var(--pm-fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* The recording's name is a whole phrase, so the picker takes the room the row has left. */
+.drums-pick {
+    flex: 1 1 16rem;
+}
+
+.drums-pick ::deep .drums-dd {
+    flex: 1;
+    min-width: 0;
+}
+
+.drums-field ::deep .drums-bars {
+    width: 6rem;
+    min-width: 0;
+}
+
+.drums-none {
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg-muted);
+}
+
+.drums-none a {
+    color: var(--pm-accent);
+}
+
+.drums-wave {
+    display: block;
+    width: 100%;
+    height: 120px;
+    margin-top: var(--pm-space-2);
+    border: 1px solid var(--pm-border);
+    border-radius: 0.6rem;
+    background: var(--pm-lane-bg);
+}
+
+.drums-wave-empty {
+    display: none;
+}
+
+.drums-readout {
+    margin: var(--pm-space-2) 0 0;
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.drums-error {
+    margin: var(--pm-space-2) 0 0;
+    color: var(--pm-note-outside);
+}
+
+@media (max-width: 720px) {
+    .drums-pick {
+        flex-basis: 100%;
+    }
+}
+
+.studio-drums-panel {
+    padding: 0.45rem 0.7rem;
+}

@@ -330,8 +330,8 @@
         font-size: 1.1rem;
     }
 
-    /* The six destinations share the row rather than queueing off the right edge. Short labels and
-       an even split put all six on one line at 320px, so nothing is reached by scrolling. */
+    /* The three destinations share the row rather than queueing off the right edge. Short labels and
+       an even split put all three on one line at 320px, so nothing is reached by scrolling. */
     .actions {
         grid-area: nav;
         justify-content: space-between;
@@ -382,4 +382,13 @@
 
 .po-error-panel p {
     margin: 0;
+}
+
+/* Touch: the header's icons and the menu rows are the smallest targets in the app. */
+@media (pointer: coarse) {
+    .icon-button,
+    .overflow-item {
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+    }
 }

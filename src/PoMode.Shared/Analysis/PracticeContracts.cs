@@ -46,3 +46,10 @@ public sealed record VocalRangeDto(
 /// applies it without doing any music theory of its own.
 /// </summary>
 public sealed record VoiceFitDto(ScaleMode Mode, int TonicPitchClass, string Explanation);
+
+/// <summary>
+/// How far an analysed song's melody is from where the caller sings. <paramref name="Semitones"/> is
+/// the transposition that centres it on their takes (negative is down, zero when it already fits);
+/// <paramref name="Sentence"/> is what to show, worded server-side.
+/// </summary>
+public sealed record SongVoiceFitDto(int Semitones, string Sentence);

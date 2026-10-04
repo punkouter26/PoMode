@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.RateLimiting;
 using PoMode.API.Features.Auth;
 
 namespace PoMode.API.Platform;

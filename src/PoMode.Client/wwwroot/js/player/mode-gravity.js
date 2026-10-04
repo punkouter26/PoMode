@@ -209,7 +209,7 @@ function onPointerDown(state, event) {
     for (const body of state.bodies.values()) {
         if (body.present && Math.hypot(body.x - x, body.y - y) <= Math.max(body.r, 16)) {
             // Middle-register pitch of this pitch class, C4 to B4.
-            audition(60 + body.pitchClass);
+            audition(60 + body.pitchClass, ((x / Math.max(rect.width, 1)) * 2 - 1) * 0.8);
             body.pulse = 1;
             wake(state);
             return;

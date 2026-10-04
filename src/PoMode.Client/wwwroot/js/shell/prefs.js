@@ -89,26 +89,10 @@ export function allowsMotion() {
     return level() !== 'off';
 }
 
-/// The expensive tier: compute shaders, large particle counts, per-frame physics. 'subtle' keeps
-/// the cheap motion and drops these, which is the whole reason the middle setting exists.
-export function allowsHeavy() {
-    return level() === 'full';
-}
-
 /// Synthesized UI sounds. Tied to the level as well as the mute flag: someone who has turned the
 /// effects off is not asking for chimes either.
 export function allowsSound() {
     return !muted() && level() !== 'off';
-}
-
-/// Multiplier for effect amplitude — particle counts, glow radius, shake distance. Modules that can
-/// scale continuously should prefer this over branching on the level name.
-export function intensity() {
-    switch (level()) {
-        case 'off': return 0;
-        case 'subtle': return 0.45;
-        default: return 1;
-    }
 }
 
 /// Stamps the effective state on <html> and tells every subscriber. Stamping both the level and the

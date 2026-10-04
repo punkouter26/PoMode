@@ -26,7 +26,15 @@ export async function reply(system, messages, schema, sink) {
     const session = await self.LanguageModel.create({
         ...LANGUAGES,
         initialPrompts: [{ role: 'system', content: system }, ...messages.slice(0, -1)],
+        // The first use downloads the model, which is gigabytes: the page says how far along it is
+        // rather than showing a button that appears to have done nothing.
+        monitor(model) {
+            model.addEventListener('downloadprogress', (event) => {
+                sink.invokeMethodAsync('OnBrowserDownload', Math.round(event.loaded * 100)).catch(() => { });
+            });
+        },
     });
+    sink.invokeMethodAsync('OnBrowserDownload', 100).catch(() => { });
     try {
         const stream = session.promptStreaming(messages.at(-1).content, { responseConstraint: JSON.parse(schema) });
         // Current builds stream deltas; early ones repeated the whole text so far. Tell them apart by

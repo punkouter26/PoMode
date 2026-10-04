@@ -1,4 +1,3 @@
-using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.SongStatistics;
 using PoMode.API.Features.Analysis;
 using PoMode.Shared.Analysis;
@@ -79,27 +78,28 @@ public class SongStatsBuilderTests
     [Fact]
     public void Contour_IdentifiesDirectionAndExtremeNotes()
     {
-        var rising = Build([Note(60, 0.0), Note(62, 0.5), Note(64, 1.0), Note(65, 1.5), Note(67, 2.0)]);
-        Assert.Equal("Rising", rising.Contour.Shape);
+        {
+            var rising = Build([Note(60, 0.0), Note(62, 0.5), Note(64, 1.0), Note(65, 1.5), Note(67, 2.0)]);
+            Assert.Equal("Rising", rising.Contour.Shape);
 
-        var falling = Build([Note(67, 0.0), Note(65, 0.5), Note(64, 1.0), Note(62, 1.5), Note(60, 2.0)]);
-        Assert.Equal("Falling", falling.Contour.Shape);
+            var falling = Build([Note(67, 0.0), Note(65, 0.5), Note(64, 1.0), Note(62, 1.5), Note(60, 2.0)]);
+            Assert.Equal("Falling", falling.Contour.Shape);
 
-        var arch = Build([Note(60, 0.0), Note(67, 0.5), Note(60, 1.0)]);
-        Assert.Equal("Arch", arch.Contour.Shape);
-    }
+            var arch = Build([Note(60, 0.0), Note(67, 0.5), Note(60, 1.0)]);
+            Assert.Equal("Arch", arch.Contour.Shape);
+        }
 
-    [Fact]
-    public void Phrasing_MeasuresPhraseCountsLengthsAndBreaks()
-    {
-        var onePhrase = Build([Note(60, 0.0, 0.4), Note(62, 0.5, 0.4), Note(64, 1.0, 0.4)]);
-        Assert.Equal(1, onePhrase.Phrases.Count);
+        // Phrasing MeasuresPhraseCountsLengthsAndBreaks
+        {
+            var onePhrase = Build([Note(60, 0.0, 0.4), Note(62, 0.5, 0.4), Note(64, 1.0, 0.4)]);
+            Assert.Equal(1, onePhrase.Phrases.Count);
 
-        var twoPhrases = Build([
-            Note(60, 0.0, 0.4), Note(62, 0.5, 0.4),
-            Note(64, 1.9, 0.4), Note(65, 2.4, 0.4)
-        ]);
-        Assert.Equal(2, twoPhrases.Phrases.Count);
+            var twoPhrases = Build([
+                Note(60, 0.0, 0.4), Note(62, 0.5, 0.4),
+                Note(64, 1.9, 0.4), Note(65, 2.4, 0.4)
+            ]);
+            Assert.Equal(2, twoPhrases.Phrases.Count);
+        }
     }
 
     [Fact]
@@ -132,47 +132,49 @@ public class SongStatsBuilderTests
     [Fact]
     public void Harmony_CountsUniqueChordsAndPacing()
     {
-        var chords = new[]
         {
-            Chord("C", "C", "maj", 0.0, 2.0),
-            Chord("G", "G", "maj", 2.0, 4.0),
-            Chord("Am", "A", "min", 4.0, 6.0),
-            Chord("F", "F", "maj", 6.0, 8.0)
-        };
-        var stats = Build([Note(60, 0.0, 8.0)], chords: chords, beats: Grid());
-        Assert.Equal(4, stats.ChordVocabulary.UniqueChords);
-        Assert.Equal(4.0, stats.HarmonicRhythm.AverageChordBeats);
-    }
+            var chords = new[]
+            {
+                Chord("C", "C", "maj", 0.0, 2.0),
+                Chord("G", "G", "maj", 2.0, 4.0),
+                Chord("Am", "A", "min", 4.0, 6.0),
+                Chord("F", "F", "maj", 6.0, 8.0)
+            };
+            var stats = Build([Note(60, 0.0, 8.0)], chords: chords, beats: Grid());
+            Assert.Equal(4, stats.ChordVocabulary.UniqueChords);
+            Assert.Equal(4.0, stats.HarmonicRhythm.AverageChordBeats);
+        }
 
-    [Fact]
-    public void ChordTones_CalculatesTonesInsideChords()
-    {
-        var chords = new[] { Chord("C", "C", "maj", 0.0, 2.0) };
-        var stats = Build([
-            Note(60, 0.0), Note(64, 0.5), Note(62, 1.0)
-        ], chords: chords);
+        // ChordTones CalculatesTonesInsideChords
+        {
+            var chords = new[] { Chord("C", "C", "maj", 0.0, 2.0) };
+            var stats = Build([
+                Note(60, 0.0), Note(64, 0.5), Note(62, 1.0)
+            ], chords: chords);
 
-        Assert.True(stats.ChordTones.ConsonancePercent is >= 65.0 and <= 68.0);
+            Assert.True(stats.ChordTones.ConsonancePercent is >= 65.0 and <= 68.0);
+        }
     }
 
     [Fact]
     public void Rhythm_MeasuresOnBeatAndOffBeatPlacement()
     {
-        var stats = Build([
-            Note(60, 0.0), Note(62, 0.5), Note(64, 0.25)
-        ], beats: Grid(0.0));
+        {
+            var stats = Build([
+                Note(60, 0.0), Note(62, 0.5), Note(64, 0.25)
+            ], beats: Grid(0.0));
 
-        Assert.True(stats.Rhythm.OnBeatPercent > 50.0);
-    }
+            Assert.True(stats.Rhythm.OnBeatPercent > 50.0);
+        }
 
-    [Fact]
-    public void NoteLengths_IdentifiesCommonDurations()
-    {
-        var stats = Build([
-            Note(60, 0.0, 0.5), Note(62, 0.5, 0.5), Note(64, 1.0, 0.25)
-        ], beats: Grid(0.0));
+        // NoteLengths IdentifiesCommonDurations
+        {
+            var stats = Build([
+                Note(60, 0.0, 0.5), Note(62, 0.5, 0.5), Note(64, 1.0, 0.25)
+            ], beats: Grid(0.0));
 
-        Assert.NotEmpty(stats.Rhythm.NoteValues);
+            Assert.NotEmpty(stats.Rhythm.NoteValues);
+        }
     }
 
     [Fact]

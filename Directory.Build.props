@@ -4,5 +4,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Unused usings fail the build (IDE0005, raised to a warning in .editorconfig). The analyzer
+         only runs with documentation output on, so that is on and the warnings about the comments
+         themselves are off. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1587;CS1570;CS1571;CS1572;CS1574;CS1584;CS1658;CS1710;CS1711;CS1712;CS1723;CS1734;CS0419</NoWarn>
   </PropertyGroup>
 </Project>

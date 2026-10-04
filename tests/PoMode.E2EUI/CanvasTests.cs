@@ -20,7 +20,7 @@ public class CanvasTests(AppFixture app)
         await File.WriteAllBytesAsync(wavPath, TestAudio.MakeWav(seconds: 0.5));
         try
         {
-            await page.Locator("input[type=file]").SetInputFilesAsync(wavPath);
+            await page.Locator("input.upload-input").SetInputFilesAsync(wavPath);
             await Assertions.Expect(page.Locator("canvas.analysis-canvas")).ToBeVisibleAsync(Visible);
         }
         finally

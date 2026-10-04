@@ -80,3 +80,27 @@
     color: var(--pm-fg-muted);
     font-weight: 600;
 }
+
+/* A phone has no room for a 10rem label column beside its value: stack them, and let a long
+   executor or model name break rather than push the page sideways. */
+@media (max-width: 640px) {
+    .diag-grid {
+        grid-template-columns: 1fr;
+        gap: 0 1rem;
+    }
+
+    .diag-grid dd {
+        margin-bottom: 0.4rem;
+    }
+
+    .diag-plan li {
+        flex-wrap: wrap;
+        gap: 0.1rem 0.75rem;
+    }
+
+    .diag-grid dd,
+    .diag-plan .executor,
+    .diag-models td {
+        overflow-wrap: anywhere;
+    }
+}

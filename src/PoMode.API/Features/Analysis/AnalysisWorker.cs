@@ -5,6 +5,7 @@ public sealed class AnalysisWorker(
     JobQueue queue,
     AnalysisPipeline pipeline,
     JobCancellationRegistry cancellations,
+    IAnalysisNotifier notifier,
     ILogger<AnalysisWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -15,6 +16,11 @@ public sealed class AnalysisWorker(
             cancellations.Register(jobId, cts);
             try
             {
+                // Everyone still waiting has just moved up one.
+                foreach (var waiting in queue.Waiting())
+                {
+                    await notifier.PublishQueueAsync(waiting, queue.Ahead(waiting) ?? 0, stoppingToken);
+                }
                 await pipeline.RunAsync(jobId, cts.Token);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

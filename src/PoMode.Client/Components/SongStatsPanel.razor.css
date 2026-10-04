@@ -54,6 +54,10 @@
     color: var(--pm-fg-muted);
 }
 
+.stats-fit {
+    margin: var(--pm-space-2, 0.5rem) 0 0;
+}
+
 /* ---- The numbers behind it ---- */
 
 .stats-details > summary {
@@ -308,32 +312,9 @@
     gap: 0.4rem;
 }
 
-.ask-starter {
-    font: inherit;
-    font-size: var(--pm-text-sm);
-    padding: 0.25rem 0.7rem;
-    border-radius: 999px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-surface);
-    color: inherit;
-    cursor: pointer;
-}
-
-/* The summary is the one opener that always has an answer, so it leads. */
-.ask-starter-summary {
-    border-color: var(--pm-accent);
-    color: var(--pm-accent);
-    font-weight: 600;
-}
-
-.ask-starter:hover:not(:disabled) {
-    border-color: var(--pm-accent);
-    color: var(--pm-accent);
-}
-
-.ask-starter:disabled {
-    opacity: 0.5;
-    cursor: default;
+/* The transcript wrapper exists for the live region only; its turns lay out as before. */
+.ask-log {
+    display: contents;
 }
 
 .ask-row {

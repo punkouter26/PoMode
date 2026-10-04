@@ -45,8 +45,14 @@
 }
 
 /* Centred in the viewport rather than pinned to the top of an otherwise empty page. */
+/* The intake card with the songs already here under it. Centred as one group while the library is
+   empty or short; a long library simply makes the page taller. */
 .intake {
     margin-block: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--pm-space-3);
+    min-width: 0;
 }
 
 .upload-hero {
@@ -82,12 +88,12 @@
     outline-offset: 2px;
 }
 
-.upload-choose:has(.upload-input:disabled) {
+.upload-choose:has(input:disabled) {
     opacity: 0.6;
     cursor: progress;
 }
 
-.upload-input {
+.upload-choose input {
     position: absolute;
     inset: 0;
     width: 100%;

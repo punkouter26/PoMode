@@ -59,10 +59,6 @@
             <h3 class="diag-title">Hardware</h3>
             @if (report.Hardware is { } hardware)
             {
-                <dl class="diag-grid">
-                    <dt>GPU</dt>
-                    <dd>@(hardware.Gpu is { } gpu ? $"{gpu.Vendor} — {gpu.FreeVramMb}/{gpu.TotalVramMb} MB free, CUDA {YesNo(gpu.CudaAvailable)}, DirectML {YesNo(gpu.DmlAvailable)}" : "none detected")</dd>
-                </dl>
                 <table class="diag-models">
                     <thead><tr><th>Model</th><th>Available</th><th>Size</th></tr></thead>
                     <tbody>

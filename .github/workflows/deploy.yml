@@ -73,6 +73,9 @@ jobs:
       # Playwright browser. The deploy smoke step below is what guards the routes in CI.
       - name: Test (Unit)
         run: dotnet test tests/PoMode.Unit --no-build -c Release --verbosity minimal
+      # The drum-loop splice is plain JS with no DOM; this is its only check.
+      - name: Test (loop cut)
+        run: node tests/loop-cut.check.mjs
       - name: Publish API & WASM Host
         run: dotnet publish ${{ env.API_PROJECT_PATH }} -c Release --no-build -o publish
       - name: Upload webapp artifact

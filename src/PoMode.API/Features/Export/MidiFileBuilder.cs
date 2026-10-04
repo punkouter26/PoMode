@@ -1,7 +1,6 @@
 using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Core;
 using PoMode.API.Features.ChordRecognition;
-using PoMode.API.Features.ModalAnalysis;
 using PoMode.Shared.Analysis;
 // Melanchall.DryWetMidi.Core also defines a NoteEvent (base class of NoteOnEvent/NoteOffEvent),
 // which collides with PoMode.Shared.Analysis.NoteEvent. Alias ours to disambiguate.

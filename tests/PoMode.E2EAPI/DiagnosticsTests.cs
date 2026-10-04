@@ -1,7 +1,4 @@
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Xunit;
-using PoMode.Shared.Diagnostics;
 
 namespace PoMode.E2EAPI;
 

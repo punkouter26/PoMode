@@ -1,5 +1,4 @@
 using PoMode.API.Platform;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using PoMode.API.Features.Analysis;
@@ -126,6 +125,21 @@ if (secretSource.FellBack)
 app.Services.GetRequiredService<PushSettings>();
 
 app.UseForwardedHeaders();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+// On every response, static files included. The policy only forbids framing: a script-src would have
+// to allow the two inline scripts in index.html, the WASM runtime and the model workers' blobs, and a
+// wrong one fails silently in the one environment nobody is watching.
+app.Use((context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers.XContentTypeOptions = "nosniff";
+    headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    return next();
+});
 app.UseBlazorFrameworkFiles();
 // .webmanifest is not in every ASP.NET Core content-type table, and a manifest served as
 // application/octet-stream is ignored by the browser without an error anyone would notice — the app
