@@ -6,6 +6,9 @@ public enum UploadRejection
     TooLarge,
     UnsupportedFormat,
 
+    /// <summary>An MP4/M4A: not accepted as it is, but convertible where the host has an ffmpeg.</summary>
+    NeedsConversion,
+
     /// <summary>An MP4/M4A the browser could not decode and this host has no ffmpeg to convert.</summary>
     CannotConvert,
 }
@@ -33,8 +36,15 @@ public static class AudioFormatValidator
         }
         var header = new byte[12];
         var read = await content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-        return IsSupported(header.AsSpan(0, read), out _) ? null : UploadRejection.UnsupportedFormat;
+        var sniffed = header.AsSpan(0, read);
+        return IsSupported(sniffed, out _) ? null
+            : IsMp4(sniffed) ? UploadRejection.NeedsConversion
+            : UploadRejection.UnsupportedFormat;
     }
+
+    /// <summary>An ISO base media file (MP4, M4A, MOV) by its header: a box named <c>ftyp</c> first.</summary>
+    public static bool IsMp4(ReadOnlySpan<byte> header)
+        => header.Length >= 8 && header[4..8].SequenceEqual("ftyp"u8);
 
     public static bool IsSupported(ReadOnlySpan<byte> header, out string format)
     {

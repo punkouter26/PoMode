@@ -16,11 +16,7 @@ public sealed class AnalysisWorker(
             cancellations.Register(jobId, cts);
             try
             {
-                // Everyone still waiting has just moved up one.
-                foreach (var waiting in queue.Waiting())
-                {
-                    await notifier.PublishQueueAsync(waiting, queue.Ahead(waiting) ?? 0, stoppingToken);
-                }
+                await PublishQueueAsync(stoppingToken);
                 await pipeline.RunAsync(jobId, cts.Token);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -34,6 +30,25 @@ public sealed class AnalysisWorker(
             finally
             {
                 cancellations.Remove(jobId);
+            }
+        }
+    }
+
+    /// <summary>Everyone still waiting has just moved up one. Best-effort: a push that fails must not
+    /// cost the job that was just taken its run.</summary>
+    private async Task PublishQueueAsync(CancellationToken stoppingToken)
+    {
+        var waiting = queue.Waiting();
+        for (var i = 0; i < waiting.Length; i++)
+        {
+            try
+            {
+                // Same count as JobQueue.Ahead: the job now running, plus those in front.
+                await notifier.PublishQueueAsync(waiting[i], i + 1, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Queue position push failed for job {JobId}.", waiting[i]);
             }
         }
     }

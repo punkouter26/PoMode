@@ -366,31 +366,32 @@
     }
 
     /// <summary>Fire-and-forget beside the statistics: a render with them should not wait on the vocal
-    /// being measured. Drops its answer if the component has moved on to another job meanwhile.</summary>
+    /// being measured. Drops its answer if the component has moved on to another job meanwhile.
+    /// The profile and the fit are asked for together and fail apart: the fit is an extra under the
+    /// singer's card and must not take the card down with it.</summary>
     private async Task LoadVoiceAsync(string jobId)
     {
         _voiceLoading = true;
+        var voice = OrNullAsync(Client.GetVoiceProfileAsync(jobId));
+        var fit = OrNullAsync(Client.GetSongVoiceFitAsync(jobId));
+        var (voiceRead, fitRead) = (await voice, await fit);
+        if (jobId != JobId) return;
+        _voice = voiceRead;
+        _voiceFit = fitRead;
+        _voiceLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // The rest of the panel stands without either; the block says the voice could not be profiled.
+    private static async Task<T?> OrNullAsync<T>(Task<T?> request) where T : class
+    {
         try
         {
-            var voice = await Client.GetVoiceProfileAsync(jobId);
-            var fit = await Client.GetSongVoiceFitAsync(jobId);
-            if (jobId == JobId)
-            {
-                _voice = voice;
-                _voiceFit = fit;
-            }
+            return await request;
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
         {
-            // The rest of the panel stands without it; the block says it could not be profiled.
-        }
-        finally
-        {
-            if (jobId == JobId)
-            {
-                _voiceLoading = false;
-                await InvokeAsync(StateHasChanged);
-            }
+            return null;
         }
     }
 

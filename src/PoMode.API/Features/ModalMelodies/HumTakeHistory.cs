@@ -81,21 +81,7 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
     /// and, once the range stands, the voice type and strongest note those same takes show.</summary>
     public async Task<VocalRangeDto> VocalRangeAsync(string? ownerId, ScaleMode mode, CancellationToken ct)
     {
-        var finished = new List<JobState>();
-        var takes = new List<IReadOnlyList<NoteEvent>>();
-        foreach (var state in await OwnedTakesAsync(ownerId, ct))
-        {
-            if (state.Stage != JobStage.Complete)
-            {
-                continue;
-            }
-            finished.Add(state);
-            takes.Add(await store.ReadArtifactListAsync<NoteEvent>(state.JobId, "notes.json", ct));
-            if (takes.Count == MaxTakes)
-            {
-                break;
-            }
-        }
+        var (finished, takes) = await RecentTakesAsync(ownerId, ct);
         var range = Profile(takes, mode);
         if (range.TakesNeeded > 0)
         {
@@ -119,11 +105,7 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
         {
             return null;
         }
-        var takes = new List<IReadOnlyList<NoteEvent>>();
-        foreach (var state in (await OwnedTakesAsync(ownerId, ct)).Where(take => take.Stage == JobStage.Complete).Take(MaxTakes))
-        {
-            takes.Add(await store.ReadArtifactListAsync<NoteEvent>(state.JobId, "notes.json", ct));
-        }
+        var (_, takes) = await RecentTakesAsync(ownerId, ct);
         return SongFit(Profile(takes, ScaleMode.Ionian), await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct));
     }
 
@@ -162,6 +144,20 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
             sentence += " Its span is wider than your takes show, so one end will still reach.";
         }
         return new SongVoiceFitDto(shift, sentence);
+    }
+
+    /// <summary>The caller's last <see cref="MaxTakes"/> finished takes and their notes, in the same
+    /// order: the one rule for which takes a range is read from.</summary>
+    private async Task<(List<JobState> Finished, IReadOnlyList<NoteEvent>[] Notes)> RecentTakesAsync(
+        string? ownerId, CancellationToken ct)
+    {
+        var finished = (await OwnedTakesAsync(ownerId, ct))
+            .Where(state => state.Stage == JobStage.Complete)
+            .Take(MaxTakes)
+            .ToList();
+        var notes = await Task.WhenAll(finished.Select(state =>
+            store.ReadArtifactListAsync<NoteEvent>(state.JobId, "notes.json", ct)));
+        return (finished, notes);
     }
 
     /// <summary>Every hum take the caller owns, newest first. Ownerless callers own nothing — same

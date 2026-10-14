@@ -13,6 +13,8 @@ dotnet test tests/PoMode.Integration     # needs Azurite running
 dotnet test tests/PoMode.E2EAPI          # HTTP contract tests (in-process app)
 dotnet test tests/PoMode.E2EUI           # Playwright browser tests (boots the real app)
 dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~TempoEstimator"   # single test/class
+node tests/loop-cut.check.mjs            # the drum-loop splice (player/loop-cut.js); CI runs it too
+pwsh scripts/get-models.ps1              # pre-fetch every ONNX/browser model into models/ (warms the E2EUI cache)
 ```
 
 - `tests/PoMode.Integration` includes `ModelAccuracyReportTests`: it renders a known-truth sample MP3, plus a voice-like stem with vibrato and bleed and two drum grooves with a known bar grid, races every free pitch/chord/beat executor against them, and rewrites `test-reports/model-accuracy.html`. It is a reporting tool, not a test, so it is opt-in: `POMODE_MODEL_REPORT=1 dotnet test tests/PoMode.Integration`. Otherwise it skips.
@@ -46,6 +48,7 @@ These override any default instinct. Where one contradicts a habit, the rule win
   never all four suites — a full run costs minutes on every edit and tells you almost nothing about a
   two-line change. `dotnet test tests/PoMode.Unit --filter "FullyQualifiedName~HumTakeSeeder"` is
   the shape. If nothing existing covers the change, say so rather than running everything to feel safe.
+  A minor edit (a comment, a label, a CSS value) can skip tests entirely; the restart check still applies.
 - **Say what you did not verify.** A targeted test run plus a successful restart is not a full pass;
   report it as what it is.
 
@@ -57,8 +60,8 @@ These override any default instinct. Where one contradicts a habit, the rule win
 - **`git sync` means: commit everything, then push.** Stage all outstanding changes first — a sync
   that leaves work uncommitted is not a sync — then commit and push in one go.
 - **Commit messages are short and casual**, written the way a person actually types them. American
-  English, plain and offhand ("fix the busted tempo math", "wire up practice page"), not a formal
-  changelog entry. One line is usually right.
+  English, plain and offhand, a little slang welcome ("fix the busted tempo math", "wire up practice
+  page"), not a formal changelog entry. It should feel human. One line is usually right.
 
 ### Secrets
 
@@ -70,8 +73,15 @@ These override any default instinct. Where one contradicts a habit, the rule win
 
 - **Run the command yourself.** If a step can be done from the tools available, do it rather than
   printing an instruction for the user to copy into a terminal. Hand them a command only when it
-  genuinely needs their machine, their credentials, or their decision.
+  genuinely needs their machine, their credentials, or their decision. The same goes for web portals:
+  script an Azure or GitHub change (`az`, `gh`, Bicep) instead of describing where to click.
+- **UI changes get a before/after page.** When a change alters what the UI looks like, screenshot the
+  old state before editing and the new state after (Playwright, as in `tests/PoMode.E2EUI`), annotate
+  what changed, and save both into one HTML file under `SCREENSHOTS/` at the repo root. Give the full
+  path to that file in the reply.
 - **Answers over ~100 words end with a TLDR.** One line, about 20 words, saying what happened.
+- **A code change over 20 lines gets a three-level TLDR** instead: one line each pitched at a
+  toddler, a child, and an adult.
 
 ## Architecture
 

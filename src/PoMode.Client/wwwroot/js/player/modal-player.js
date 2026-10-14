@@ -8,10 +8,6 @@ import { bus, epiano } from './voices.js';
 
 let audioCtx = null;
 let masterGain = null;
-/// Analyser hung off the master bus so the Mode Lab's decorative layers can react to what is
-/// actually sounding rather than to a timer. Created with the graph, tapped only when something
-/// asks — an unread analyser costs a copy the audio thread was making anyway.
-let analyser = null;
 let isPlaying = false;
 let isLooping = true;
 let loopDuration = 0;
@@ -57,16 +53,9 @@ function ensureContext() {
         audioCtx = new Ctor();
         masterGain = audioCtx.createGain();
         masterGain.gain.value = 1.0;
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 512;
-        // In series, not a side branch: the analyser passes audio through untouched, and putting it
-        // on the path means it sees exactly what reaches the speakers.
-        masterGain.connect(analyser);
-        analyser.connect(audioCtx.destination);
         // Every voice connects to masterGain; routing it through a room bus puts the whole Mode Lab
         // in one space without touching the instruments.
-        masterGain.disconnect();
-        masterGain.connect(bus(audioCtx, analyser, 0.2));
+        masterGain.connect(bus(audioCtx, audioCtx.destination, 0.2));
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => { });

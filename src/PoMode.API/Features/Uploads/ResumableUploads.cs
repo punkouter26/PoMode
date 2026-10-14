@@ -156,7 +156,7 @@ public sealed class ResumableUploads(JobStore jobs, TimeProvider time, ILogger<R
             // An .m4a normally arrives already converted by the browser. One that arrives as it was
             // recorded came from a browser with no AAC decoder, and is converted here if this host can.
             string? converted = null;
-            if (rejection is UploadRejection.UnsupportedFormat && await IsMp4Async(file, ct))
+            if (rejection is UploadRejection.NeedsConversion)
             {
                 converted = await ConvertToWavAsync(uploadId, file, ct);
                 rejection = converted is null ? UploadRejection.CannotConvert
@@ -205,14 +205,6 @@ public sealed class ResumableUploads(JobStore jobs, TimeProvider time, ILogger<R
             // fresh one and finds the same marker. Dropping it keeps the map from growing forever.
             _handoffLocks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(uploadId, gate));
         }
-    }
-
-    private static async Task<bool> IsMp4Async(ITusFile file, CancellationToken ct)
-    {
-        await using var probe = await file.GetContentAsync(ct);
-        var header = new byte[8];
-        var read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
-        return FfmpegTranscoder.IsMp4(header.AsSpan(0, read));
     }
 
     /// <summary>The upload as a WAV in the system temp folder, or null when this host cannot make one.

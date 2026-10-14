@@ -19,7 +19,7 @@ const ATTACK_SHARE = 0.25;      // a slice starts where the hit first reaches th
 const PRE_ROLL = 64;            // and a little ahead of that
 const FADE_SEC = 0.003;         // every slice ends on a short fade, so a cut never clicks
 const TAIL_SEC = 0.25;          // decay past the last bar, folded over the start of the loop
-const STEPS_PER_BAR = 16;       // ponytail: straight sixteenths in 4/4; swing and triplets get squared off. A grid choice if someone needs them
+export const STEPS_PER_BAR = 16;    // ponytail: straight sixteenths in 4/4; swing and triplets get squared off. A grid choice if someone needs them
 
 export function loopFrameCount(bpm, bars, sampleRate) {
     return Math.round(bars * 4 * 60 / bpm * sampleRate);
@@ -67,14 +67,14 @@ export function findOnsets(samples, sampleRate) {
     return onsets;
 }
 
-/// The tempo the take was played at. First the pulse: the period that the gaps between nearby hits
-/// are most nearly whole multiples of. Human timing blurs short periods more than long ones, so a
-/// subdivision of the real pulse scores below it and its double (which half the gaps miss) far below.
-/// A pulse is a beat, an eighth or a sixteenth, and nothing in the audio says which; the reading
-/// taken is the one within half an octave of the target, which is the one that moves the hits least.
-/// Scored on gaps, not on distance from the first hit, so drift across the take does not blur it.
-export function sourceTempo(onsets, sampleRate, targetBpm) {
-    if (onsets.length < 2) return targetBpm;
+/// The take's pulse, in BPM: the period that the gaps between nearby hits are most nearly whole
+/// multiples of. Human timing blurs short periods more than long ones, so a subdivision of the real
+/// pulse scores below it and its double (which half the gaps miss) far below. Scored on gaps, not on
+/// distance from the first hit, so drift across the take does not blur it. Quadratic in hits and
+/// independent of any target tempo, so a caller cutting one take to many tempos finds it once.
+/// Null when there are too few hits to have a pulse.
+export function pulseBpm(onsets, sampleRate) {
+    if (onsets.length < 2) return null;
     const horizon = PULSE_HORIZON_SEC * sampleRate;
     let pulse = 0;
     let bestScore = -Infinity;
@@ -93,7 +93,15 @@ export function sourceTempo(onsets, sampleRate, targetBpm) {
         }
     }
 
-    let bpm = 60 * sampleRate / pulse;
+    return 60 * sampleRate / pulse;
+}
+
+/// The tempo the take was played at. A pulse is a beat, an eighth or a sixteenth, and nothing in the
+/// audio says which; the reading taken is the one within half an octave of the target, which is the
+/// one that moves the hits least.
+function sourceTempo(pulse, targetBpm) {
+    if (pulse === null) return targetBpm;
+    let bpm = pulse;
     while (bpm > targetBpm * Math.SQRT2) bpm /= 2;
     while (bpm < targetBpm / Math.SQRT2) bpm *= 2;
     return bpm;
@@ -102,11 +110,12 @@ export function sourceTempo(onsets, sampleRate, targetBpm) {
 /// Gives every hit its sixteenth. The first hit is beat one; each later hit is counted on from the
 /// one before by the gap between them, with the step length eased toward what the player is actually
 /// doing, so a take that speeds up is followed instead of slowly sliding off a fixed grid.
+/// `pulse` is `pulseBpm`'s answer for these onsets, passed in when the caller already has it.
 /// Answers { slices: [{ frame, step }], sourceBpm, bars }.
-export function layOut(onsets, sampleRate, targetBpm) {
+export function layOut(onsets, sampleRate, targetBpm, pulse = pulseBpm(onsets, sampleRate)) {
     if (onsets.length === 0) return { slices: [], sourceBpm: targetBpm, bars: 0 };
 
-    const sourceBpm = sourceTempo(onsets, sampleRate, targetBpm);
+    const sourceBpm = sourceTempo(pulse, targetBpm);
     const nominal = 15 / sourceBpm * sampleRate;
     let local = nominal;
     let previous = onsets[0].frame;
@@ -136,12 +145,13 @@ export function buildLoop(samples, sampleRate, bpm, slices, bars) {
     const stepFrames = 15 / bpm * sampleRate;
     const fade = Math.round(FADE_SEC * sampleRate);
     const tail = Math.min(length, Math.round(TAIL_SEC * sampleRate));
+    // Steps only rise, so the kept slices are always a prefix of `slices`.
     const kept = slices.filter((slice) => slice.step < bars * STEPS_PER_BAR);
 
     for (let k = 0; k < kept.length; k++) {
         const from = kept[k].frame;
         // The source ends at the next hit in the recording, kept or not.
-        const next = slices[slices.indexOf(kept[k]) + 1];
+        const next = slices[k + 1];
         const available = (next ? next.frame : samples.length) - from;
         const at = Math.round(kept[k].step * stepFrames);
         const isLast = k === kept.length - 1;

@@ -6,7 +6,7 @@
 // reason the hum recorder shares it: two clocks cannot be held in step, one clock needs no holding.
 
 import { encodeWav } from '../capture/wav.js';
-import { buildLoop, findOnsets, layOut } from './loop-cut.js';
+import { STEPS_PER_BAR, buildLoop, findOnsets, layOut, pulseBpm } from './loop-cut.js';
 import { getPlaybackStartTime, getSharedContext } from './modal-player.js';
 
 // A loop is bars, not a song: eight bars at 40 BPM is 48 s, and the tempo search is quadratic in hits.
@@ -15,11 +15,12 @@ const MAX_SECONDS = 120;
 const GAIN = 0.9;
 
 let ctx = null;
-let take = null;        // { samples, rate, onsets }
-let cut = null;         // { loop, bpm, bars, sourceBpm, hits }
+let take = null;        // { samples, rate, onsets, pulse }
+let cut = null;         // { loop, buffer, bpm, bars, sourceBpm, hits, steps }
 let source = null;
 let canvas = null;
 let backdrop = null;    // the still picture (grid, waveform, markers); the playhead is painted over it
+let colors = null;      // { track, playhead }: the playhead's tokens, read once per splice rather than per frame
 let startedAt = 0;      // the audio-clock instant the loop last started from its first sample
 let frameId = 0;
 
@@ -65,7 +66,8 @@ export async function load(jobId) {
     const onsets = findOnsets(samples, buffer.sampleRate);
     if (onsets.length === 0) return 'empty';
 
-    take = { samples, rate: buffer.sampleRate, onsets };
+    // The pulse search is the expensive part and does not depend on the tempo, so it runs once here.
+    take = { samples, rate: buffer.sampleRate, onsets, pulse: pulseBpm(onsets, buffer.sampleRate) };
     return 'ok';
 }
 
@@ -76,21 +78,21 @@ export function build(bpm, bars, canvasElement) {
     stop();
     canvas = canvasElement;
     if (!take) return false;
-    const layout = layOut(take.onsets, take.rate, bpm);
+    const layout = layOut(take.onsets, take.rate, bpm, take.pulse);
     const length = bars > 0 ? bars : layout.bars;
-    const kept = layout.slices.filter((slice) => slice.step < length * 16);
-    // The stretch of the recording the loop was cut from: its first hit, to the first hit left out
-    // (or the end of the recording when every hit was kept).
-    const firstLeftOut = layout.slices[kept.length];
+    const kept = layout.slices.filter((slice) => slice.step < length * STEPS_PER_BAR);
+    const loop = buildLoop(take.samples, take.rate, bpm, layout.slices, length);
+    // Built once per splice; every play and seek after that starts a new source over the same buffer.
+    const buffer = ctx.createBuffer(1, loop.length, take.rate);
+    buffer.copyToChannel(loop, 0);
     cut = {
-        loop: buildLoop(take.samples, take.rate, bpm, layout.slices, length),
+        loop,
+        buffer,
         bpm,
         bars: length,
         sourceBpm: layout.sourceBpm,
         hits: kept.length,
         steps: kept.map((slice) => slice.step),
-        sourceStartSec: kept.length > 0 ? kept[0].frame / take.rate : 0,
-        sourceEndSec: (firstLeftOut ? firstLeftOut.frame : take.samples.length) / take.rate,
     };
     draw();
     sync();
@@ -100,16 +102,13 @@ export function build(bpm, bars, canvasElement) {
 /// The tempo the loaded recording was played at. The pulse is unambiguous but which note value it
 /// is (beat, eighth, sixteenth) is not, so the reading nearest `hintBpm` is the one returned.
 export function playedBpm(hintBpm) {
-    return take ? layOut(take.onsets, take.rate, hintBpm).sourceBpm : 0;
+    return take ? layOut(take.onsets, take.rate, hintBpm, take.pulse).sourceBpm : 0;
 }
 
 // Read back as primitives rather than one object, so nothing depends on how interop deserializes.
 export function bars() { return cut ? cut.bars : 0; }
 export function hits() { return cut ? cut.hits : 0; }
 export function sourceBpm() { return cut ? cut.sourceBpm : 0; }
-export function isPlaying() { return source !== null; }
-export function sourceStartSec() { return cut ? cut.sourceStartSec : 0; }
-export function sourceEndSec() { return cut ? cut.sourceEndSec : 0; }
 
 /// Starts the loop where the lab's chord loop currently is, or stops it if the lab is not playing.
 /// Called after every play, pause, stop and seek. The loop repeats on its own length, so drums of a
@@ -122,8 +121,7 @@ export function sync() {
         publish();
         return false;
     }
-    const buffer = ctx.createBuffer(1, cut.loop.length, take.rate);
-    buffer.copyToChannel(cut.loop, 0);
+    const buffer = cut.buffer;
     const gain = ctx.createGain();
     gain.gain.value = GAIN;
     source = ctx.createBufferSource();
@@ -188,6 +186,7 @@ function draw() {
     const g = backdrop.getContext('2d');
     const style = getComputedStyle(canvas);
     const token = (name) => style.getPropertyValue(name);
+    colors = { track: token('--pm-fg-muted'), playhead: token('--pm-playhead') };
     const loop = cut.loop;
 
     const waveTop = (LABEL_BAND + MARKER_BAND) * ratio;
@@ -228,7 +227,7 @@ function draw() {
 
     // Sync markers: one per hit, on the sixteenth it was given. A hit's attack should rise from it.
     g.fillStyle = token('--pm-ok');
-    const steps = cut.bars * 16;
+    const steps = cut.bars * STEPS_PER_BAR;
     const tip = 5 * ratio;
     for (const step of cut.steps) {
         const x = Math.round(step / steps * width);
@@ -259,7 +258,6 @@ function draw() {
 function paint(progress) {
     if (!canvas || !backdrop) return;
     const g = canvas.getContext('2d');
-    const style = getComputedStyle(canvas);
     const ratio = devicePixelRatio;
     const { width, height } = canvas;
     const band = PROGRESS_BAND * ratio;
@@ -267,13 +265,13 @@ function paint(progress) {
     g.clearRect(0, 0, width, height);
     g.drawImage(backdrop, 0, 0);
     g.globalAlpha = 0.25;
-    g.fillStyle = style.getPropertyValue('--pm-fg-muted');
+    g.fillStyle = colors.track;
     g.fillRect(0, height - band + 2 * ratio, width, band - 2 * ratio);
     g.globalAlpha = 1;
     if (progress === null) return;
 
     const x = Math.round(progress * width);
-    g.fillStyle = style.getPropertyValue('--pm-playhead');
+    g.fillStyle = colors.playhead;
     g.fillRect(0, height - band + 2 * ratio, x, band - 2 * ratio);
     g.fillRect(x, 0, Math.ceil(2 * ratio), height);
 }

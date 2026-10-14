@@ -14,10 +14,23 @@ public sealed class JobQueue
 
     public async ValueTask EnqueueAsync(string jobId, CancellationToken ct)
     {
-        await _channel.Writer.WriteAsync(jobId, ct);
+        // Listed before it is written: an idle worker can take the id the instant it lands, and its
+        // Remove must find it there or the id would sit in the list for good.
         lock (_waiting)
         {
             _waiting.Add(jobId);
+        }
+        try
+        {
+            await _channel.Writer.WriteAsync(jobId, ct);
+        }
+        catch
+        {
+            lock (_waiting)
+            {
+                _waiting.Remove(jobId);
+            }
+            throw;
         }
     }
 

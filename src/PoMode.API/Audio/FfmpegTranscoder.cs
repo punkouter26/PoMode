@@ -20,10 +20,6 @@ public static class FfmpegTranscoder
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
 
-    /// <summary>An ISO base media file (MP4, M4A, MOV) by its header: a box named <c>ftyp</c> first.</summary>
-    public static bool IsMp4(ReadOnlySpan<byte> header)
-        => header.Length >= 8 && header[4..8].SequenceEqual("ftyp"u8);
-
     /// <summary>
     /// Writes <paramref name="source"/>'s audio as 16-bit PCM WAV to <paramref name="wavPath"/>.
     /// False when there is no <c>ffmpeg</c>, it refused the file, or it ran out of time.

@@ -501,12 +501,11 @@
     margin: var(--pm-space-2) 0 0;
     font-size: var(--pm-text-sm);
     color: var(--pm-fg-muted);
-    font-variant-numeric: tabular-nums;
 }
 
 .drums-error {
     margin: var(--pm-space-2) 0 0;
-    color: var(--pm-note-outside);
+    color: var(--pm-danger);
 }
 
 @media (max-width: 720px) {
