@@ -1,3 +1,10 @@
+.eta {
+    display: block;
+    margin-top: var(--pm-space-1);
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-sm);
+}
+
 .progress-header {
     display: flex;
     align-items: baseline;

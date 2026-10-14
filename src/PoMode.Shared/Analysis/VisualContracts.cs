@@ -72,7 +72,8 @@ public sealed record VisualWindow(
     bool InsufficientEvidence,
     IReadOnlyList<DegreeBadge> Degrees,
     IReadOnlyList<ModeAlternative> Alternatives,
-    string? Evidence);
+    string? Evidence,
+    double? Tension = null);
 
 /// <summary>
 /// One step of the canvas's tempo line: this measure held this tempo from <paramref name="StartSec"/>

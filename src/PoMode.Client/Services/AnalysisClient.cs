@@ -121,6 +121,21 @@ public sealed class AnalysisClient(HttpClient http)
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 
     /// <summary>The selectable executors per pipeline stage, in the planner's own order.</summary>
+    /// <summary>A new run of a finished analysis from <paramref name="stage"/> on, with that stage
+    /// pinned to <paramref name="executor"/>; null with the server's reason when refused.</summary>
+    public async Task<(JobStatusDto? Status, string? Error)> RerunAsync(string jobId, string stage, string executor)
+    {
+        using var response = await http.PostAsync(
+            $"api/analysis/{jobId}/rerun?stage={Uri.EscapeDataString(stage)}&executor={Uri.EscapeDataString(executor)}", content: null);
+        return response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<JobStatusDto>(), null)
+            : (null, await ReasonAsync(response));
+    }
+
+    /// <summary>Seconds the job has left, or null when the server has no timing to base it on.</summary>
+    public async Task<double?> GetEtaAsync(string jobId)
+        => (await http.GetFromJsonAsync<EtaDto>($"api/analysis/{jobId}/eta"))?.SecondsLeft;
+
     /// <summary>The caller's other songs most like this one, with the reason in words.</summary>
     public Task<List<SimilarSongDto>?> GetSimilarAsync(string jobId)
         => http.GetFromJsonAsync<List<SimilarSongDto>>($"api/library/{jobId}/similar");
@@ -270,8 +285,8 @@ public sealed class AnalysisClient(HttpClient http)
     /// nothing to say (too few takes, or the job is itself a take).</summary>
     public async Task<SongVoiceFitDto?> GetSongVoiceFitAsync(string jobId)
     {
-        var response = await http.GetAsync($"api/modal-melodies/voice/song/{jobId}");
-        return response.IsSuccessStatusCode
+        using var response = await http.GetAsync($"api/modal-melodies/voice/song/{jobId}");
+        return response.StatusCode == System.Net.HttpStatusCode.OK
             ? await response.Content.ReadFromJsonAsync<SongVoiceFitDto>()
             : null;
     }

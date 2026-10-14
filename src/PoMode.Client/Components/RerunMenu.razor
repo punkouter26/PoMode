@@ -1,0 +1,119 @@
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject NotificationService Notifications
+
+@* "Try another model": the same song again from one stage on, with that stage done by a different
+   model, as a new run beside this one. The library lists the two as runs of one song, and ticking
+   both compares them. Same popover contract as DownloadMenu: Escape and a click outside close it,
+   and it takes focus when it opens. *@
+<div class="rerun-menu">
+    <RadzenButton Text="Try another model" Icon="science" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                  Click="@ToggleAsync" Disabled="@_busy" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+                  title="Run this song again with a different model for one step, to compare" />
+    @if (_open)
+    {
+        <div class="rerun-scrim" @onclick="Close" aria-hidden="true"></div>
+        <div class="rerun-list" role="menu" tabindex="-1" @ref="_list" @onkeydown="OnKeyDown">
+            @if (_choices is null)
+            {
+                <span class="rerun-empty">Loading the models…</span>
+            }
+            else if (_choices.Count == 0)
+            {
+                <span class="rerun-empty">This server has no other model for any step.</span>
+            }
+            else
+            {
+                @foreach (var choice in _choices)
+                {
+                    <button type="button" class="rerun-item" role="menuitem" @onclick="@(() => RunAsync(choice))">
+                        <span class="pm-label">@ExecutorChoices.StageLabel(choice.Stage)</span>
+                        <span>@choice.Label</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Choice(string Stage, string Executor, string Label);
+
+    [Parameter, EditorRequired] public required string JobId { get; set; }
+
+    /// <summary>Per stage, the executor that ran it: not offered again.</summary>
+    [Parameter, EditorRequired] public required IReadOnlyDictionary<string, string> Ran { get; set; }
+
+    [Parameter] public EventCallback<JobStatusDto> OnStarted { get; set; }
+
+    private bool _open;
+    private bool _focus;
+    private bool _busy;
+    private List<Choice>? _choices;
+    private ElementReference _list;
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        _focus = _open;
+        if (!_open || _choices is not null)
+        {
+            return;
+        }
+        try
+        {
+            var stages = await Analysis.GetExecutorsAsync() ?? [];
+            _choices = [.. stages.SelectMany(stage => stage.Executors
+                .Where(option => option.Available && option.Kind != ExecutorKind.Browser
+                    && Ran.GetValueOrDefault(stage.Stage) != option.Name)
+                .Select(option => new Choice(stage.Stage, option.Name, ExecutorNames.Rated(option.Name))))];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            _choices = [];
+        }
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+        }
+    }
+
+    private async Task RunAsync(Choice choice)
+    {
+        _open = false;
+        _busy = true;
+        try
+        {
+            var (status, error) = await Analysis.RerunAsync(JobId, choice.Stage, choice.Executor);
+            if (status is null)
+            {
+                Notifications.Notify(NotificationSeverity.Error, "Not started", error ?? "The server would not run it again.");
+                return;
+            }
+            await OnStarted.InvokeAsync(status);
+        }
+        catch (HttpRequestException)
+        {
+            Notifications.Notify(NotificationSeverity.Error, "Not started", "The server could not be reached.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus)
+        {
+            _focus = false;
+            await _list.FocusAsync();
+        }
+    }
+}

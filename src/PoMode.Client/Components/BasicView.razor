@@ -1,5 +1,8 @@
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Client
+@inject DialogService Dialogs
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="basic-container">
     <RadzenCard class="basic-main-card">
@@ -25,7 +28,7 @@
                     @if (Visual.Evidence is not null || _stats is not null)
                     {
                         <button class="basic-why-toggle" type="button" @onclick="ToggleWhy"
-                                aria-expanded="@(_whyOpen ? "true" : "false")" aria-controls="mode-why">
+                                aria-expanded="@(_whyOpen ? "true" : "false")" aria-haspopup="dialog">
                             Why this mode?
                         </button>
                     }
@@ -65,6 +68,17 @@
                    title="Download melody as standard MIDI file">
                     Download MIDI
                 </a>
+                @* Keeps this song's readings and stems on the device (js/shell/offline.js), so it opens
+                   on a train. A toggle: pressed while kept. *@
+                <button class="basic-btn-secondary" type="button" @onclick="ToggleOfflineAsync" disabled="@_offlineBusy"
+                        aria-pressed="@(_offline ? "true" : "false")" data-offline="@(_offline ? "kept" : "no")"
+                        title="@(_offline ? "Kept on this device; press to free the space" : "Keep this song on this device so it opens without a connection")">
+                    @(_offlineBusy ? "Saving…" : _offline ? $"Kept offline{(_offlineMb is { } mb ? $" · {mb:0.#} MB" : "")}" : "Keep offline")
+                </button>
+                @if (OnRerun.HasDelegate && Status.Origin is null)
+                {
+                    <RerunMenu JobId="@Status.JobId" Ran="@RanBy" OnStarted="@(status => OnRerun.InvokeAsync(status))" />
+                }
             </div>
         </div>
 
@@ -84,44 +98,32 @@
             </div>
         }
 
-        @if (_whyOpen)
-        {
-            @* The canvas rings the cited notes for as long as this is open. *@
-            <ModeWhyPanel Evidence="Visual.Evidence" Stats="_stats" />
-        }
-
         <div class="basic-canvas-section">
             @* Played in on arrival. A hum take's colours are then inked on in a sweep: the melody is
                the singer's own, and the colours are the verdict on it. *@
             <AnalysisCanvas Model="Visual" SelectedWindowIndex="SelectedWindowIndex"
                             PlayheadSec="PlayheadSec" OnSeek="OnSeek" HighlightEvidence="_whyOpen"
                             Reveal="true" Ink="@(Status.Origin?.Kind == TakeOrigin.HumTake)"
+                            JobId="@Status.JobId" Describe="true"
                             OnReady="@(element => _canvasElement = element)" />
             <div class="basic-canvas-foot">
                 <WindowInspector Windows="Visual.Windows" SelectedWindowIndex="SelectedWindowIndex" />
                 @if (Visual.Sections.Count > 0)
                 {
                     <button class="basic-why-toggle" type="button" @onclick="ToggleSections"
-                            aria-expanded="@(_sectionsOpen ? "true" : "false")" aria-controls="section-map">
+                            aria-expanded="@(_sectionsOpen ? "true" : "false")" aria-haspopup="dialog">
                         How were the sections found?
                     </button>
                 }
             </div>
         </div>
 
-        @if (_sectionsOpen && Visual.Sections.Count > 0)
-        {
-            <div id="section-map">
-                <SectionMap JobId="@Status.JobId" PlayheadSource="_canvasElement" />
-            </div>
-        }
-
         @* The section is there from the start and the mixer mounts into it once the canvas it drives is
            ready: appearing a moment later, it used to push everything under it down the page. *@
         <div class="basic-player-section">
             @if (_canvasElement is { } canvasElement)
             {
-                <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec"
+                <StemMixer JobId="@Status.JobId" CanvasElement="canvasElement" SeekToSec="PlayheadSec" KeyLabel="@PrimaryHeadline"
                            HasTempoMap="@(Visual.Tempo.Count > 0)" HasSections="@(Visual.Sections.Count > 0)"
                            OnTempoChangedCallback="@(bpm => { _liveBpm = bpm; StateHasChanged(); })" />
             }
@@ -164,6 +166,82 @@
     [Parameter] public EventCallback<double> OnSeek { get; set; }
     [Parameter] public EventCallback OnAnalyzeNew { get; set; }
 
+    /// <summary>A new run of this song was started from "Try another model"; the page follows it.</summary>
+    [Parameter] public EventCallback<JobStatusDto> OnRerun { get; set; }
+
+    private IJSObjectReference? _offlineJs;
+    private bool _offline;
+    private bool _offlineBusy;
+    private double? _offlineMb;
+    private string? _offlineFor;
+
+    private IReadOnlyDictionary<string, string> RanBy
+        => Executors.Zip(Status.Plan).ToDictionary(pair => pair.Second.Stage, pair => pair.First.Executor);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_offlineFor == Status.JobId)
+        {
+            return;
+        }
+        _offlineFor = Status.JobId;
+        try
+        {
+            _offlineJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/offline.js");
+            var kept = await _offlineJs.InvokeAsync<bool>("isSaved", Status.JobId);
+            if (kept != _offline)
+            {
+                _offline = kept;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // No Cache Storage here: the button still offers, and saving says what went wrong.
+        }
+    }
+
+    private async Task ToggleOfflineAsync()
+    {
+        _offlineBusy = true;
+        try
+        {
+            _offlineJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/offline.js");
+            if (_offline)
+            {
+                await _offlineJs.InvokeVoidAsync("forget", Status.JobId);
+                (_offline, _offlineMb) = (false, null);
+            }
+            else
+            {
+                _offlineMb = await _offlineJs.InvokeAsync<double>("save", Status.JobId);
+                _offline = true;
+            }
+        }
+        catch (JSException)
+        {
+            _offline = false;
+        }
+        finally
+        {
+            _offlineBusy = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_offlineJs is not null)
+            {
+                await _offlineJs.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
     private ElementReference? _canvasElement;
 
     /// <summary>The song's statistics, fetched once here and shared by the Why panel and the stats
@@ -197,15 +275,55 @@
         }
     }
 
-    /// <summary>The "Why this mode?" panel; it also drives the canvas's evidence rings.</summary>
+    /// <summary>The "Why this mode?" drawer; while it is open the canvas rings the notes it cites.</summary>
     private bool _whyOpen;
 
-    private void ToggleWhy() => _whyOpen = !_whyOpen;
-
-    /// <summary>The "How were the sections found?" disclosure, which loads the similarity matrix.</summary>
+    /// <summary>The "How were the sections found?" drawer, which loads the similarity matrix.</summary>
     private bool _sectionsOpen;
 
-    private void ToggleSections() => _sectionsOpen = !_sectionsOpen;
+    /// <summary>The two explanations open beside the page rather than inside it: a drawer leaves the
+    /// canvas where it was, so the rung notes and the playing section stay in view while reading
+    /// why, and closing it puts nothing back in a different place.</summary>
+    private static SideDialogOptions Drawer => new()
+    {
+        Position = DialogPosition.Right,
+        ShowMask = false,
+        CloseDialogOnOverlayClick = true,
+        Width = "min(30rem, 100vw)",
+        CssClass = "pm-drawer",
+    };
+
+    private async Task ToggleWhy()
+    {
+        if (_whyOpen)
+        {
+            Dialogs.CloseSide();
+            return;
+        }
+        _whyOpen = true;
+        StateHasChanged();
+        await Dialogs.OpenSideAsync<ModeWhyPanel>("Why this mode?",
+            new Dictionary<string, object?> { [nameof(ModeWhyPanel.Evidence)] = Visual.Evidence, [nameof(ModeWhyPanel.Stats)] = _stats },
+            Drawer);
+        _whyOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task ToggleSections()
+    {
+        if (_sectionsOpen)
+        {
+            Dialogs.CloseSide();
+            return;
+        }
+        _sectionsOpen = true;
+        StateHasChanged();
+        await Dialogs.OpenSideAsync<SectionMap>("How the sections were found",
+            new Dictionary<string, object?> { [nameof(SectionMap.JobId)] = Status.JobId, [nameof(SectionMap.PlayheadSource)] = _canvasElement },
+            Drawer);
+        _sectionsOpen = false;
+        StateHasChanged();
+    }
 
     /// <summary>Tempo of the measure the playhead is in, pushed up by the mixer as it changes.</summary>
     private double _liveBpm;

@@ -1,5 +1,6 @@
 @using PoMode.Shared.Analysis
 @inject IJSRuntime JS
+@inject AnalysisClient Analysis
 @implements IAsyncDisposable
 
 <RadzenCard class="job-progress">
@@ -15,6 +16,12 @@
         }
     </div>
     <RadzenProgressBar Value="@((Status.Progress) * 100)" ShowValue="false" />
+    @* How long is left, from how long the same models took on earlier songs here. Absent rather than
+       guessed when a remaining model has never been timed on this server. *@
+    @if (IsRunning && EtaText is { } eta)
+    {
+        <span class="eta" data-eta-sec="@(_etaSec?.ToString("0", System.Globalization.CultureInfo.InvariantCulture))">@eta</span>
+    }
     @* Only while nothing has started: the first stage push means the wait is over. *@
     @if (QueueAhead is > 0 and var ahead && Status.Stage == JobStage.Uploaded)
     {
@@ -208,6 +215,45 @@
     }
 
     private bool IsRunning => !Status.Stage.IsTerminal();
+
+    private double? _etaSec;
+    private DateTimeOffset _etaAt;
+    private string? _etaFor;
+
+    /// <summary>Counted down by the second-tick repaint between fetches.</summary>
+    private string? EtaText
+    {
+        get
+        {
+            if (_etaSec is not { } eta)
+            {
+                return null;
+            }
+            var left = eta - (DateTimeOffset.UtcNow - _etaAt).TotalSeconds;
+            return left < 60 ? "Under a minute left" : $"About {Math.Ceiling(left / 60):0} min left";
+        }
+    }
+
+    /// <summary>Asked once per stage change (a stage starting or finishing moves the estimate), never
+    /// on the second-tick repaint.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{Status.JobId}|{Status.Stage}|{Status.CompletedStages?.Count}";
+        if (!IsRunning || key == _etaFor)
+        {
+            return;
+        }
+        _etaFor = key;
+        try
+        {
+            _etaSec = await Analysis.GetEtaAsync(Status.JobId);
+            _etaAt = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            _etaSec = null;
+        }
+    }
 
     protected override void OnInitialized()
         // Repaint once a second so the active stage's elapsed time counts up live.

@@ -323,6 +323,29 @@
     color: var(--pm-fg-muted);
 }
 
+/* The analysis card's wash: the colour of the mode of the section under the playhead, set by
+   canvas.js as a token reference. Registered as a colour so a change of section is a cross-fade the
+   browser animates; an unregistered property would snap. */
+@property --pm-section-tint {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: transparent;
+}
+
+:root {
+    transition: --pm-section-tint 900ms ease;
+}
+
+/* An inset shadow rather than a pseudo-element: the card's ::before and ::after are its specular
+   line and noise veil already. */
+.rz-card.basic-main-card {
+    box-shadow: var(--pm-shadow), inset 0 9rem 9rem -7rem color-mix(in srgb, var(--pm-section-tint) 22%, transparent);
+}
+
+:root[data-fx="off"] .rz-card.basic-main-card {
+    box-shadow: var(--pm-shadow);
+}
+
 /* The library-to-analysis morph (js/shell/transitions.js): the song's key moves from its row into
    the headline. Only the named element travels; the rest of the page cuts over almost at once. */
 .pm-morph-key {

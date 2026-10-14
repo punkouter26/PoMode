@@ -56,6 +56,11 @@
             <RadzenSwitch @bind-Value="_soundOn" Change="@(on => SetSoundAsync(on))" id="fx-sound-toggle" Name="fx-sound" />
             <span class="settings-hint">Chimes tuned to the song's key, and a tap on each downbeat.</span>
         </div>
+        <div class="settings-row">
+            <label class="settings-name" for="spatial">Spatial audio</label>
+            <RadzenSwitch @bind-Value="_spatialOn" Change="@(on => SetSpatialAsync(on))" Name="spatial" />
+            <span class="settings-hint">For headphones: the voice ahead of you and the band spread either side.</span>
+        </div>
     </section>
 
     <section class="settings-section" aria-labelledby="settings-models">
@@ -154,6 +159,7 @@
     private string _fxLevel = "full";
     private bool _fxFollowsSystem = true;
     private bool _soundOn = true;
+    private bool _spatialOn;
     private string _pushState = "unavailable";
     private bool _pushBusy;
     private bool _deleting;
@@ -232,6 +238,15 @@
         _fxLevel = await _prefsJs.InvokeAsync<string>("level");
         _soundOn = !await _prefsJs.InvokeAsync<bool>("muted");
         _fxFollowsSystem = !await _prefsJs.InvokeAsync<bool>("isExplicit");
+        _spatialOn = await _prefsJs.InvokeAsync<bool>("spatial");
+    }
+
+    private async Task SetSpatialAsync(bool on)
+    {
+        if (_prefsJs is not null)
+        {
+            _spatialOn = await _prefsJs.InvokeAsync<bool>("setSpatial", on);
+        }
     }
 
     private async Task SetFxLevelAsync(string value)

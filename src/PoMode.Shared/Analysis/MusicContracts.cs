@@ -60,3 +60,11 @@ public sealed record TempoMapDto(
 /// has written the stem, "mix" (the upload itself) before then.
 /// </summary>
 public sealed record WaveformPeaksDto(double DurationSec, string Source, IReadOnlyList<float> Peaks);
+
+/// <summary>
+/// The band's pitch-class energy over time, for drawing under the chord lane: <paramref name="Frames"/>
+/// frames of 12 bytes each (0-255), base64 in <paramref name="Energy"/>, row 0 being the song's own
+/// tonic so the home note sits at the bottom of the strip. What the chord reading was made from,
+/// shown as it was heard.
+/// </summary>
+public sealed record ChromaDto(double FramesPerSecond, int Frames, int TonicPitchClass, string Energy);

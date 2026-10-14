@@ -34,7 +34,7 @@
            select bar, because picking Vocals un-picks Full mix); and the synth layers, which combine
            freely and mute the stems while either is on. The metronome is its own toggle. Seven
            same-weight buttons used to say none of that. *@
-        <div class="mixer-groups">
+        <div class="mixer-groups" @ref="_groups">
             <RadzenButton Click="TogglePlayAsync" Disabled="@Loading" Icon="@(_status == "playing" ? "pause" : "play_arrow")"
                           Text="@(_status == "playing" ? "Pause" : "Play")" class="mixer-play"
                           title="Space = play/pause, , = restart" />
@@ -107,6 +107,18 @@
                                    Mode="ProgressBarMode.Indeterminate" aria-label="Loading stems" />
             }
         </div>
+        @* On a phone, once the transport above has scrolled away, this bar docks at the foot of the
+           screen with the one control a reader needs while further down the page (dock.js). It is
+           display:none whenever the real transport is in view, so there is never a second Play. *@
+        <div class="mixer-dock" @ref="_dock" data-docked="0">
+            <RadzenButton Click="TogglePlayAsync" Disabled="@Loading" Icon="@(_status == "playing" ? "pause" : "play_arrow")"
+                          Text="@(_status == "playing" ? "Pause" : "Play")" Size="ButtonSize.Small" class="mixer-dock-play" />
+            @if (KeyLabel is { Length: > 0 })
+            {
+                <span class="mixer-dock-key">@KeyLabel</span>
+            }
+            <span class="mixer-dock-state">@(_status == "playing" ? "Playing" : "Paused")</span>
+        </div>
     }
 </div>
 
@@ -125,6 +137,9 @@
     /// to fetch it for every song and log a 404 for each one analysed without a beat tracker.</summary>
     [Parameter] public bool HasTempoMap { get; set; }
 
+    /// <summary>The song's key, named on the docked phone player.</summary>
+    [Parameter] public string? KeyLabel { get; set; }
+
     /// <summary>The canvas whose playhead this mixer drives.</summary>
     [Parameter, EditorRequired] public ElementReference CanvasElement { get; set; }
 
@@ -139,6 +154,9 @@
     [Parameter] public EventCallback<double> OnTempoChangedCallback { get; set; }
 
     private ElementReference _root;
+    private ElementReference _groups;
+    private ElementReference _dock;
+    private IJSObjectReference? _dockJs;
     private IJSObjectReference? _module;
     private DotNetObjectReference<StemMixer>? _selfRef;
     private string _status = "idle";
@@ -261,6 +279,8 @@
                 _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/player/mixer.js");
                 _selfRef = DotNetObjectReference.Create(this);
                 await _module.InvokeVoidAsync("init", _root, CanvasElement, _selfRef);
+                _dockJs = await Js.InvokeAsync<IJSObjectReference>("import", "./js/player/dock.js");
+                await _dockJs.InvokeVoidAsync("watch", _groups, _dock);
             }
             catch (Exception ex)
             {
@@ -535,6 +555,11 @@
             if (_sfx is not null)
             {
                 await _sfx.DisposeAsync();
+            }
+            if (_dockJs is not null)
+            {
+                await _dockJs.InvokeVoidAsync("unwatch", _groups);
+                await _dockJs.DisposeAsync();
             }
         }
         catch (JSDisconnectedException)

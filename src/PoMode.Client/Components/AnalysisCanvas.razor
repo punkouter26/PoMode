@@ -7,6 +7,7 @@
         <canvas @ref="_canvas" class="analysis-canvas"
                 role="img"
                 aria-label="Piano roll of detected notes above a timeline of detected chords"
+                aria-describedby="@(Describe && Model is not null ? _tableId : null)"
                 title="Scroll to zoom · drag to pan · click to seek"></canvas>
         @* What is under the playhead, as the server labelled it: chord, sung note, section. canvas.js
            writes the text as the playhead moves, so following it costs no render here. Frosted
@@ -18,6 +19,26 @@
             <span class="now-section" data-part="section" hidden></span>
         </div>
     </div>
+    @if (Describe && Model is { Windows.Count: > 0 } described)
+    {
+        @* The canvas as words, for a screen reader: each window's time, chord, mode and the notes sung
+           in it, all as the server labelled them. Nothing a sighted reader sees is missing from it. *@
+        <table class="pm-sr-only" id="@_tableId">
+            <caption>Notes and chords, window by window</caption>
+            <thead><tr><th scope="col">Time</th><th scope="col">Chord</th><th scope="col">Mode</th><th scope="col">Notes sung</th></tr></thead>
+            <tbody>
+                @foreach (var window in described.Windows)
+                {
+                    <tr>
+                        <td>@Clock(window.StartSec) to @Clock(window.EndSec)</td>
+                        <td>@window.ChordSymbol</td>
+                        <td>@(window.ModeTag is { } mode ? ScaleModes.DisplayName(mode) : "unclear")</td>
+                        <td>@SungIn(described, window)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
     <p class="canvas-legend">
         <span class="swatch chord-tone"></span>chord tone
         <span class="swatch characteristic"></span>modal note
@@ -48,11 +69,15 @@
     private sealed record CanvasSection(
         double StartSec, double EndSec, string Letter, string Label, string ColourToken);
 
+    /// <summary>One window's tension (the server's share of sung time off the chord), or null.</summary>
+    private sealed record CanvasTension(double StartSec, double EndSec, double? Value);
+
     private sealed record CanvasPayload(
         IReadOnlyList<CanvasNote> Notes, IReadOnlyList<CanvasChord> Chords,
         double DurationSec, int MinPitch, int MaxPitch,
         IReadOnlyList<CanvasTempo> Tempo,
-        IReadOnlyList<CanvasSection> Sections);
+        IReadOnlyList<CanvasSection> Sections,
+        IReadOnlyList<CanvasTension> Tension);
 
     [Parameter, EditorRequired] public VisualizationPayload? Model { get; set; }
 
@@ -74,6 +99,27 @@
     /// <summary>With <see cref="Reveal"/>, paint the note colours on in a sweep after the notes land —
     /// for a hum take, where the melody is the user's and the colours are the verdict on it.</summary>
     [Parameter] public bool Ink { get; set; }
+
+    /// <summary>The analysed job, when there is one: its band's chroma is drawn under the chords.</summary>
+    [Parameter] public string? JobId { get; set; }
+
+    /// <summary>Add the window-by-window table a screen reader reads in place of the picture. The
+    /// analysis page wants it; the Mode Lab, whose canvas is a preview of a generated loop, does not.</summary>
+    [Parameter] public bool Describe { get; set; }
+
+    private readonly string _tableId = $"canvas-table-{Guid.NewGuid():N}";
+    private string? _chromaFor;
+
+    private static string Clock(double seconds) => $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
+
+    private static string SungIn(VisualizationPayload model, VisualWindow window)
+    {
+        var labels = model.Notes
+            .Where(note => note.StartSec < window.EndSec && note.StartSec + note.DurationSec > window.StartSec)
+            .Select(note => note.PitchLabel)
+            .ToList();
+        return labels.Count == 0 ? "none" : string.Join(", ", labels);
+    }
 
     /// <summary>
     /// Raised once the canvas element exists and its module is initialised, handing the element to the
@@ -130,6 +176,11 @@
                 await _module.InvokeVoidAsync("reveal", _canvas, Ink);
             }
         }
+        if (JobId is { Length: > 0 } jobId && Model is not null && _chromaFor != jobId)
+        {
+            _chromaFor = jobId;
+            await _module.InvokeVoidAsync("loadChroma", _canvas, jobId);
+        }
         if (_sentSelection != SelectedWindowIndex)
         {
             _sentSelection = SelectedWindowIndex;
@@ -157,7 +208,8 @@
             model.DurationSec, model.MinPitch, model.MaxPitch,
             [.. model.Tempo.Select(point => new CanvasTempo(point.StartSec, point.Bpm, point.Changed))],
             [.. model.Sections.Select(section => new CanvasSection(
-                section.StartSec, section.EndSec, section.Letter, section.Label, section.ColourToken))]);
+                section.StartSec, section.EndSec, section.Letter, section.Label, section.ColourToken))],
+            [.. model.Windows.Select(window => new CanvasTension(window.StartSec, window.EndSec, window.Tension))]);
 
     public async ValueTask DisposeAsync()
     {

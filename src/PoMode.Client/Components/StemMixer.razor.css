@@ -1,3 +1,36 @@
+.mixer-dock {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .mixer-dock[data-docked="1"] {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: var(--pm-space-2) var(--pm-space-3);
+        padding: var(--pm-space-2) var(--pm-space-3) calc(var(--pm-space-2) + env(safe-area-inset-bottom));
+        background: var(--pm-surface);
+        border-top: 1px solid var(--pm-border);
+        box-shadow: 0 -6px 18px rgb(0 0 0 / 0.12);
+    }
+
+    .mixer-dock-key {
+        font-weight: 600;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .mixer-dock-state {
+        margin-left: auto;
+        color: var(--pm-fg-muted);
+        font-size: var(--pm-text-sm);
+    }
+}
+
 .mixer {
     display: flex;
     flex-direction: column;

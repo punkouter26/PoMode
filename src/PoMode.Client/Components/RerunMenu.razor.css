@@ -1,0 +1,67 @@
+.rerun-menu {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.rerun-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+}
+
+.rerun-list {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    z-index: 11;
+    width: min(20rem, calc(100vw - 2rem));
+    max-height: 60vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    background: var(--pm-surface);
+    border: 1px solid var(--pm-border);
+    border-radius: 0.5rem;
+    box-shadow: var(--pm-shadow);
+}
+
+.rerun-list:focus {
+    outline: none;
+}
+
+.rerun-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.6rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--pm-fg);
+    font: inherit;
+    font-size: var(--pm-text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.rerun-item:hover,
+.rerun-item:focus-visible {
+    background: var(--pm-accent-soft);
+    outline: none;
+}
+
+.rerun-empty {
+    padding: 0.5rem 0.6rem;
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-sm);
+}
+
+@media (pointer: coarse) {
+    .rerun-item {
+        min-height: 2.75rem;
+    }
+}

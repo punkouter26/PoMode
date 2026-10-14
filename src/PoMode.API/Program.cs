@@ -61,6 +61,8 @@ builder.Services.AddSingleton<JobBlobStorage>();
 builder.Services.AddSingleton<JobStore>();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddSingleton<AnalysisIntake>();
+builder.Services.AddSingleton<JobRerun>();
+builder.Services.AddSingleton<EtaEstimator>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, ClientDelegatedStemSeparator>();

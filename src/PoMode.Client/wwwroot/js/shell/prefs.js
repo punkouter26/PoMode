@@ -19,6 +19,7 @@
 
 const LEVEL_KEY = 'pm-fx';
 const MUTE_KEY = 'pm-fx-muted';
+const SPATIAL_KEY = 'pm-spatial';
 const LEVELS = ['full', 'subtle', 'off'];
 
 /// Callbacks registered by the effect modules. A Set so a module that subscribes twice (a component
@@ -81,6 +82,25 @@ export function muted() {
     } catch {
         return false;
     }
+}
+
+/// Spatial (binaural) placement of the stems for headphones. Off by default: on speakers HRTF
+/// filtering only colours the sound.
+export function spatial() {
+    try {
+        return localStorage.getItem(SPATIAL_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+export function setSpatial(value) {
+    try {
+        localStorage.setItem(SPATIAL_KEY, value ? '1' : '0');
+    } catch {
+        // Not persisted; the next load of the mixer reads the default.
+    }
+    return spatial();
 }
 
 /// Decorative motion of any kind. The floor below which an effect should render one static frame

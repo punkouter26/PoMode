@@ -163,7 +163,8 @@
     <BasicView Status="_status" Result="_result" Visual="_visual"
                SelectedWindowIndex="_selectedWindow" PlayheadSec="_playheadSec"
                OnSeek="OnSeek"
-               OnAnalyzeNew="@ResetForNewUpload" />
+               OnAnalyzeNew="@ResetForNewUpload"
+               OnRerun="@TrackJobAsync" />
 }
 
 @code {

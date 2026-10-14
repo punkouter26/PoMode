@@ -209,12 +209,13 @@ public static class ModalMelodyEndpoints
         .WithName("GetVocalRange")
         .WithSummary("The caller's comfortable sung range across their finished hum takes, and the key that fits a mode to it.");
 
-        // 404 when there is nothing to say (too few takes, or not a song): the page shows nothing then.
-        group.MapGet("/voice/song/{jobId}", async Task<Results<Ok<SongVoiceFitDto>, NotFound>> (
+        // 204 when there is nothing honest to say (too few takes, a take, a beat or the demo): an
+        // ordinary answer, not a missing resource, so the page shows nothing and logs no error.
+        group.MapGet("/voice/song/{jobId}", async Task<Results<Ok<SongVoiceFitDto>, NoContent, NotFound>> (
             string jobId, HttpContext context, HumTakeHistory history, CancellationToken ct) =>
-            JobId.IsValid(jobId) && await history.SongFitAsync(PoUser.IdOf(context.User), jobId, ct) is { } fit
-                ? TypedResults.Ok(fit)
-                : TypedResults.NotFound())
+            !JobId.IsValid(jobId) ? TypedResults.NotFound()
+            : await history.SongFitAsync(PoUser.IdOf(context.User), jobId, ct) is { } fit ? TypedResults.Ok(fit)
+            : TypedResults.NoContent())
         .RequireAuthorization()
         .WithName("GetSongVoiceFit")
         .WithSummary("How far an analysed song's melody is from the caller's own sung range, as a transposition.");

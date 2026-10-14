@@ -113,7 +113,10 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
     /// of a pipeline run. The source's lock is held while its folder is read, so a concurrent write
     /// to the source can never leave the copy with half a file.
     /// </summary>
-    public async Task<JobState> CopyAsync(JobState source, string ownerId, CancellationToken ct)
+    /// <param name="include">Which artifact files to carry, by name; all of them when null. A re-run
+    /// carries only what the stages it keeps produced, so nothing later (and no cache derived from
+    /// it) reaches the copy's folder or its blob mirror.</param>
+    public async Task<JobState> CopyAsync(JobState source, string ownerId, CancellationToken ct, Func<string, bool>? include = null)
     {
         var copy = source.CopyAs(Guid.NewGuid().ToString("N"), ownerId, time.GetUtcNow());
         var targetDir = JobDir(copy.JobId);
@@ -127,7 +130,7 @@ public sealed class JobStore(IConfiguration configuration, TimeProvider time, Jo
                 var name = Path.GetFileName(file);
                 // job.json is rewritten below with the copy's own id and owner; a .tmp is a write
                 // that never finished and is not part of the job.
-                if (name != "job.json" && Path.GetExtension(name) != ".tmp")
+                if (name != "job.json" && Path.GetExtension(name) != ".tmp" && include?.Invoke(name) != false)
                 {
                     File.Copy(file, Path.Combine(targetDir, name));
                 }

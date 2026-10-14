@@ -60,7 +60,10 @@ public static class VisualizationBuilder
         var visualWindows = new List<VisualWindow>(result.Windows.Count);
         foreach (var window in result.Windows)
         {
-            visualWindows.Add(ToVisualWindow(window, result.TonicPitchClass));
+            visualWindows.Add(ToVisualWindow(window, result.TonicPitchClass) with
+            {
+                Tension = TensionIn(visualNotes, window.StartSec, window.EndSec),
+            });
         }
 
         var (minPitch, maxPitch) = PitchRange(notes);
@@ -78,6 +81,32 @@ public static class VisualizationBuilder
         return new VisualizationPayload(
             SchemaVersion, visualNotes, visualChords, visualWindows, duration, minPitch, maxPitch, tempo,
             evidence, SongSectionBuilder.Build(chords, result, tempoMap, beats));
+    }
+
+    /// <summary>
+    /// How much of the singing inside a window sits off the chord under it: the sung time on notes
+    /// whose role is anything but a chord tone, over all the sung time there (each note clipped to the
+    /// window). Null where nothing is sung, which is no tension rather than zero. The roles are the
+    /// ones the canvas colours by, so the ribbon drawn from this agrees with the notes under it.
+    /// </summary>
+    public static double? TensionIn(IReadOnlyList<VisualNote> notes, double startSec, double endSec)
+    {
+        double sung = 0;
+        double off = 0;
+        foreach (var note in notes)
+        {
+            var overlap = Math.Min(note.StartSec + note.DurationSec, endSec) - Math.Max(note.StartSec, startSec);
+            if (overlap <= 0)
+            {
+                continue;
+            }
+            sung += overlap;
+            if (note.Role != NoteRole.ChordTone)
+            {
+                off += overlap;
+            }
+        }
+        return sung <= 0 ? null : Math.Round(off / sung, 3);
     }
 
     /// <summary>

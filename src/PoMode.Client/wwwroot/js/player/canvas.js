@@ -11,6 +11,7 @@
 // into one requestAnimationFrame callback, so panning a five-minute track stays smooth.
 
 import * as prefs from '../shell/prefs.js';
+import { load as loadChromaLayer } from './chroma-layer.js';
 
 const states = new Map();
 
@@ -242,6 +243,10 @@ function draw(state) {
             drawn += drawNotes(state, ctx, width, noteLaneHeight, reveal);
         }
         drawn += drawChords(state, ctx, width, chordLaneTop, chordLaneHeight, reveal);
+        if (!reveal) {
+            drawChroma(state, ctx, width, chordLaneTop, chordLaneHeight);
+            drawTension(state, ctx, width, noteLaneHeight);
+        }
         if (reveal && reveal.ink) {
             drawInkFront(state, ctx, reveal.inkX, noteLaneHeight + LANE_GAP_PX + chordLaneHeight);
         }
@@ -583,7 +588,12 @@ function updateParticles(state, dt, laneHeight) {
             if (note.startSec > state.playhead) {
                 break;
             }
-            for (let i = 0; i < 5 && state.particles.length < 240; i++) {
+            // A longer note throws a bigger burst, and a note the mode's verdict rests on (the
+            // evidence the "Why this mode?" readout cites) throws the most: the burst is the note's
+            // weight in the analysis, not a flourish.
+            const count = note.evidence ? 9 : 3 + Math.min(4, Math.round(note.durationSec * 4));
+            const size = 1.6 + Math.min(2, note.durationSec * 2);
+            for (let i = 0; i < count && state.particles.length < 240; i++) {
                 state.particles.push({
                     t: note.startSec,
                     midi: note.midiPitch,
@@ -592,6 +602,7 @@ function updateParticles(state, dt, laneHeight) {
                     age: 0,
                     life: 0.55,
                     role: note.role,
+                    size,
                 });
             }
         }
@@ -651,10 +662,105 @@ function drawParticles(state, ctx, width, laneHeight) {
         ctx.globalAlpha = (1 - progress) * 0.7;
         ctx.fillStyle = colourForRole(state, particle.role);
         ctx.beginPath();
-        ctx.arc(x, y, 2.2 * (1 - (progress * 0.5)), 0, Math.PI * 2);
+        ctx.arc(x, y, (particle.size ?? 2.2) * (1 - (progress * 0.5)), 0, Math.PI * 2);
         ctx.fill();
     }
     ctx.globalAlpha = 1;
+}
+
+/// The band's chroma under the chord labels: what the chord reading was made from, twelve pitch
+/// classes with the song's home note at the bottom, sliced from the one image chroma-layer.js drew
+/// for the whole song. Below the labels so a chord's name is never painted over.
+function drawChroma(state, ctx, width, laneTop, laneHeight) {
+    const layer = state.chroma;
+    if (!layer || laneHeight < 40) {
+        return;
+    }
+    const from = clamp(state.viewStart, 0, layer.durationSec);
+    const to = clamp(state.viewEnd, 0, layer.durationSec);
+    if (to <= from) {
+        return;
+    }
+    const image = layer.image;
+    const sx = from / layer.durationSec * image.width;
+    const sw = Math.max((to - from) / layer.durationSec * image.width, 1);
+    const dx = timeToX(state, from, width);
+    const dw = timeToX(state, to, width) - dx;
+    const top = laneTop + Math.min(38, laneHeight * 0.5);
+    const height = laneTop + laneHeight - 3 - top;
+    if (height < 8 || dw < 1) {
+        return;
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(image, sx, 0, sw, image.height, dx, top, dw, height);
+    ctx.restore();
+}
+
+/// The tension ribbon along the foot of the note lane: how much of the singing in each window sits
+/// off the chord under it (the server's figure, from the same roles the notes are coloured by).
+/// Higher is more tension. It glows where the playhead is, so the strain of the moment being heard
+/// is the brightest part of the line.
+function drawTension(state, ctx, width, laneHeight) {
+    const windows = state.model?.tension;
+    if (!windows || windows.length === 0) {
+        return;
+    }
+    const band = 16;
+    const base = laneHeight - 2;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = state.colours.roles.Outside;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    let open = false;
+    for (const window of windows) {
+        if (window.endSec < state.viewStart || window.startSec > state.viewEnd || window.value === null) {
+            open = false;
+            continue;
+        }
+        const y = base - (window.value * band);
+        const x0 = timeToX(state, window.startSec, width);
+        const x1 = timeToX(state, window.endSec, width);
+        if (open) {
+            ctx.lineTo(x0, y);
+        } else {
+            ctx.moveTo(x0, y);
+            open = true;
+        }
+        ctx.lineTo(x1, y);
+    }
+    ctx.stroke();
+    const current = windows.find(w => state.playhead >= w.startSec && state.playhead < w.endSec && w.value !== null);
+    if (current && !state.reducedMotion) {
+        const y = base - (current.value * band);
+        ctx.globalAlpha = 0.9;
+        ctx.shadowColor = state.colours.roles.Outside;
+        ctx.shadowBlur = 10;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(timeToX(state, current.startSec, width), y);
+        ctx.lineTo(timeToX(state, current.endSec, width), y);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+/// Fetches the band's chroma for this job and keeps the rendered image; drawn from the next frame.
+export async function loadChroma(canvas, jobId) {
+    const state = states.get(canvas);
+    if (!state || !jobId) {
+        return;
+    }
+    state.chromaJob = jobId;
+    const layer = await loadChromaLayer(jobId, { lane: state.colours.lane, accent: state.colours.chordSelected });
+    if (states.get(canvas) === state && state.chromaJob === jobId) {
+        state.chroma = layer;
+        canvas.dataset.chroma = layer ? 'drawn' : 'none';
+        invalidate(state);
+    }
 }
 
 function drawChords(state, ctx, width, laneTop, laneHeight, reveal) {
@@ -783,9 +889,30 @@ function updateChip(state, revealing) {
     set('chord', chord?.symbol ?? '');
     set('note', note?.label ?? '');
     set('section', section?.label ?? '');
+    tintForSection(state, section);
     chip.dataset.nowChord = chord?.symbol ?? '';
     chip.dataset.nowNote = note?.pitchLabel ?? '';
     chip.dataset.empty = chord || note || section ? '0' : '1';
+}
+
+/// The analysis card takes a faint wash of the colour of the mode of the section being heard (the
+/// same token the ribbon is drawn in), easing from one section's colour into the next. The wash is a
+/// CSS custom property on <html>, registered as a colour in app.css so the change is animated by the
+/// browser; nothing here runs per frame.
+function tintForSection(state, section) {
+    const token = section && SECTION_TOKEN.test(section.colourToken) ? section.colourToken : null;
+    if (token === state.sectionTint) {
+        return;
+    }
+    state.sectionTint = token;
+    const root = document.documentElement;
+    if (token && prefs.allowsMotion()) {
+        root.style.setProperty('--pm-section-tint', `var(${token})`);
+        root.dataset.sectionTint = token.replace('--pm-', '');
+    } else {
+        root.style.removeProperty('--pm-section-tint');
+        delete root.dataset.sectionTint;
+    }
 }
 
 /// End-of-song easter egg: the visible note capsules become falling, bouncing bodies for a few
@@ -965,6 +1092,9 @@ export function init(canvas, dotNetRef, chip) {
         colours: readColours(canvas),
         sectionColours: [],
         sectionLaneHeight: 0,
+        chroma: null,
+        chromaJob: null,
+        sectionTint: null,
         highlightEvidence: false,
         frame: null,
         drag: null,
@@ -994,6 +1124,10 @@ export function init(canvas, dotNetRef, chip) {
     state.onSchemeChange = () => {
         state.colours = readColours(canvas);
         resolveSectionColours(state);
+        // The chroma image is coloured from the theme, so a flip redraws it (the reading is cached).
+        if (state.chromaJob) {
+            loadChroma(canvas, state.chromaJob);
+        }
         invalidate(state);
     };
     state.scheme.addEventListener('change', state.onSchemeChange);
@@ -1231,5 +1365,6 @@ export function dispose(canvas) {
     state.resizeObserver.disconnect();
     state.scheme.removeEventListener('change', state.onSchemeChange);
     state.themeObserver.disconnect();
+    tintForSection(state, null);
     states.delete(canvas);
 }

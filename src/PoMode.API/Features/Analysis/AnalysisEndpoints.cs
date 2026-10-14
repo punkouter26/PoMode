@@ -98,6 +98,34 @@ public static class AnalysisEndpoints
             return TypedResults.Ok();
         }).RequireAuthorization();
 
+        // A finished analysis again from one stage on, with that stage pinned to another executor: a
+        // new job beside the original (JobRerun), so the two can be compared in the library.
+        group.MapPost("/{jobId}/rerun", async Task<Results<Ok<JobStatusDto>, NotFound, BadRequest<string>>> (
+            string jobId, string stage, string executor, HttpContext context, JobRerun rerun, CancellationToken ct) =>
+        {
+            if (PoUser.IdOf(context.User) is not { } owner)
+            {
+                return TypedResults.NotFound();
+            }
+            if (!JobRerun.Stages.Contains(stage))
+            {
+                return TypedResults.BadRequest($"Stage must be one of {string.Join(", ", JobRerun.Stages)}.");
+            }
+            return await rerun.StartAsync(jobId, owner, stage, executor, ct) is { } copy
+                ? TypedResults.Ok(copy.ToDto())
+                : TypedResults.NotFound();
+        })
+        .RequireAuthorization()
+        .RequireRateLimiting(PoRateLimits.UploadPolicy)
+        .AddEndpointFilter<QueueCapacityFilter>();
+
+        // How long a running job has left (EtaEstimator). Asked once per stage change, never polled.
+        group.MapGet("/{jobId}/eta", async Task<Results<Ok<EtaDto>, NotFound>> (
+            string jobId, JobStore store, EtaEstimator eta, CancellationToken ct) =>
+            await store.LoadAsync(jobId, ct) is { } state
+                ? TypedResults.Ok(await eta.EstimateAsync(state, ct))
+                : TypedResults.NotFound());
+
         MapArtifact(group, "notes", "notes.json");
         MapArtifact(group, "notes-backing", "notes-backing.json");
         MapArtifact(group, "chords", "chords.json");
@@ -298,6 +326,44 @@ public static class AnalysisEndpoints
             return path is not null && AudioDecoder.TryReadPeaks(path, PeakColumns) is var (peaks, duration)
                 ? TypedResults.Ok(new WaveformPeaksDto(duration, source, peaks))
                 : TypedResults.NotFound();
+        });
+
+        // The band's chroma, the same extractor the DSP chord reader uses, over the instrumental stem
+        // (the mix when there is none), tuned like the notes were. Seconds to compute, so it is
+        // cached as chroma.json the first time; a finished job's audio never changes after that.
+        group.MapGet("/{jobId}/chroma", async Task<Results<Ok<ChromaDto>, NotFound>> (
+            string jobId, JobStore store, CancellationToken ct) =>
+        {
+            if (await store.ReadArtifactAsync<ChromaDto>(jobId, "chroma.json", ct) is { } cached)
+            {
+                return TypedResults.Ok(cached);
+            }
+            var state = await store.LoadAsync(jobId, ct);
+            if (state is not { Stage: JobStage.Complete }
+                || await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct) is not { } result)
+            {
+                return TypedResults.NotFound();
+            }
+            var path = await store.GetArtifactPathAsync(jobId, "instrumental.wav", ct)
+                ?? await store.GetArtifactPathAsync(jobId, Path.GetFileName(store.InputPath(state)), ct);
+            if (path is null)
+            {
+                return TypedResults.NotFound();
+            }
+            var gram = await Task.Run(() => ChromaExtractor.Compute(AudioDecoder.Decode(path), result.TuningOffsetCents), ct);
+            var energy = new byte[gram.Frames.Length * 12];
+            var loudest = gram.Frames.Length == 0 ? 0 : gram.Frames.Max(frame => frame.Max());
+            for (var f = 0; f < gram.Frames.Length; f++)
+            {
+                for (var row = 0; row < 12; row++)
+                {
+                    var value = gram.Frames[f][(result.TonicPitchClass + row) % 12];
+                    energy[(f * 12) + row] = loudest <= 0 ? (byte)0 : (byte)Math.Clamp(Math.Round(255 * value / loudest), 0, 255);
+                }
+            }
+            var chroma = new ChromaDto(gram.FramesPerSecond, gram.Frames.Length, result.TonicPitchClass, Convert.ToBase64String(energy));
+            await store.WriteArtifactAsync(jobId, "chroma.json", chroma, ct);
+            return TypedResults.Ok(chroma);
         });
 
         return app;

@@ -13,6 +13,7 @@ import {
 import { VOICES, bus } from './voices.js';
 import { peaks } from './buffers.js';
 import { tap } from '../shell/sfx.js';
+import * as prefs from '../shell/prefs.js';
 
 const states = new Map();
 
@@ -305,6 +306,39 @@ function reportTempo(state) {
     state.reportedBpm = bpm;
     state.root.dataset.mixerBpm = bpm.toFixed(1);
     state.dotNet?.invokeMethodAsync('OnTempoChanged', bpm);
+}
+
+/// Where a stem sits around a listener in headphones, by what it is: the voice straight ahead, the
+/// band spread wide either side of it. Off (the default) every stem goes straight to the master bus.
+/// A stereo stem is split so each side keeps its own place rather than collapsing to one point.
+const PLACES = {
+    vocals: [[0, 0, -1]],
+    instrumental: [[-1.4, 0, -1], [1.4, 0, -1]],
+    mix: [[-1, 0, -1], [1, 0, -1]],
+};
+
+function placeStem(state, stem) {
+    const places = PLACES[stem];
+    if (!prefs.spatial() || !places) {
+        return state.master;
+    }
+    const ctx = state.context;
+    const panner = ([x, y, z]) => {
+        const node = ctx.createPanner();
+        node.panningModel = 'HRTF';
+        node.distanceModel = 'inverse';
+        node.positionX.value = x;
+        node.positionY.value = y;
+        node.positionZ.value = z;
+        node.connect(state.master);
+        return node;
+    };
+    if (places.length === 1) {
+        return panner(places[0]);
+    }
+    const splitter = ctx.createChannelSplitter(2);
+    places.forEach((place, channel) => splitter.connect(panner(place), channel));
+    return splitter;
 }
 
 /// The shared output bus: everything routes through one master gain with an analyser tap, so the
@@ -660,7 +694,7 @@ export async function load(root, urls) {
         state.buffers[stem] = buffer;
         const gain = state.context.createGain();
         gain.gain.value = 0;
-        gain.connect(state.master);
+        gain.connect(placeStem(state, stem));
         state.gains[stem] = gain;
         if (stem in METERED_STEMS) {
             // A dead-end tap: an analyser measures what reaches it without being connected onward.
