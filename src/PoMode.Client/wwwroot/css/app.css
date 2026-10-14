@@ -47,8 +47,12 @@
        at, because below it the note letters and badge captions stop being readable on a phone and
        start being decoration. Anything that wants to be smaller shortens its label instead. */
     --pm-text-xs: 0.75rem;
-    --pm-text-sm: 0.8125rem;
-    --pm-text-md: 0.875rem;
+    /* The rest of the scale breathes with the viewport and never drops under the floor: a phone gets
+       the low end, a wide desktop the high end, and nothing between them needs its own rule. */
+    --pm-text-sm: clamp(0.75rem, 0.72rem + 0.14vw, 0.84rem);
+    --pm-text-md: clamp(0.8125rem, 0.78rem + 0.18vw, 0.92rem);
+    --pm-text-lg: clamp(1rem, 0.94rem + 0.3vw, 1.2rem);
+    --pm-text-xl: clamp(1.15rem, 1.02rem + 0.6vw, 1.5rem);
 
     /* A second surface level, for a control sitting on top of --pm-surface. Previously every use
        site wrote `var(--pm-surface-alt, rgba(255,255,255,0.05))` against a token that was never
@@ -305,6 +309,18 @@
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
+}
+
+/* The small-caps caption over a section or a figure ("THE SINGER", "TEMPO", a strip's name). One
+   rule for it: a dozen components each wrote their own, with three different letter spacings. */
+.pm-label {
+    margin: 0;
+    font-size: var(--pm-text-xs);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pm-fg-muted);
 }
 
 /* Typography: a gently fluid base size, calm heading rhythm, and lining tabular figures so

@@ -139,8 +139,7 @@
 }
 
 /* The container only holds focus so Escape has somewhere to land; the ring belongs on the items. */
-.overflow-menu:focus,
-.modal-card:focus {
+.overflow-menu:focus {
     outline: none;
 }
 
@@ -172,11 +171,6 @@
     background: transparent;
 }
 
-/* A hint under a single item rather than inside a group, so it takes the item's inset. */
-.overflow-item-hint {
-    padding: 0 0.7rem 0.45rem;
-}
-
 /* Effects control. A three-stop segmented scale rather than a checkbox, because the middle
    setting is the one most people actually want and a two-state toggle cannot offer it. */
 .overflow-group {
@@ -186,48 +180,6 @@
     padding: 0.45rem 0.7rem 0.55rem;
     border-top: 1px solid var(--pm-border);
     margin-top: 0.25rem;
-}
-
-.overflow-label {
-    font-size: var(--pm-text-xs);
-    font-weight: 600;
-    color: var(--pm-fg-muted);
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
-
-.fx-levels {
-    display: flex;
-    gap: 2px;
-    padding: 2px;
-    background: var(--pm-bg);
-    border: 1px solid var(--pm-border);
-    border-radius: 0.45rem;
-}
-
-.fx-level {
-    flex: 1;
-    padding: 0.25rem 0.4rem;
-    background: transparent;
-    border: 0;
-    border-radius: 0.32rem;
-    color: var(--pm-fg-muted);
-    font: inherit;
-    font-size: var(--pm-text-sm);
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease;
-}
-
-.fx-level:hover {
-    color: var(--pm-fg);
-}
-
-.fx-level.active {
-    background: var(--pm-key-soft);
-    border: 1px solid var(--pm-key-edge);
-    color: var(--pm-fg);
-    /* Compensates for the border this state adds, so the row does not jog as the choice moves. */
-    padding: calc(0.25rem - 1px) calc(0.4rem - 1px);
 }
 
 .overflow-hint {
@@ -244,59 +196,6 @@
 .overflow-who {
     color: var(--pm-fg);
     overflow-wrap: anywhere;
-}
-
-.modal-backdrop {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgb(0 0 0 / 0.45);
-    z-index: 100;
-}
-
-.modal-card {
-    background: var(--pm-bg);
-    border: 1px solid var(--pm-border);
-    border-radius: 0.75rem;
-    box-shadow: var(--pm-shadow);
-    padding: 1.25rem;
-    max-width: 28rem;
-    width: calc(100% - 2rem);
-}
-
-.shortcuts-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-}
-
-.shortcuts-head h2 {
-    margin: 0;
-    font-size: 1.05rem;
-}
-
-.shortcuts-list {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.5rem 1rem;
-    margin: 0;
-}
-
-.shortcuts-list dt {
-    color: var(--pm-fg-muted);
-}
-
-.shortcuts-list kbd {
-    display: inline-block;
-    padding: 0.05rem 0.4rem;
-    background: var(--pm-surface);
-    border: 1px solid var(--pm-border);
-    border-radius: 0.3rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.85em;
 }
 
 .app-main {
@@ -391,4 +290,10 @@
         min-width: 2.75rem;
         min-height: 2.75rem;
     }
+}
+
+.overflow-kbd {
+    margin-left: var(--pm-space-2);
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-xs);
 }

@@ -26,7 +26,7 @@
                 <summary>The numbers behind it</summary>
                 <div class="song-stats-grid">
                     <div class="stat-box">
-                        <span class="stat-title">Melodic motion</span>
+                        <span class="pm-label stat-title">Melodic motion</span>
                         <div class="stat-highlight">
                             <span class="stat-badge">@($"{stats.Motion.StepPercent:0}% steps")</span>
                             <span class="stat-badge">@($"{stats.Motion.LeapPercent:0}% leaps")</span>
@@ -45,7 +45,7 @@
                     </div>
 
                     <div class="stat-box">
-                        <span class="stat-title">Rhythm</span>
+                        <span class="pm-label stat-title">Rhythm</span>
                         @if (stats.Rhythm.BeatGridUsable)
                         {
                             <div class="stat-highlight">
@@ -67,7 +67,7 @@
                     </div>
 
                     <div class="stat-box">
-                        <span class="stat-title">Phrases</span>
+                        <span class="pm-label stat-title">Phrases</span>
                         <div class="stat-highlight">
                             <span class="range-span">@stats.Phrases.Count</span>
                             <span class="stat-badge">@($"avg {stats.Phrases.AverageSec:0.0}s")</span>
@@ -78,7 +78,7 @@
                     </div>
 
                     <div class="stat-box">
-                        <span class="stat-title">Harmony</span>
+                        <span class="pm-label stat-title">Harmony</span>
                         <div class="stat-highlight">
                             <span class="range-span">@($"{stats.ChordVocabulary.UniqueChords} chords")</span>
                             @if (stats.HarmonicRhythm.BeatGridUsable && stats.HarmonicRhythm.AverageChordBeats > 0)
@@ -101,7 +101,7 @@
                     </div>
 
                     <div class="stat-box">
-                        <span class="stat-title">Melody vs chord</span>
+                        <span class="pm-label stat-title">Melody vs chord</span>
                         @if (stats.ChordTones.ClassifiedNotes > 0)
                         {
                             <div class="stat-highlight">
@@ -126,7 +126,7 @@
                     @if (stats.TempoMap is { Measures.Count: > 1 } tempo)
                     {
                         <div class="stat-box">
-                            <span class="stat-title">Tempo, bar by bar</span>
+                            <span class="pm-label stat-title">Tempo, bar by bar</span>
                             <div class="stat-row stat-note">
                                 <span>@(tempo.IsSteady
                                     ? $"Holds at about {tempo.MedianBpm:0} BPM the whole way through — machine-steady."
@@ -159,7 +159,7 @@
                vocal and should not hold up the rest. Its range replaces the old "Tessitura" box, which
                repeated the same low, high and centre notes the keyboard draws. *@
             <section class="stats-section" aria-labelledby="singer-heading">
-                <h2 class="stats-label" id="singer-heading">The singer</h2>
+                <h2 class="pm-label stats-label" id="singer-heading">The singer</h2>
                 @if (_voice is { } singer)
                 {
                     <SingerCard Voice="singer" Id="voice-profile" />
@@ -183,7 +183,7 @@
                in the data is labelled as such rather than hidden. *@
             <section class="ask" aria-labelledby="ask-heading">
                 <div class="ask-head">
-                    <h2 class="stats-label" id="ask-heading">Ask about this song</h2>
+                    <h2 class="pm-label stats-label" id="ask-heading">Ask about this song</h2>
                     @* Radzen rather than a bare <select>: every other chooser in the app is a
                        RadzenDropDown. An interpreter that is not installed stays visible and unpickable,
                        because its absence is the answer to "why is this write-up so plain". *@
@@ -215,7 +215,7 @@
                                     </span>
                                 </p>
                             }
-                            <span class="summary-label">In plain English</span>
+                            <span class="pm-label summary-label">In plain English</span>
                             @foreach (var paragraph in Paragraphs(plain))
                             {
                                 <p class="interpretation-text">@paragraph</p>
@@ -224,7 +224,7 @@
                                read as a failure rather than as an absence. *@
                             @if (!string.IsNullOrWhiteSpace(theory))
                             {
-                                <span class="summary-label">For musicians</span>
+                                <span class="pm-label summary-label">For musicians</span>
                                 @foreach (var paragraph in Paragraphs(theory))
                                 {
                                     <p class="interpretation-text">@paragraph</p>

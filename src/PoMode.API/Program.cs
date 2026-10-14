@@ -1,6 +1,7 @@
 using PoMode.API.Platform;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
+using PoMode.API.Features.Account;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
 using PoMode.API.Features.BeatTracking;
@@ -195,6 +196,7 @@ app.MapSongStats();
 app.MapVoiceProfile();
 app.MapSongStructure();
 app.MapPush();
+app.MapAccount();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 // The share target's fallback. Normally the service worker answers this POST and never lets it

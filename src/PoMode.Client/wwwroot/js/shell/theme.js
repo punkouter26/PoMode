@@ -43,7 +43,12 @@ export function init() {
 
 /// Advances system → light → dark → system, persists, applies, and returns the new mode.
 export function cycle() {
-    const next = MODES[(MODES.indexOf(stored()) + 1) % MODES.length];
+    return set(MODES[(MODES.indexOf(stored()) + 1) % MODES.length]);
+}
+
+/// Persists and applies one mode ("system" | "light" | "dark") and returns it.
+export function set(mode) {
+    const next = MODES.includes(mode) ? mode : 'system';
     try {
         if (next === 'system') {
             localStorage.removeItem(STORAGE_KEY);

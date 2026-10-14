@@ -1,0 +1,162 @@
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject NavigationManager Navigation
+@inject ThemeState Theme
+
+@* One keyboard way to anywhere: a page, a song in the library, a setting. Opened with Ctrl+K or from
+   the ⋯ menu. A combobox over a listbox, so a screen reader hears the filter and the active row. *@
+@if (Open)
+{
+    <div class="palette-backdrop" @onclick="Close">
+        <div class="palette" role="dialog" aria-modal="true" aria-label="Go to" @onclick:stopPropagation>
+            <input @ref="_input" class="palette-input" type="text" role="combobox" aria-expanded="true"
+                   aria-controls="palette-list" aria-activedescendant="@ActiveId" aria-autocomplete="list"
+                   placeholder="Go to a page, a song or a setting…" value="@_query"
+                   @oninput="OnInput" @onkeydown="OnKeyDown" @onkeydown:preventDefault="_suppressKey" />
+            <ul class="palette-list" id="palette-list" role="listbox" aria-label="Results">
+                @if (Matches.Count == 0)
+                {
+                    <li class="palette-empty" role="presentation">Nothing matches “@_query”.</li>
+                }
+                @for (var i = 0; i < Matches.Count; i++)
+                {
+                    var index = i;
+                    var command = Matches[i];
+                    <li id="@($"palette-{index}")" role="option" aria-selected="@(index == _active)"
+                        class="palette-item @(index == _active ? "active" : "")"
+                        @onclick="@(() => RunAsync(command))" @onmousemove="@(() => _active = index)">
+                        <span class="palette-group">@command.Group</span>
+                        <span class="palette-text">@command.Text</span>
+                    </li>
+                }
+            </ul>
+            <p class="palette-hint"><kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>Enter</kbd> to go, <kbd>Esc</kbd> to close</p>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    private sealed record Command(string Group, string Text, Func<Task> Run);
+
+    private ElementReference _input;
+    private string _query = "";
+    private int _active;
+    private bool _suppressKey;
+    /// <summary>True from the render that opened the palette until it closes, so reopening resets it
+    /// once rather than on every parameter set.</summary>
+    private bool _opened;
+    private bool _focusPending;
+    private List<Command> _songs = [];
+    private List<Command>? _matches;
+
+    private string? ActiveId => Matches.Count > 0 ? $"palette-{_active}" : null;
+
+    private List<Command> Commands =>
+    [
+        new("Page", "Library", () => GoAsync("")),
+        new("Page", "Mode Lab", () => GoAsync("modes")),
+        new("Page", "Practice", () => GoAsync("practice")),
+        new("Page", "Settings", () => GoAsync("settings")),
+        new("Page", "Diagnostics", () => GoAsync("diagnostics")),
+        new("Setting", "Theme: follow my system", () => Theme.SetAsync("system")),
+        new("Setting", "Theme: light", () => Theme.SetAsync("light")),
+        new("Setting", "Theme: dark", () => Theme.SetAsync("dark")),
+        new("Setting", "Analysis models", () => GoAsync("settings")),
+        new("Setting", "Keyboard shortcuts", () => GoAsync("settings#shortcuts")),
+        new("Setting", "Download everything I added", () => { Navigation.NavigateTo("api/account/export", forceLoad: true); return Task.CompletedTask; }),
+        .. _songs,
+    ];
+
+    /// <summary>Every word typed has to appear somewhere in the row, in any order.</summary>
+    private List<Command> Matches => _matches ??= [.. Commands.Where(command =>
+        _query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word =>
+            $"{command.Group} {command.Text}".Contains(word, StringComparison.OrdinalIgnoreCase)))
+        .Take(12)];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Open)
+        {
+            _opened = false;
+            return;
+        }
+        if (_opened)
+        {
+            return;
+        }
+        _opened = true;
+        _focusPending = true;
+        _query = "";
+        _active = 0;
+        _matches = null;
+        try
+        {
+            _songs = [.. (await Analysis.GetLibraryAsync() ?? [])
+                .Where(entry => entry.Stage == JobStage.Complete)
+                .Select(entry => new Command(entry.Origin?.Kind == TakeOrigin.Beat ? "Beat" : "Song", entry.FileName,
+                    () => GoAsync(entry.Origin?.Kind == TakeOrigin.Beat ? $"modes?beat={entry.JobId}" : $"?job={entry.JobId}")))];
+            _matches = null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            _songs = [];
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && _focusPending)
+        {
+            _focusPending = false;
+            await _input.FocusAsync();
+        }
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _active = 0;
+        _matches = null;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        _suppressKey = e.Key is "ArrowDown" or "ArrowUp" or "Enter";
+        switch (e.Key)
+        {
+            case "ArrowDown" when Matches.Count > 0:
+                _active = (_active + 1) % Matches.Count;
+                break;
+            case "ArrowUp" when Matches.Count > 0:
+                _active = (_active - 1 + Matches.Count) % Matches.Count;
+                break;
+            case "Enter" when Matches.Count > 0:
+                await RunAsync(Matches[_active]);
+                break;
+            case "Escape":
+                await Close();
+                break;
+        }
+    }
+
+    private async Task RunAsync(Command command)
+    {
+        await Close();
+        await command.Run();
+    }
+
+    private Task GoAsync(string path)
+    {
+        Navigation.NavigateTo(path);
+        return Task.CompletedTask;
+    }
+
+    private async Task Close()
+    {
+        _opened = false;
+        await OpenChanged.InvokeAsync(false);
+    }
+}

@@ -2,6 +2,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject SessionState Session
+@inject ThemeState Theme
 @using PoMode.Shared.Account
 @implements IAsyncDisposable
 
@@ -29,9 +30,9 @@
         {
             <span class="session-name" id="session-name" data-session-kind="@Session.Current.Kind">@who</span>
         }
-        <button class="icon-button theme-toggle" type="button" @onclick="CycleThemeAsync"
-                title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {ThemeLabel}")">
-            @ThemeGlyph
+        <button class="icon-button theme-toggle" type="button" @onclick="Theme.CycleAsync"
+                title="Theme: follows the system by default; click to override" aria-label="@($"Theme: {Theme.Label}")">
+            @Theme.Glyph
         </button>
         <button class="icon-button overflow-toggle" type="button" @onclick="ToggleOverflowAsync"
                 title="More" aria-label="More" aria-haspopup="true" aria-expanded="@_overflowOpen">
@@ -48,7 +49,7 @@
                 @if (Session.Current is { } session)
                 {
                     <div class="overflow-group overflow-account" role="group" aria-label="Account">
-                        <span class="overflow-label">Account</span>
+                        <span class="pm-label overflow-label">Account</span>
                         <span class="overflow-who">@(session.DisplayName ?? "Not signed in")</span>
                         @if (session.Kind == SessionKind.Guest)
                         {
@@ -72,46 +73,14 @@
                         </button>
                     }
                 }
-                <button class="overflow-item" type="button" role="menuitem" @onclick="ToggleShortcutsAsync">
-                    Keyboard shortcuts
+                @* Effects, sounds, notifications, models and shortcuts live on the Settings page, each
+                   already at its best value; the menu keeps only places to go. *@
+                <a class="overflow-item" role="menuitem" href="settings" @onclick="CloseOverflow">
+                    Settings
+                </a>
+                <button class="overflow-item" type="button" role="menuitem" @onclick="OpenPalette">
+                    Go to… <kbd class="overflow-kbd">Ctrl K</kbd>
                 </button>
-                @* Effects are a real setting rather than only an OS preference, because the two
-                   questions the OS conflates are separate here: how much motion you want to see,
-                   and whether an app may make noise at you. *@
-                <div class="overflow-group" role="group" aria-label="Visual effects">
-                    <span class="overflow-label">Effects</span>
-                    <div class="fx-levels">
-                        @foreach (var (value, label) in FxLevels)
-                        {
-                            <button class="fx-level @(_fxLevel == value ? "active" : "")" type="button"
-                                    aria-pressed="@(_fxLevel == value)" data-fx-level="@value"
-                                    @onclick="@(() => SetFxLevelAsync(value))">@label</button>
-                        }
-                    </div>
-                    @if (_fxFollowsSystem)
-                    {
-                        <span class="overflow-hint">Following your system motion setting</span>
-                    }
-                </div>
-                <button class="overflow-item" type="button" role="menuitemcheckbox"
-                        aria-checked="@(!_fxMuted)" @onclick="ToggleFxMutedAsync" id="fx-sound-toggle">
-                    @(_fxMuted ? "☓" : "♪") Interface sounds
-                </button>
-                @* Only where it can work: this server has a VAPID key and this browser can receive a
-                   push (Safari only as an installed app). The permission prompt comes from the click
-                   on this item and from nothing else. *@
-                @if (_pushState is "on" or "off" or "blocked")
-                {
-                    <button class="overflow-item" type="button" role="menuitemcheckbox" id="push-toggle"
-                            aria-checked="@(_pushState == "on" ? "true" : "false")" data-push-state="@_pushState"
-                            disabled="@(_pushState == "blocked" || _pushBusy)" @onclick="TogglePushAsync">
-                        @(_pushState == "on" ? "🔔" : "🔕") Notify me when analysis finishes
-                    </button>
-                    @if (_pushState == "blocked")
-                    {
-                        <span class="overflow-hint overflow-item-hint">Notifications are blocked for this site in your browser's settings.</span>
-                    }
-                }
                 <a class="overflow-item" role="menuitem" href="diagnostics" @onclick="CloseOverflow">
                     Diagnostics
                 </a>
@@ -129,33 +98,11 @@
     </div>
 </header>
 
-@if (_shortcutsOpen)
-{
-    <div class="modal-backdrop" @onclick="CloseShortcuts">
-        @* tabindex + a focus call on open is what makes Escape work at all: a keydown handler on a
-           div never fires unless something inside it holds focus, and a dialog that traps the eye
-           but not the keyboard is the worse of the two failures. *@
-        <div class="modal-card shortcuts-modal" role="dialog" aria-modal="true" tabindex="-1"
-             aria-labelledby="shortcuts-title" @ref="_shortcutsCard" @onkeydown="OnShortcutsKeyDown"
-             @onclick:stopPropagation>
-            <div class="shortcuts-head">
-                <h2 id="shortcuts-title">Keyboard shortcuts</h2>
-                <button class="icon-button" type="button" @onclick="CloseShortcuts" aria-label="Close">✕</button>
-            </div>
-            <dl class="shortcuts-list">
-                <dt><kbd>Space</kbd></dt><dd>Play / pause the stems</dd>
-                <dt><kbd>,</kbd></dt><dd>Restart playback from the beginning</dd>
-                <dt><kbd>L</kbd></dt><dd>Loop the section under the playhead, or stop looping</dd>
-                <dt>Mouse wheel</dt><dd>Zoom the canvas timeline in and out</dd>
-                <dt>Click + drag</dt><dd>Pan the canvas timeline</dd>
-                <dt>Click</dt><dd>Seek the playhead to that point and inspect that window</dd>
-            </dl>
-        </div>
-    </div>
-}
+<CommandPalette @bind-Open="_paletteOpen" />
 
 <MockDataBanner />
 <RadzenNotification />
+<RadzenDialog />
 
 <main id="main-content" class="app-main">
     <ErrorBoundary @ref="_boundary">
@@ -179,56 +126,40 @@
 </main>
 
 @code {
-    private IJSObjectReference? _theme;
     private IJSObjectReference? _pwa;
+    private IJSObjectReference? _palette;
     private IJSObjectReference? _prefs;
     private IJSObjectReference? _push;
     private DotNetObjectReference<MainLayout>? _self;
 
-    /// <summary>push.js's answer: "unavailable" (item hidden), "blocked", "off" or "on".</summary>
-    private string _pushState = "unavailable";
-    private bool _pushBusy;
-
-    /// <summary>The effect levels offered, in the order they read as a scale.</summary>
-    private static readonly (string Value, string Label)[] FxLevels =
-    [
-        ("full", "Full"),
-        ("subtle", "Subtle"),
-        ("off", "Off"),
-    ];
-
-    private string _fxLevel = "full";
     private bool _sessionReady;
+    private bool _paletteOpen;
+
+    /// <summary>Whether this browser was subscribed to push when the page loaded, so signing out
+    /// can drop it from the account being left.</summary>
+    private bool _pushSubscribed;
 
     private ErrorBoundary? _boundary;
 
     /// <summary>The layout outlives navigation, so a tripped boundary would otherwise keep showing its
     /// error panel on every page until a reload. A new page (a new Body) gets a clean start.</summary>
     protected override void OnParametersSet() => _boundary?.Recover();
-    private bool _fxMuted;
-
-    /// <summary>True while no explicit level has been chosen, so the menu can say the level is
-    /// inherited rather than claiming a choice the user never made.</summary>
-    private bool _fxFollowsSystem = true;
 
     /// <summary>True once the browser has offered an install prompt for this app to capture. It
     /// never fires on a desktop browser that already has the app, or on iOS at all.</summary>
     private bool _canInstall;
-    private string _themeMode = "system";
     private bool _overflowOpen;
-    private bool _shortcutsOpen;
 
     private ElementReference _overflowMenu;
-    private ElementReference _shortcutsCard;
 
-    /// <summary>Set when a popover has just opened, so the render after that can move focus into it
+    /// <summary>Set when the menu has just opened, so the render after that can move focus into it
     /// exactly once rather than stealing focus back on every subsequent render.</summary>
     private bool _focusOverflow;
-    private bool _focusShortcuts;
 
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
+        Theme.Changed += OnSessionChanged;
         try
         {
             await Session.EnsureAsync();
@@ -252,7 +183,7 @@
     private async Task SignOutAsync()
     {
         _overflowOpen = false;
-        if (_push is not null && _pushState == "on")
+        if (_push is not null && _pushSubscribed)
         {
             // While the session still exists: the account being left stops notifying this browser.
             try
@@ -269,20 +200,6 @@
         Navigation.NavigateTo("", forceLoad: true);
     }
 
-    private string ThemeLabel => _themeMode switch
-    {
-        "light" => "Light",
-        "dark" => "Dark",
-        _ => "Auto",
-    };
-
-    private string ThemeGlyph => _themeMode switch
-    {
-        "light" => "☀",
-        "dark" => "☾",
-        _ => "◐",
-    };
-
     private void ToggleOverflowAsync()
     {
         _overflowOpen = !_overflowOpen;
@@ -291,14 +208,14 @@
 
     private void CloseOverflow() => _overflowOpen = false;
 
-    private void ToggleShortcutsAsync()
+    /// <summary>Ctrl+K from anywhere (palette.js), or the menu's "Go to…".</summary>
+    [JSInvokable]
+    public Task OpenPalette()
     {
         _overflowOpen = false;
-        _shortcutsOpen = !_shortcutsOpen;
-        _focusShortcuts = _shortcutsOpen;
+        _paletteOpen = true;
+        return InvokeAsync(StateHasChanged);
     }
-
-    private void CloseShortcuts() => _shortcutsOpen = false;
 
     private void OnOverflowKeyDown(KeyboardEventArgs e)
     {
@@ -308,22 +225,9 @@
         }
     }
 
-    private void OnShortcutsKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape")
-        {
-            _shortcutsOpen = false;
-        }
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_focusShortcuts)
-        {
-            _focusShortcuts = false;
-            await _shortcutsCard.FocusAsync();
-        }
-        else if (_focusOverflow)
+        if (_focusOverflow)
         {
             _focusOverflow = false;
             await _overflowMenu.FocusAsync();
@@ -332,15 +236,14 @@
         {
             return;
         }
-        _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/theme.js");
-        _themeMode = await _theme.InvokeAsync<string>("init");
+        await Theme.InitAsync();
         // Before any effect module: init stamps data-fx on <html>, and every module below reads it
-        // on the way up. Read back as three primitives rather than one object so this does not
-        // depend on how JS interop is configured to deserialize.
+        // on the way up.
         _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/prefs.js");
         await _prefs.InvokeVoidAsync("init");
-        await ReadFxStateAsync();
         _self = DotNetObjectReference.Create(this);
+        _palette = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/palette.js");
+        await _palette.InvokeVoidAsync("listen", _self);
         // The install prompt fires once, on the browser's own schedule; pwa.js captures it so the
         // app can offer it from the menu rather than leaving it to Chrome's infobar.
         _pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/pwa.js");
@@ -351,42 +254,19 @@
     }
 
     /// <summary>After the session exists: /api/push answers signed-in callers only, and a browser
-    /// that is already subscribed re-registers itself with whoever that is.</summary>
+    /// that is already subscribed re-registers itself with whoever that is, on every visit. The
+    /// toggle itself is on the Settings page.</summary>
     private async Task InitPushAsync()
     {
         try
         {
             await Session.EnsureAsync();
             _push = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/push.js");
-            _pushState = await _push.InvokeAsync<string>("init");
-            StateHasChanged();
+            _pushSubscribed = await _push.InvokeAsync<string>("init") == "on";
         }
         catch (Exception ex) when (ex is JSException or HttpRequestException)
         {
-            // No toggle, which is what a browser without push support gets anyway.
-        }
-    }
-
-    private async Task TogglePushAsync()
-    {
-        if (_push is null || _pushBusy)
-        {
-            return;
-        }
-        _pushBusy = true;
-        try
-        {
-            _pushState = await _push.InvokeAsync<string>(_pushState == "on" ? "disable" : "enable");
-        }
-        catch (JSException)
-        {
-            // Subscribing failed part-way (the push service unreachable, the server refused the
-            // endpoint); re-read what actually holds rather than guess.
-            _pushState = await _push.InvokeAsync<string>("init");
-        }
-        finally
-        {
-            _pushBusy = false;
+            // Nothing to re-register, which is what a browser without push support gets anyway.
         }
     }
 
@@ -409,50 +289,17 @@
         }
     }
 
-    private async Task CycleThemeAsync()
-    {
-        if (_theme is not null)
-        {
-            _themeMode = await _theme.InvokeAsync<string>("cycle");
-        }
-    }
-
-    private async Task ReadFxStateAsync()
-    {
-        if (_prefs is null)
-        {
-            return;
-        }
-        _fxLevel = await _prefs.InvokeAsync<string>("level");
-        _fxMuted = await _prefs.InvokeAsync<bool>("muted");
-        _fxFollowsSystem = !await _prefs.InvokeAsync<bool>("isExplicit");
-    }
-
-    private async Task SetFxLevelAsync(string value)
-    {
-        if (_prefs is null)
-        {
-            return;
-        }
-        await _prefs.InvokeVoidAsync("setLevel", value);
-        await ReadFxStateAsync();
-    }
-
-    private async Task ToggleFxMutedAsync()
-    {
-        if (_prefs is null)
-        {
-            return;
-        }
-        await _prefs.InvokeVoidAsync("setMuted", !_fxMuted);
-        await ReadFxStateAsync();
-    }
-
     public async ValueTask DisposeAsync()
     {
         Session.Changed -= OnSessionChanged;
+        Theme.Changed -= OnSessionChanged;
         try
         {
+            if (_palette is not null)
+            {
+                await _palette.InvokeVoidAsync("stop");
+                await _palette.DisposeAsync();
+            }
             if (_pwa is not null)
             {
                 await _pwa.DisposeAsync();
@@ -464,10 +311,6 @@
             if (_push is not null)
             {
                 await _push.DisposeAsync();
-            }
-            if (_theme is not null)
-            {
-                await _theme.DisposeAsync();
             }
         }
         catch (JSDisconnectedException)

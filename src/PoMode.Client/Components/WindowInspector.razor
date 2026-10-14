@@ -24,7 +24,7 @@ else
         </dl>
 
         <div class="inspect-degrees">
-            <span class="inspect-label">Scale degrees <span class="inspect-key">· filled = sung here</span></span>
+            <span class="pm-label inspect-label">Scale degrees <span class="inspect-key">· filled = sung here</span></span>
             <div class="degree-grid">
                 @foreach (var badge in Selected.Degrees)
                 {
@@ -34,7 +34,7 @@ else
         </div>
 
         <div class="inspect-match">
-            <span class="inspect-label">Mode match</span>
+            <span class="pm-label inspect-label">Mode match</span>
             @if (Selected.InsufficientEvidence || Selected.ModeTag is null)
             {
                 @* Honest empty state: the engine needs 3+ distinct sung pitch classes (spec §6). *@

@@ -60,7 +60,7 @@ static async Task CaptureAsync(string outDir, string baseUrl)
 
     var routes = new List<(string Name, string Path, bool MayScroll)>
     {
-        ("library", "/", false), ("mode-lab", "/modes", true), ("practice", "/practice", false), ("diagnostics", "/diagnostics", true),
+        ("library", "/", false), ("mode-lab", "/modes", true), ("practice", "/practice", false), ("settings", "/settings", true), ("diagnostics", "/diagnostics", true),
     };
     {
         await using var context = await browser.NewContextAsync(new() { StorageStatePath = state });

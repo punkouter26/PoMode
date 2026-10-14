@@ -40,14 +40,6 @@
     min-width: 0;
 }
 
-.why-title {
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pm-fg-muted);
-    font-weight: 600;
-}
-
 .why-caption {
     margin: 0;
     color: var(--pm-fg-muted);

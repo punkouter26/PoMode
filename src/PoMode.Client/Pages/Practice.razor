@@ -5,6 +5,7 @@
 @inject NotificationService NotificationService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject BrowserPrefs Prefs
 @implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
@@ -246,43 +247,23 @@ else if (_loadError is { } loadError)
         await LoadVoiceAsync();
     }
 
-    private const string SettingsKey = "pm-practice-backing";
-
     /// <summary>The backing as it was left: a singer who found their key should come back to it.
     /// Anything unreadable or out of range is ignored and the defaults stand.</summary>
     private async Task RestoreSettingsAsync()
     {
-        try
+        if (await Prefs.GetAsync(BrowserPrefs.PracticeBackingKey, PrefsJsonContext.Default.PracticeBacking) is
+            { TonicPitchClass: >= 0 and < 12 } saved
+            && Enum.IsDefined(saved.Mode)
+            && _progressions.Any(p => p.Id == saved.ProgressionId))
         {
-            if (await JS.InvokeAsync<string?>("localStorage.getItem", SettingsKey) is { } saved
-                && saved.Split('|') is [var tonic, var mode, var progression, var bpm]
-                && int.TryParse(tonic, out var savedTonic) && savedTonic is >= 0 and < 12
-                && Enum.TryParse<ScaleMode>(mode, out var savedMode) && Enum.IsDefined(savedMode)
-                && _progressions.Any(p => p.Id == progression)
-                && double.TryParse(bpm, System.Globalization.CultureInfo.InvariantCulture, out var savedBpm))
-            {
-                (_tonic, _mode, _progressionId) = (savedTonic, savedMode, progression);
-                _bpm = Math.Clamp(savedBpm, BackingControls.MinBpm, BackingControls.MaxBpm);
-            }
-        }
-        catch (JSException)
-        {
-            // Blocked site data: the defaults stand.
+            (_tonic, _mode, _progressionId) = (saved.TonicPitchClass, saved.Mode, saved.ProgressionId);
+            _bpm = Math.Clamp(saved.Bpm, BackingControls.MinBpm, BackingControls.MaxBpm);
         }
     }
 
-    private async Task SaveSettingsAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", SettingsKey,
-                FormattableString.Invariant($"{_tonic}|{_mode}|{_progressionId}|{_bpm}"));
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
-        {
-            // Not persisted; the settings still apply for this visit.
-        }
-    }
+    private Task SaveSettingsAsync()
+        => Prefs.SetAsync(BrowserPrefs.PracticeBackingKey, new PracticeBacking(_tonic, _mode, _progressionId, _bpm),
+            PrefsJsonContext.Default.PracticeBacking);
 
     /// <summary>
     /// The progression that states this mode, if the catalog has one.

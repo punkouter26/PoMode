@@ -39,16 +39,6 @@
     gap: var(--pm-space-1);
 }
 
-.stats-label {
-    margin: 0;
-    line-height: 1.4;
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pm-fg-muted);
-    font-weight: 600;
-}
-
 .stats-pending {
     margin: 0;
     color: var(--pm-fg-muted);
@@ -98,14 +88,6 @@
     gap: 0.3rem;
     font-size: var(--pm-text-sm);
     min-width: 0;
-}
-
-.stat-title {
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pm-fg-muted);
-    font-weight: 600;
 }
 
 .stat-highlight {
@@ -287,9 +269,6 @@
 }
 
 .summary-label {
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
     font-weight: 700;
     color: var(--pm-accent);
     margin-top: 0.25rem;

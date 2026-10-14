@@ -87,6 +87,20 @@ public sealed class PushSubscriptionStore(JobStore jobs, TimeProvider time, JobB
         }
     }
 
+    /// <summary>Forgets every browser this owner subscribed: their data is being deleted.</summary>
+    public async Task RemoveAllAsync(string ownerId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await WriteAsync(ownerId, [], ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static string FileNameOf(string ownerId)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ownerId))) + ".json";
 

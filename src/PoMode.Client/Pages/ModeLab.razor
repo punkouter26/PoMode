@@ -18,7 +18,7 @@
     @if (_melody?.BetterFit is { } betterFit)
     {
         <div class="better-fit-banner" role="status" data-better-fit="@betterFit.Name">
-            <span class="better-fit-lead">This actually sounds like</span>
+            <span class="pm-label better-fit-lead">This actually sounds like</span>
             <span class="better-fit-mode">@betterFit.Name</span>
             <span class="better-fit-score">@($"{betterFit.Percentage:0.#}% fit, against {_melody.ModePercentage:0.#}% for {GetModeDisplayName(_selectedMode)}")</span>
         </div>
@@ -66,7 +66,7 @@
                          Bpm="_bpm" BpmChanged="OnTempoPickedAsync">
             <Between>
                 <div class="backing-field">
-                    <span class="backing-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
+                    <span class="pm-label backing-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
                         Match to mode
                     </span>
                     <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
@@ -78,7 +78,7 @@
             </Between>
             <ChildContent>
                 <div class="backing-field">
-                    <span class="backing-label" id="style-label">Style</span>
+                    <span class="pm-label backing-label" id="style-label">Style</span>
                     <RadzenDropDown TValue="MelodyStyle" @bind-Value="_selectedStyle" Data="@StyleOptions"
                                     Change="@(_ => OnConfigChanged())" class="style-dd" id="style-select"
                                     aria-labelledby="style-label" />
@@ -86,7 +86,7 @@
                 @* One purity readout: the target you set and what the generated melody measured. It used
                    to be stated five times across the card pill, two badges and the canvas header. *@
                 <div class="backing-field purity-field">
-                    <span class="backing-label" id="purity-label">Purity</span>
+                    <span class="pm-label backing-label" id="purity-label">Purity</span>
                     <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
                                   Change="@(args => OnPurityChanged(args))"
                                   class="purity-slider" id="purity-slider" aria-labelledby="purity-label" />
@@ -109,7 +109,7 @@
     <div class="studio-drums-panel pm-panel" data-drum-job="@_drumJobId">
         <div class="drums-row">
             <div class="drums-field drums-pick">
-                <span class="drums-label" id="drums-label">Drums</span>
+                <span class="pm-label drums-label" id="drums-label">Drums</span>
                 @if (_drumChoices.Count > 0)
                 {
                     <RadzenDropDown TValue="string" Data="@_drumChoices" TextProperty="Label" ValueProperty="JobId"
@@ -125,7 +125,7 @@
             @if (_drumsReady)
             {
                 <div class="drums-field">
-                    <span class="drums-label" id="drums-bars-label">Bars</span>
+                    <span class="pm-label drums-label" id="drums-bars-label">Bars</span>
                     <RadzenNumeric TValue="int" Value="@_drumBars" Change="@OnDrumBarsChangedAsync" Min="1" Max="MaxDrumBars"
                                    class="drums-bars" id="drums-bars" aria-labelledby="drums-bars-label"
                                    title="How many bars to keep from the start. Set from what was played; fewer drops the rest." />
@@ -192,7 +192,7 @@
        Which notes, and which is home, come from ScaleModes; mode-gravity.js only moves them. *@
     <div class="studio-gravity-panel pm-panel">
         <div class="gravity-text">
-            <span class="gravity-label">Home note</span>
+            <span class="pm-label gravity-label">Home note</span>
             <span class="gravity-home">@GetModeDisplayName(_selectedMode)</span>
             <span class="gravity-desc">Each note sits on the clock by how far it is above home. Another card: the same notes, a new home, a new shape. Tap a note to hear it.</span>
         </div>

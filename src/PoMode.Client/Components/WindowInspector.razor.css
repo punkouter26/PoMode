@@ -19,11 +19,6 @@
 
 .inspect-label {
     display: block;
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
-    color: var(--pm-fg-muted);
 }
 
 .inspect-key {

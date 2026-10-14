@@ -11,7 +11,7 @@
         <div class="basic-header-row">
             <div class="basic-meta-group">
                 <div class="basic-badge-key">
-                    <span class="basic-badge-label">Key & Mode</span>
+                    <span class="pm-label basic-badge-label">Key & Mode</span>
                     <span class="basic-badge-value">@PrimaryHeadline</span>
                     @if (Result.PrimaryScaleNoteNames() is { } scale)
                     {
@@ -32,7 +32,7 @@
                 </div>
 
                 <div class="basic-badge-item">
-                    <span class="basic-badge-label">Tempo</span>
+                    <span class="pm-label basic-badge-label">Tempo</span>
                     <span class="basic-badge-value" data-count-up>@($"{DisplayBpm:0} BPM")</span>
                     @if (_liveBpm > 0)
                     {
@@ -47,7 +47,7 @@
                 </div>
 
                 <div class="basic-badge-item">
-                    <span class="basic-badge-label">Length</span>
+                    <span class="pm-label basic-badge-label">Length</span>
                     <span class="basic-badge-value">@($"{Visual.DurationSec:0.0}s")</span>
                     <span class="basic-badge-sub">@($"{Visual.Notes.Count} notes")</span>
                 </div>

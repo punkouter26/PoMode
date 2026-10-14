@@ -1,0 +1,353 @@
+@page "/settings"
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject BrowserPrefs Prefs
+@inject ThemeState Theme
+@inject IJSRuntime JS
+@inject DialogService Dialogs
+@inject NavigationManager Navigation
+@inject NotificationService Notifications
+@implements IAsyncDisposable
+
+<PageTitle>PoMode</PageTitle>
+
+@* Every optional choice in one place, each already at the value that works best, so the pages
+   people actually use (the library, the lab, Practice) carry only what they act on. Nothing here is
+   needed to use the app; it is where a preference goes once someone has one. *@
+<RadzenCard class="settings">
+    <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H1" Text="Settings" />
+
+    <section class="settings-section" aria-labelledby="settings-look">
+        <h2 class="pm-label" id="settings-look">Look and sound</h2>
+        <div class="settings-row">
+            <span class="settings-name" id="theme-label">Theme</span>
+            <RadzenSelectBar TValue="string" Value="@Theme.Mode" Change="@(value => Theme.SetAsync(value))"
+                             Size="ButtonSize.Small" aria-labelledby="theme-label" class="settings-control">
+                <Items>
+                    <RadzenSelectBarItem Text="Auto" Value="@("system")" />
+                    <RadzenSelectBarItem Text="Light" Value="@("light")" />
+                    <RadzenSelectBarItem Text="Dark" Value="@("dark")" />
+                </Items>
+            </RadzenSelectBar>
+        </div>
+        <div class="settings-row">
+            <span class="settings-name" id="fx-label">Effects</span>
+            <RadzenSelectBar TValue="string" Value="@_fxLevel" Change="@(value => SetFxLevelAsync(value))"
+                             Size="ButtonSize.Small" aria-labelledby="fx-label" class="settings-control">
+                <Items>
+                    <RadzenSelectBarItem Text="Full" Value="@("full")" />
+                    <RadzenSelectBarItem Text="Subtle" Value="@("subtle")" />
+                    <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                </Items>
+            </RadzenSelectBar>
+            <span class="settings-hint">
+                @if (_fxFollowsSystem)
+                {
+                    <text>Following your system's motion setting.</text>
+                }
+                else
+                {
+                    <button type="button" class="settings-text-button" @onclick="@(() => SetFxLevelAsync("system"))">Follow my system instead</button>
+                }
+            </span>
+        </div>
+        <div class="settings-row">
+            <label class="settings-name" for="fx-sound">Interface sounds</label>
+            <RadzenSwitch @bind-Value="_soundOn" Change="@(on => SetSoundAsync(on))" id="fx-sound-toggle" Name="fx-sound" />
+            <span class="settings-hint">Chimes tuned to the song's key, and a tap on each downbeat.</span>
+        </div>
+    </section>
+
+    <section class="settings-section" aria-labelledby="settings-models">
+        <h2 class="pm-label" id="settings-models">Analysis models</h2>
+        <p class="settings-hint">Auto lets the server pick the best model it has for each step. Pin one to use it for every song you add from this browser.</p>
+        @if (_stages is null)
+        {
+            <div class="pm-skeleton settings-skeleton" aria-hidden="true"></div>
+        }
+        else
+        {
+            @foreach (var (stage, choices) in _stages)
+            {
+                <div class="settings-row">
+                    <span class="settings-name" id="@($"stage-{stage}")">@ExecutorChoices.StageLabel(stage)</span>
+                    @if (choices.Count <= 2)
+                    {
+                        @* One real option: nothing to pick, so say it plainly. *@
+                        <span class="settings-value">@(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")</span>
+                    }
+                    else
+                    {
+                        <RadzenDropDown TValue="string" Data="@choices" TextProperty="Label" ValueProperty="Value"
+                                        Value="@(_pins.TryGetValue(stage, out var pinned) ? pinned : "")"
+                                        Change="@(value => PinAsync(stage, value as string))"
+                                        class="settings-control settings-select" aria-labelledby="@($"stage-{stage}")" />
+                    }
+                </div>
+            }
+        }
+    </section>
+
+    @if (_interpreters is { Count: > 1 })
+    {
+        <section class="settings-section" aria-labelledby="settings-writer">
+            <h2 class="pm-label" id="settings-writer">Written interpretation</h2>
+            <div class="settings-row">
+                <span class="settings-name" id="writer-label">Writer</span>
+                <RadzenDropDown TValue="string" Data="@_interpreters" TextProperty="Label" ValueProperty="Name"
+                                Value="@(_interpreter ?? "")" Change="@(value => SetInterpreterAsync(value as string))"
+                                class="settings-control settings-select" aria-labelledby="writer-label" />
+            </div>
+            <p class="settings-hint">Auto uses the best writer the server has. Every writer is checked against the measurements, so none can invent a figure.</p>
+        </section>
+    }
+
+    @if (_pushState is "on" or "off" or "blocked")
+    {
+        <section class="settings-section" aria-labelledby="settings-notify">
+            <h2 class="pm-label" id="settings-notify">Notifications</h2>
+            <div class="settings-row">
+                <label class="settings-name" for="push-toggle">Notify me when an analysis finishes</label>
+                <RadzenSwitch Value="@(_pushState == "on")" Change="@(_ => TogglePushAsync())" Name="push-toggle"
+                              Disabled="@(_pushState == "blocked" || _pushBusy)" data-push-state="@_pushState" />
+            </div>
+            @if (_pushState == "blocked")
+            {
+                <p class="settings-hint">Notifications are blocked for this site in your browser's settings.</p>
+            }
+        </section>
+    }
+
+    <section class="settings-section" aria-labelledby="settings-keys" id="shortcuts">
+        <h2 class="pm-label" id="settings-keys">Keyboard shortcuts</h2>
+        <dl class="settings-keys">
+            <dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Jump anywhere: a page, a song, a setting</dd>
+            <dt><kbd>Space</kbd></dt><dd>Play / pause the stems</dd>
+            <dt><kbd>,</kbd></dt><dd>Restart playback from the beginning</dd>
+            <dt><kbd>L</kbd></dt><dd>Loop the section under the playhead, or stop looping</dd>
+            <dt>Mouse wheel</dt><dd>Zoom the timeline</dd>
+            <dt>Click and drag</dt><dd>Pan the timeline</dd>
+            <dt>Click</dt><dd>Seek there and inspect that window</dd>
+            <dt>MIDI keyboard</dt><dd>Play the Mode Lab's sounding mode</dd>
+        </dl>
+    </section>
+
+    <section class="settings-section" aria-labelledby="settings-data">
+        <h2 class="pm-label" id="settings-data">Your data</h2>
+        <p class="settings-hint">Everything you added is stored under your name: the audio, its stems and every reading of it.</p>
+        <div class="settings-actions">
+            <RadzenButton Text="Download everything" Icon="download" ButtonStyle="ButtonStyle.Light"
+                          Click="@Export" id="export-data" />
+            <RadzenButton Text="Delete everything" Icon="delete_forever" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined"
+                          Click="@DeleteAsync" Disabled="@_deleting" id="delete-data" />
+        </div>
+    </section>
+</RadzenCard>
+
+@code {
+    private IJSObjectReference? _prefsJs;
+    private IJSObjectReference? _push;
+    private List<(string Stage, List<ExecutorChoice> Choices)>? _stages;
+    private Dictionary<string, string> _pins = [];
+    private List<InterpreterChoice>? _interpreters;
+    private string? _interpreter;
+    private string _fxLevel = "full";
+    private bool _fxFollowsSystem = true;
+    private bool _soundOn = true;
+    private string _pushState = "unavailable";
+    private bool _pushBusy;
+    private bool _deleting;
+
+    private sealed record InterpreterChoice(string Name, string Label);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+        try
+        {
+            var stages = await Analysis.GetExecutorsAsync();
+            _pins = await ExecutorChoices.LoadAsync(Prefs, stages);
+            var capable = await ProbeBrowserAsync();
+            _stages = stages?.Select(stage => (stage.Stage, ExecutorChoices.For(stage, capable))).ToList() ?? [];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            _stages = [];
+        }
+        try
+        {
+            var servers = await Analysis.GetInterpretersAsync() ?? [];
+            _interpreters = [new("", "Auto"), .. servers.Select(option => new InterpreterChoice(
+                option.Name, option.Available ? $"{ExecutorNames.Rated(option.Name)} ({(option.UsesLlm ? "model" : "rule-based")})"
+                    : $"{ExecutorNames.Rated(option.Name)} — unavailable"))];
+            _interpreter = await Prefs.GetAsync(BrowserPrefs.InterpreterKey, PrefsJsonContext.Default.String);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+        try
+        {
+            _prefsJs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/prefs.js");
+            await ReadFxAsync();
+            _push = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/push.js");
+            _pushState = await _push.InvokeAsync<string>("init");
+        }
+        catch (JSException)
+        {
+            // No push support: the section stays hidden, as for a browser without PushManager.
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Browser-tier models are offered only where this browser can run them.</summary>
+    private async Task<bool> ProbeBrowserAsync()
+    {
+        try
+        {
+            await using var worker = await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/pitch-worker.js");
+            return await worker.InvokeAsync<string?>("probeCapability") is not null;
+        }
+        catch (JSException)
+        {
+            return false;
+        }
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task ReadFxAsync()
+    {
+        if (_prefsJs is null)
+        {
+            return;
+        }
+        _fxLevel = await _prefsJs.InvokeAsync<string>("level");
+        _soundOn = !await _prefsJs.InvokeAsync<bool>("muted");
+        _fxFollowsSystem = !await _prefsJs.InvokeAsync<bool>("isExplicit");
+    }
+
+    private async Task SetFxLevelAsync(string value)
+    {
+        if (_prefsJs is not null)
+        {
+            await _prefsJs.InvokeVoidAsync("setLevel", value);
+            await ReadFxAsync();
+        }
+    }
+
+    private async Task SetSoundAsync(bool on)
+    {
+        if (_prefsJs is not null)
+        {
+            await _prefsJs.InvokeVoidAsync("setMuted", !on);
+            await ReadFxAsync();
+        }
+    }
+
+    private async Task PinAsync(string stage, string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            _pins.Remove(stage);
+        }
+        else
+        {
+            _pins[stage] = name;
+        }
+        await ExecutorChoices.SaveAsync(Prefs, _pins);
+    }
+
+    private async Task SetInterpreterAsync(string? name)
+    {
+        _interpreter = string.IsNullOrEmpty(name) ? null : name;
+        if (_interpreter is null)
+        {
+            await Prefs.RemoveAsync(BrowserPrefs.InterpreterKey);
+        }
+        else
+        {
+            await Prefs.SetAsync(BrowserPrefs.InterpreterKey, _interpreter, PrefsJsonContext.Default.String);
+        }
+    }
+
+    private async Task TogglePushAsync()
+    {
+        if (_push is null || _pushBusy)
+        {
+            return;
+        }
+        _pushBusy = true;
+        try
+        {
+            _pushState = await _push.InvokeAsync<string>(_pushState == "on" ? "disable" : "enable");
+        }
+        catch (JSException)
+        {
+            _pushState = await _push.InvokeAsync<string>("init");
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private void Export() => Navigation.NavigateTo("api/account/export", forceLoad: true);
+
+    private async Task DeleteAsync()
+    {
+        var confirmed = await Dialogs.Confirm(
+            "Every song, recording and beat you added, with all their readings, is deleted from the server, and this browser forgets your settings. This cannot be undone.",
+            "Delete everything?",
+            new ConfirmOptions { OkButtonText = "Delete everything", CancelButtonText = "Keep it" });
+        if (confirmed != true)
+        {
+            return;
+        }
+        _deleting = true;
+        try
+        {
+            var deleted = await Analysis.DeleteMyDataAsync();
+            foreach (var key in new[] { BrowserPrefs.LibraryFiltersKey, BrowserPrefs.ExecutorPinsKey, BrowserPrefs.PracticeBackingKey, BrowserPrefs.InterpreterKey })
+            {
+                await Prefs.RemoveAsync(key);
+            }
+            Notifications.Notify(NotificationSeverity.Success, "Deleted", $"{deleted} {(deleted == 1 ? "item" : "items")} removed.");
+            Navigation.NavigateTo("");
+        }
+        catch (HttpRequestException)
+        {
+            Notifications.Notify(NotificationSeverity.Error, "Not deleted", "The server could not be reached. Nothing was removed.");
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Theme.Changed -= OnThemeChanged;
+        try
+        {
+            if (_prefsJs is not null)
+            {
+                await _prefsJs.DisposeAsync();
+            }
+            if (_push is not null)
+            {
+                await _push.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

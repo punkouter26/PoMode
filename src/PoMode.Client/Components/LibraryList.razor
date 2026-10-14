@@ -1,6 +1,6 @@
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
-@inject IJSRuntime JS
+@inject BrowserPrefs Prefs
 
 @* The songs already here, under the ways to add one. This was a page of its own beside Analyze; both
    were about getting audio in and finding it again, so they are one page (Home) and this is its list.
@@ -262,36 +262,20 @@
             _entries = [];
             return;
         }
-        try
+        // The filters as they were left: "my Dorian songs" should not need picking again each visit.
+        if (await Prefs.GetAsync(BrowserPrefs.LibraryFiltersKey, PrefsJsonContext.Default.LibraryFilters) is { } saved)
         {
-            // The filters as they were left: "my Dorian songs" should not need picking again each visit.
-            if (await JS.InvokeAsync<string?>("localStorage.getItem", FiltersKey) is { } saved
-                && saved.Split('\t') is [var search, var key, var mode])
-            {
-                _search = search;
-                _keyFilter = KeyChoices.Contains(key) ? key : null;
-                _modeFilter = ModeChoices.Contains(mode) ? mode : null;
-            }
-        }
-        catch (JSException)
-        {
-            // Blocked site data: the filters simply start empty.
+            _search = saved.Search ?? "";
+            _keyFilter = saved.Key is { } key && KeyChoices.Contains(key) ? key : null;
+            _modeFilter = saved.Mode is { } mode && ModeChoices.Contains(mode) ? mode : null;
         }
     }
 
-    private const string FiltersKey = "pm-library-filters";
-
-    private async Task SetFiltersAsync(string search, string? key, string? mode)
+    private Task SetFiltersAsync(string search, string? key, string? mode)
     {
         (_search, _keyFilter, _modeFilter) = (search, key, mode);
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", FiltersKey, $"{search}\t{key}\t{mode}");
-        }
-        catch (JSException)
-        {
-            // Not persisted; still applied for this visit.
-        }
+        return Prefs.SetAsync(BrowserPrefs.LibraryFiltersKey, new LibraryFilters(search, key, mode),
+            PrefsJsonContext.Default.LibraryFilters);
     }
 
     private async Task ToggleCompareAsync(LibraryEntryDto entry)

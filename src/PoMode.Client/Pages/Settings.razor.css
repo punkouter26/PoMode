@@ -1,0 +1,100 @@
+.settings {
+    max-width: 52rem;
+    margin: 0 auto;
+}
+
+.settings-section {
+    padding-top: var(--pm-space-3);
+    margin-top: var(--pm-space-3);
+    border-top: 1px solid var(--pm-border);
+    min-width: 0;
+}
+
+.settings-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--pm-space-2) var(--pm-space-3);
+    margin-top: var(--pm-space-2);
+    min-width: 0;
+}
+
+.settings-name {
+    flex: 0 0 11rem;
+    min-width: 0;
+    color: var(--pm-fg);
+}
+
+::deep .settings-control {
+    min-width: 0;
+}
+
+::deep .settings-select {
+    flex: 1 1 16rem;
+    max-width: 26rem;
+}
+
+.settings-value {
+    color: var(--pm-fg-muted);
+}
+
+.settings-hint {
+    margin: var(--pm-space-1) 0 0;
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-sm);
+    flex-basis: 100%;
+}
+
+.settings-row .settings-hint {
+    flex-basis: auto;
+    margin: 0;
+}
+
+.settings-text-button {
+    min-height: 1.5rem;
+    padding: 0 var(--pm-space-1);
+    border: 0;
+    background: none;
+    color: var(--pm-accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.settings-skeleton {
+    height: 8rem;
+    margin-top: var(--pm-space-2);
+}
+
+.settings-keys {
+    display: grid;
+    grid-template-columns: minmax(8rem, max-content) 1fr;
+    gap: var(--pm-space-1) var(--pm-space-3);
+    margin: var(--pm-space-2) 0 0;
+}
+
+.settings-keys dd {
+    margin: 0;
+    color: var(--pm-fg-muted);
+}
+
+.settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--pm-space-2);
+    margin-top: var(--pm-space-2);
+}
+
+@media (max-width: 640px) {
+    .settings-name {
+        flex-basis: 100%;
+    }
+
+    .settings-keys {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-keys dd {
+        margin-bottom: var(--pm-space-1);
+    }
+}

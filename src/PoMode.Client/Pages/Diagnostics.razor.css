@@ -12,14 +12,6 @@
     min-width: 0;
 }
 
-.diag-title {
-    margin: 0;
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pm-fg-muted);
-}
-
 .diag-error {
     color: var(--pm-note-outside);
 }

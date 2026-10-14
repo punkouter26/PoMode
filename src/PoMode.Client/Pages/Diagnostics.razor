@@ -25,7 +25,7 @@
     {
         var report = _report;
         <section class="diag-section" aria-label="Environment">
-            <h3 class="diag-title">Environment</h3>
+            <h3 class="pm-label diag-title">Environment</h3>
             <dl class="diag-grid">
                 <dt>Environment</dt><dd>@report.EnvironmentName</dd>
                 <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
@@ -35,7 +35,7 @@
         </section>
 
         <section class="diag-section" aria-label="Execution plan">
-            <h3 class="diag-title">Execution plan (defaults)</h3>
+            <h3 class="pm-label diag-title">Execution plan (defaults)</h3>
             @if (report.DefaultPlan is { Count: > 0 } plan)
             {
                 <ul class="diag-plan">
@@ -56,7 +56,7 @@
         </section>
 
         <section class="diag-section" aria-label="Hardware">
-            <h3 class="diag-title">Hardware</h3>
+            <h3 class="pm-label diag-title">Hardware</h3>
             @if (report.Hardware is { } hardware)
             {
                 <table class="diag-models">

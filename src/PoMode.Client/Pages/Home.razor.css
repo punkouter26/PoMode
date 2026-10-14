@@ -108,63 +108,6 @@
     font-size: 0.9rem;
 }
 
-.executor-details {
-    width: 100%;
-    max-width: 48rem;
-    text-align: left;
-}
-
-.executor-details > summary {
-    cursor: pointer;
-    font-size: var(--pm-text-sm);
-    color: var(--pm-fg-muted);
-    text-align: center;
-    user-select: none;
-}
-
-.executor-details > summary:focus-visible {
-    outline: 2px solid var(--pm-accent);
-    outline-offset: 2px;
-    border-radius: 0.25rem;
-}
-
-.executor-details[open] > summary {
-    margin-bottom: var(--pm-space-2);
-}
-
-.executor-pickers {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-    align-items: start;
-    gap: 0.6rem;
-    width: 100%;
-}
-
-.executor-picker {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.25rem;
-    min-width: 0;
-    text-align: left;
-    padding: 0.4rem 0.6rem;
-    border: 1px solid var(--pm-border);
-    border-radius: 0.5rem;
-}
-
-.executor-picker ::deep .executor-select {
-    width: 100%;
-    min-width: 0;
-}
-
-.executor-picker-label {
-    font-size: var(--pm-text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--pm-fg-muted);
-    user-select: none;
-}
-
 .analyze-another {
     margin-top: var(--pm-space-3);
 }
@@ -183,23 +126,12 @@
         padding: 0.9rem 0.75rem;
         gap: 0.55rem;
     }
-
-    /* One stage chooser per row on a phone. Two columns fitted, but at ~130px each the executor
-       names ellipsed to "OnnxPitchTrack…" — and the whole point of this control is choosing between
-       them by name. The page has the vertical room; it does not have the horizontal room. */
-    .executor-pickers {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 0.4rem;
-    }
-
-    .executor-picker {
-        padding: 0.3rem 0.4rem;
-    }
 }
 
-.executor-picker-single {
-    font-size: 0.78rem;
-    color: var(--pm-fg);
+.executor-pins {
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg-muted);
+    min-height: 1.5rem;
 }
 
 /* Provenance for a job whose audio the server can explain — a hum take names the progression it was

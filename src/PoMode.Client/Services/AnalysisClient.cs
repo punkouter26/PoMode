@@ -121,6 +121,14 @@ public sealed class AnalysisClient(HttpClient http)
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 
     /// <summary>The selectable executors per pipeline stage, in the planner's own order.</summary>
+    /// <summary>Deletes every job the caller owns; answers how many went.</summary>
+    public async Task<int> DeleteMyDataAsync()
+    {
+        using var response = await http.DeleteAsync("api/account/data");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<int>();
+    }
+
     public Task<List<StageExecutorsDto>?> GetExecutorsAsync()
         => http.GetFromJsonAsync<List<StageExecutorsDto>>("api/analysis/executors");
 

@@ -10,7 +10,7 @@
     @if (ShowMode)
     {
         <div class="backing-field">
-            <span class="backing-label" id="mode-label">Mode</span>
+            <span class="pm-label backing-label" id="mode-label">Mode</span>
             <RadzenDropDown TValue="ScaleMode" Data="@ScaleModes.All" Value="@Mode" Disabled="@Disabled"
                             Change="@(value => ModeChanged.InvokeAsync((ScaleMode)value))"
                             class="backing-dd backing-mode" id="mode-select" aria-labelledby="mode-label" />
@@ -19,7 +19,7 @@
     @* "Key" rather than "Tonic": the value is the parent key, and the chords are rooted on the mode's
        own note inside it (Dorian in D is E Dorian). *@
     <div class="backing-field">
-        <span class="backing-label" id="key-label">Key</span>
+        <span class="pm-label backing-label" id="key-label">Key</span>
         <RadzenDropDown TValue="int" Data="@TonicOptions" TextProperty="Name" ValueProperty="PitchClass"
                         Value="@Tonic" Disabled="@Disabled"
                         Change="@(value => TonicChanged.InvokeAsync((int)value))"
@@ -30,14 +30,14 @@
         @Between
     }
     <div class="backing-field backing-field-wide">
-        <span class="backing-label" id="chords-label">Chords</span>
+        <span class="pm-label backing-label" id="chords-label">Chords</span>
         <RadzenDropDown TValue="string" Data="@Progressions" TextProperty="Name" ValueProperty="Id"
                         Value="@ProgressionId" Disabled="@Disabled"
                         Change="@(value => ProgressionIdChanged.InvokeAsync((string)value))"
                         class="backing-dd backing-chords" id="prog-select" aria-labelledby="chords-label" />
     </div>
     <div class="backing-field backing-field-slider">
-        <span class="backing-label" id="tempo-label">@($"{_shownBpm ?? Bpm:0} BPM")</span>
+        <span class="pm-label backing-label" id="tempo-label">@($"{_shownBpm ?? Bpm:0} BPM")</span>
         @* The label follows the thumb while it is dragged. Radzen raises Change on every step of a
            drag, not only on release, so each page drops a regenerate that a later step superseded. *@
         <RadzenSlider TValue="double" Value="@Bpm" Min="MinBpm" Max="MaxBpm" Step="2" Disabled="@Disabled"

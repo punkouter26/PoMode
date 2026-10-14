@@ -12,10 +12,7 @@
 
 .better-fit-lead {
     font-size: var(--pm-text-sm);
-    font-weight: 600;
     color: var(--pm-danger);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
 }
 
 .better-fit-mode {
@@ -272,10 +269,7 @@
 }
 
 .gravity-label {
-    font-size: var(--pm-text-xs);
     font-weight: 700;
-    color: var(--pm-fg-muted);
-    text-transform: uppercase;
 }
 
 .gravity-home {
@@ -449,14 +443,6 @@
     align-items: center;
     gap: 0.35rem;
     min-width: 0;
-}
-
-.drums-label {
-    font-size: var(--pm-text-xs);
-    font-weight: 600;
-    color: var(--pm-fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
 }
 
 /* The recording's name is a whole phrase, so the picker takes the room the row has left. */

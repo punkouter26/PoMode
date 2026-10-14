@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject NotificationService Notifications
 @inject IJSRuntime JS
+@inject BrowserPrefs Prefs
 @implements IAsyncDisposable
 
 <PageTitle>PoMode</PageTitle>
@@ -94,39 +95,11 @@
                     </div>
                 }
 
-                @if (_executorStages is not null)
+                @if (_executorChoices.Count > 0)
                 {
-                    @* One chooser per pipeline stage, folded away: "Auto" keeps the server's ranked default,
-                       and most people never need to open this. A pick rides along on the upload URL and the
-                       planner honours it when available. *@
-                    <details class="executor-details">
-                        <summary>Analysis models · @(_executorChoices.Count == 0 ? "Auto" : $"{_executorChoices.Count} pinned")</summary>
-                        <div class="executor-pickers" role="group" aria-label="Analysis models per stage">
-                            @foreach (var (stageName, choices) in _executorStages)
-                            {
-                                <div class="executor-picker">
-                                    <span class="executor-picker-label" id="@($"stage-{stageName}")">@StageLabel(stageName)</span>
-                                    @if (choices.Count <= 2)
-                                    {
-                                        @* One real option: nothing to pick, so say it plainly — a disabled
-                                           control reads as "broken", not as "no choice needed". *@
-                                        <span class="executor-picker-single">
-                                            @(choices.Count == 2 ? choices[1].Label : "Auto (server picks best)")
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <RadzenDropDown TValue="string" Data="@choices"
-                                                        TextProperty="Label" ValueProperty="Value"
-                                                        Value="@ExecutorChoiceOf(stageName)"
-                                                        Change="@(value => OnExecutorPicked(stageName, value as string))"
-                                                        class="executor-select"
-                                                        aria-labelledby="@($"stage-{stageName}")" />
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </details>
+                    @* The models are picked on the Settings page; a pinned one is named here so an
+                       upload never runs on a choice the person has forgotten making. *@
+                    <a class="executor-pins" href="settings">@_executorChoices.Count analysis @(_executorChoices.Count == 1 ? "model" : "models") pinned · change</a>
                 }
                 @if (_uploading)
                 {
@@ -254,119 +227,7 @@
     /// cannot start the work twice.</summary>
     private readonly HashSet<string> _delegatedJobs = [];
 
-    /// <summary>One entry per stage chooser; "" = Auto (the server's ranked default).</summary>
-    private sealed record ExecutorChoice(string Value, string Label);
-
-    /// <summary>The raw server answer, kept so the choices can rebuild when the Tier-2 probe lands.</summary>
-    private List<StageExecutorsDto>? _rawExecutorStages;
-
-    /// <summary>What the choosers render: one stable choices list per stage, rebuilt only when the
-    /// data or the browser capability changes — never per render.</summary>
-    private List<(string Stage, List<ExecutorChoice> Choices)>? _executorStages;
-
     private readonly Dictionary<string, string> _executorChoices = [];
-
-    private static string StageLabel(string stage) => stage switch
-    {
-        StageNames.Separating => "Separation",
-        StageNames.PitchTracking => "Melody",
-        StageNames.ChordDetecting => "Chords",
-        StageNames.ModalAnalysis => "Modes",
-        _ => stage,
-    };
-
-    private static string KindLabel(ExecutorKind kind) => kind switch
-    {
-        ExecutorKind.Model => "local model",
-        ExecutorKind.Method => "code",
-        ExecutorKind.Browser => "browser model",
-        _ => kind.ToString(),
-    };
-
-    /// <summary>Rebuilds every stage's choices. Browser-tier options are offered only after this
-    /// browser's Tier-2 probe succeeded — otherwise picking one would be silently ignored by the
-    /// planner (the browser tier is invisible without clientCanInfer).</summary>
-    private void RebuildExecutorChoices()
-    {
-        _executorStages = _rawExecutorStages?
-            .Select(stage => (stage.Stage, BuildChoices(stage, browserCapable: _clientCapability is not null)))
-            .ToList();
-    }
-
-    private static List<ExecutorChoice> BuildChoices(StageExecutorsDto stage, bool browserCapable)
-    {
-        // "Auto" stays unnamed on purpose: what the server actually picks can depend on this
-        // browser's capability, so naming one executor here could advertise the wrong one. The
-        // parenthetical spelling shows only on the stages that have nothing to pick, where the
-        // label has a whole row to itself rather than a quarter of a phone's width.
-        var choices = new List<ExecutorChoice>(stage.Executors.Count + 1)
-        {
-            new("", "Auto"),
-        };
-        foreach (var option in stage.Executors)
-        {
-            if (option.Kind == ExecutorKind.Browser && !browserCapable)
-            {
-                continue;
-            }
-            var suffix = option.Available ? "" : " — unavailable";
-            choices.Add(new ExecutorChoice(option.Name, $"{ExecutorNames.Rated(option.Name)} ({KindLabel(option.Kind)}){suffix}"));
-        }
-        return choices;
-    }
-
-    private string ExecutorChoiceOf(string stage)
-        => _executorChoices.TryGetValue(stage, out var name) ? name : "";
-
-    private void OnExecutorPicked(string stage, string? name)
-    {
-        if (string.IsNullOrEmpty(name))
-        {
-            _executorChoices.Remove(stage);
-        }
-        else
-        {
-            _executorChoices[stage] = name;
-        }
-        _ = SavePinsAsync();
-    }
-
-    private const string PinsKey = "pm-executor-pins";
-
-    /// <summary>Pins are a standing preference ("always the DSP chords on this machine"), so they
-    /// outlive the visit. Fire-and-forget: a browser that refuses storage just forgets them.</summary>
-    private async Task SavePinsAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", PinsKey,
-                string.Join(';', _executorChoices.Select(pin => $"{pin.Key}={pin.Value}")));
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
-        {
-        }
-    }
-
-    /// <summary>Restores the saved pins, keeping only those naming an executor the server still lists;
-    /// the planner would ignore a stale one anyway, but the summary line should not count it.</summary>
-    private async Task RestorePinsAsync()
-    {
-        try
-        {
-            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", PinsKey);
-            foreach (var pin in (saved ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (pin.Split('=') is [var stage, var name]
-                    && _rawExecutorStages?.Any(s => s.Stage == stage && s.Executors.Any(e => e.Name == name)) == true)
-                {
-                    _executorChoices[stage] = name;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
-        {
-        }
-    }
 
     private bool _intakeReady;
 
@@ -468,9 +329,11 @@
     {
         try
         {
-            _rawExecutorStages = await Analysis.GetExecutorsAsync();
-            await RestorePinsAsync();
-            RebuildExecutorChoices();
+            // Only the pins are needed here: the choosers themselves are on the Settings page.
+            foreach (var (stage, name) in await ExecutorChoices.LoadAsync(Prefs, await Analysis.GetExecutorsAsync()))
+            {
+                _executorChoices[stage] = name;
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
         {
@@ -490,7 +353,6 @@
         _separation = await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/separation.js");
         _clientCapability = await _pitchWorker.InvokeAsync<string?>("probeCapability");
         _probed = true;
-        RebuildExecutorChoices(); // a capable browser may now offer the browser-tier options
         StateHasChanged();
         // After the probe, not before: a shared file should get the same browser-tier treatment
         // as one dropped on the page, and that is only known once the capability is in.

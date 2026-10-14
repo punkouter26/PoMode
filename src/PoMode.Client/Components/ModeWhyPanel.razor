@@ -26,7 +26,7 @@
     {
         <div class="why-charts">
             <div class="why-chart">
-                <span class="why-title">Which scale wins each window</span>
+                <span class="pm-label why-title">Which scale wins each window</span>
                 @if (stats.ModeVotes.Count == 0)
                 {
                     <p class="why-caption">Not enough of the vocal was clear enough to name a mode.</p>
@@ -57,7 +57,7 @@
             </div>
 
             <div class="why-chart">
-                <span class="why-title">Which notes the vocal sings</span>
+                <span class="pm-label why-title">Which notes the vocal sings</span>
                 <p class="why-caption">Every note, counted by its distance from the home note (@stats.TonicName).</p>
                 <div class="why-rows">
                     @foreach (var degree in stats.ScaleDegrees)
