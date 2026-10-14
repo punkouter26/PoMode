@@ -118,6 +118,10 @@ public sealed record JobStatusDto(
     TakeOrigin? Origin = null);
 
 /// <summary>One row in the song library: a persisted job plus its headline analysis once complete.</summary>
+/// <summary>Another song in the caller's library that shares this one's modal colour, with the
+/// server's sentence saying how (<c>GET /api/library/{jobId}/similar</c>).</summary>
+public sealed record SimilarSongDto(string JobId, string FileName, double Score, string Reason);
+
 public sealed record LibraryEntryDto(
     string JobId,
     string FileName,

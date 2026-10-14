@@ -1,6 +1,8 @@
 @using PoMode.Shared.Analysis
 @inject AnalysisClient Analysis
 @inject BrowserPrefs Prefs
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 @* The songs already here, under the ways to add one. This was a page of its own beside Analyze; both
    were about getting audio in and finding it again, so they are one page (Home) and this is its list.
@@ -24,15 +26,26 @@
     {
         @* One tick previews a song under the table, two put them side by side. *@
         var canCompare = _entries.Any(IsAnalysed);
+        @* One box for everything a song can be found by: its name, key, mode, tempo or kind. What the
+           box understood is shown back as chips, each removable, so "dorian 120" is visibly two filters. *@
         <div class="library-filters" role="search" aria-label="Filter songs">
-            <RadzenTextBox @bind-Value="_search" Placeholder="Search songs…" aria-label="Search by file name"
-                           class="library-search" @oninput="@(e => SetFiltersAsync(e.Value?.ToString() ?? "", _keyFilter, _modeFilter))" />
-            <RadzenDropDown TValue="string" Data="@KeyChoices" Value="@_keyFilter" AllowClear="true"
-                            Placeholder="Any key" Change="@(v => SetFiltersAsync(_search, v as string, _modeFilter))" class="library-filter" />
-            <RadzenDropDown TValue="string" Data="@ModeChoices" Value="@_modeFilter" AllowClear="true"
-                            Placeholder="Any mode" Change="@(v => SetFiltersAsync(_search, _keyFilter, v as string))" class="library-filter" />
-            <span class="library-count">@Filtered.Count of @_entries.Count songs</span>
+            <RadzenTextBox Value="@_query.Text" Placeholder="Find songs, e.g. “dorian 120”"
+                           aria-label="Find songs by name, key, mode, tempo or kind" class="library-search"
+                           @oninput="@(e => SetQueryAsync(e.Value?.ToString() ?? ""))" />
+            <span class="library-count" role="status">@Filtered.Count of @_entries.Count</span>
         </div>
+        @if (_query.Chips.Count > 0)
+        {
+            <ul class="library-chips" aria-label="Filters in use">
+                @foreach (var chip in _query.Chips)
+                {
+                    <li>
+                        <button type="button" class="library-chip" @onclick="@(() => SetQueryAsync(_query.Without(chip)))"
+                                aria-label="@($"Remove filter {chip.Label}")">@chip.Label <span aria-hidden="true">×</span></button>
+                    </li>
+                }
+            </ul>
+        }
         <div class="library-grid" data-library-count="@_entries.Count">
             <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
                             AllowPaging="true" PageSize="8" PagerHorizontalAlign="HorizontalAlign.Center">
@@ -41,7 +54,7 @@
                        are the comparison, and the song name itself is the way in. *@
                     @if (canCompare)
                     {
-                        <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="44px" CssClass="col-compare">
+                        <RadzenDataGridColumn TItem="LibraryEntryDto" Title="" Sortable="false" Width="44px" CssClass="col-compare" HeaderCssClass="col-compare">
                             <Template Context="entry">
                                 <RadzenCheckBox TValue="bool" Value="@_compare.Contains(entry.JobId)"
                                                 Change="@(_ => ToggleCompareAsync(entry))"
@@ -53,6 +66,7 @@
                     }
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song" CssClass="col-song">
                         <Template Context="entry">
+                            <SongTile Entry="@entry" />
                             @if (entry.Origin?.Kind == TakeOrigin.Beat)
                             {
                                 @* A beat has no analysis to open: it was kept for the Mode Lab's drum loop. *@
@@ -60,7 +74,7 @@
                             }
                             else if (entry.Stage == JobStage.Complete)
                             {
-                                <a class="library-open" href="@($"/?job={entry.JobId}")">@entry.FileName</a>
+                                <a class="library-open" href="@($"/?job={entry.JobId}")" data-morph>@entry.FileName</a>
                             }
                             else
                             {
@@ -77,8 +91,8 @@
                             {
                                 <span class="library-earlier">earlier run</span>
                             }
-                            @* A sung take or the first-run demo is not an uploaded song, and the row should
-                               not read like one; the tooltip carries the server's sentence about it. *@
+                            @* A sung take, a beat or the first-run demo is not an uploaded song, and the row
+                               should not read like one; the tooltip carries the server's sentence about it. *@
                             @if (entry.Origin is { Kind: TakeOrigin.Demo } demo)
                             {
                                 <span class="library-origin-badge library-origin-badge--demo" title="@demo.Description"
@@ -94,10 +108,15 @@
                                 <span class="library-origin-badge" title="@origin.Description"
                                       data-origin-kind="@origin.Kind">🎤 hum</span>
                             }
+                            @if (_offline.Contains(entry.JobId))
+                            {
+                                <span class="library-offline" title="Kept on this device: opens without a connection">offline</span>
+                            }
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Analyzed" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px" />
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Key" Width="130px">
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Property="CreatedAt" Title="Added" FormatString="{0:yyyy-MM-dd HH:mm}" Width="150px"
+                                          CssClass="col-date" HeaderCssClass="col-date" />
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Key" Width="130px" CssClass="col-key" HeaderCssClass="col-key">
                         <Template Context="entry">
                             @if (entry.TonicName is null)
                             {
@@ -109,11 +128,11 @@
                             }
                             else
                             {
-                                <span><strong>@entry.TonicName</strong> @ScaleModes.DisplayName(entry.PrimaryMode)</span>
+                                <span data-morph-key><strong>@entry.TonicName</strong> @ScaleModes.DisplayName(entry.PrimaryMode)</span>
                             }
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Tempo" Width="90px">
+                    <RadzenDataGridColumn TItem="LibraryEntryDto" Title="Tempo" Width="90px" CssClass="col-tempo" HeaderCssClass="col-tempo">
                         <Template Context="entry">
                             @(entry.TempoBpm is { } bpm ? $"{bpm:0} BPM" : "—")
                         </Template>
@@ -137,13 +156,13 @@
             @foreach (var (entry, result) in _compareResults)
             {
                 <div class="compare-card">
-                    <div class="compare-title"><a class="library-open" href="@($"/?job={entry.JobId}")">@entry.FileName</a></div>
+                    <div class="compare-title"><a class="library-open" href="@($"/?job={entry.JobId}")" data-morph>@entry.FileName</a></div>
                     @if (entry.Origin is { } sung)
                     {
                         <div class="compare-facts">@sung.Description</div>
                     }
                     <div class="compare-facts">
-                        <span>@result.TonicName @(result.PrimaryMode is { } primary ? ScaleModes.DisplayName(primary.ToString()) : "unclear")</span>
+                        <span data-morph-key>@result.TonicName @(result.PrimaryMode is { } primary ? ScaleModes.DisplayName(primary.ToString()) : "unclear")</span>
                         <span>@($"{result.TempoBpm:0} BPM")</span>
                         <span>@result.Windows.Count windows</span>
                     </div>
@@ -165,6 +184,23 @@
                 </div>
             }
         </div>
+        @* With one song previewed, the library answers "what else sounds like this": the other songs
+           that spend their time in the same modes, each with the server's reason. *@
+        @if (_compareResults.Count == 1 && _similar is { Count: > 0 })
+        {
+            <div class="similar" data-similar-count="@_similar.Count">
+                <h3 class="pm-label">Songs like this</h3>
+                <ul class="similar-list">
+                    @foreach (var song in _similar)
+                    {
+                        <li>
+                            <a class="library-open" href="@($"/?job={song.JobId}")">@song.FileName</a>
+                            <span class="similar-reason">@song.Reason</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
     </RadzenCard>
 }
 
@@ -172,10 +208,12 @@
     private List<LibraryEntryDto>? _entries;
     private readonly HashSet<string> _compare = [];
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
+    private List<SimilarSongDto>? _similar;
+    private HashSet<string> _offline = [];
+    private IJSObjectReference? _offlineJs;
 
-    private string _search = "";
-    private string? _keyFilter;
-    private string? _modeFilter;
+    private LibraryQuery _query = LibraryQuery.Parse("");
+
     /// <summary>Songs whose earlier runs are listed under the latest one.</summary>
     private readonly HashSet<string> _expanded = [];
 
@@ -203,43 +241,27 @@
     private int RunCountOf(LibraryEntryDto entry)
         => _entries?.Count(e => e.FileName == entry.FileName) ?? 1;
 
-    private List<string> KeyChoices => _entries?
-        .Select(e => e.TonicName).OfType<string>().Distinct().OrderBy(k => k).ToList() ?? [];
-
-    private List<string> ModeChoices => _entries?
-        .Where(e => !string.IsNullOrEmpty(e.PrimaryMode)).Select(e => ScaleModes.DisplayName(e.PrimaryMode))
-        .Distinct().OrderBy(m => m).ToList() ?? [];
-
     /// <summary>
-    /// The grid's view: search on file name, exact key/mode match. Empty filters pass all, so
-    /// "songs in the same key" is just picking that key in the dropdown.
+    /// The grid's view: the latest run of each song (plus opened earlier runs), through the query.
     /// </summary>
     /// <remarks>
-    /// Memoised on the four inputs that decide it, because this used to be a plain property: it ran
-    /// a GroupBy, three Wheres and a ToList on every read, the markup reads it twice per render, and
-    /// the search box renders on every keystroke. The list identity matters as much as the cost —
-    /// <see cref="RadzenDataGrid{T}"/> compares its Data by reference to decide whether to rebuild,
-    /// so handing it a freshly allocated list each render forced a full rebuild of a grid whose
-    /// contents had not changed.
+    /// Memoised on the inputs that decide it: the markup reads it twice per render and the search
+    /// box renders on every keystroke, and <see cref="RadzenDataGrid{T}"/> compares its Data by
+    /// reference to decide whether to rebuild, so a fresh list each render forced a full rebuild.
     /// </remarks>
     private List<LibraryEntryDto> Filtered
     {
         get
         {
-            var key = (_entries, _expandedVersion, _search, _keyFilter, _modeFilter);
+            var key = (_entries, _expandedVersion, _query);
             if (_filteredCache is not null && _filteredKey == key)
             {
                 return _filteredCache;
             }
-            IEnumerable<LibraryEntryDto> view = _entries ?? [];
-            // The latest run of each song, plus every run of a song whose badge has been opened.
-            view = view.GroupBy(e => e.FileName)
-                .SelectMany(g => _expanded.Contains(g.Key) ? g : g.Take(1));
-            _filteredCache = view
-                .Where(e => string.IsNullOrWhiteSpace(_search)
-                    || e.FileName.Contains(_search, StringComparison.OrdinalIgnoreCase))
-                .Where(e => _keyFilter is null || e.TonicName == _keyFilter)
-                .Where(e => _modeFilter is null || ScaleModes.DisplayName(e.PrimaryMode) == _modeFilter)
+            _filteredCache = (_entries ?? [])
+                .GroupBy(e => e.FileName)
+                .SelectMany(g => _expanded.Contains(g.Key) ? g : g.Take(1))
+                .Where(_query.Matches)
                 .ToList();
             _filteredKey = key;
             return _filteredCache;
@@ -247,7 +269,7 @@
     }
 
     private List<LibraryEntryDto>? _filteredCache;
-    private (List<LibraryEntryDto>? Entries, int Expanded, string Search, string? Key, string? Mode) _filteredKey;
+    private (List<LibraryEntryDto>? Entries, int Expanded, LibraryQuery Query) _filteredKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -262,19 +284,40 @@
             _entries = [];
             return;
         }
-        // The filters as they were left: "my Dorian songs" should not need picking again each visit.
+        // The search as it was left: "my Dorian songs" should not need typing again each visit.
         if (await Prefs.GetAsync(BrowserPrefs.LibraryFiltersKey, PrefsJsonContext.Default.LibraryFilters) is { } saved)
         {
-            _search = saved.Search ?? "";
-            _keyFilter = saved.Key is { } key && KeyChoices.Contains(key) ? key : null;
-            _modeFilter = saved.Mode is { } mode && ModeChoices.Contains(mode) ? mode : null;
+            _query = LibraryQuery.Parse(saved.Search);
         }
     }
 
-    private Task SetFiltersAsync(string search, string? key, string? mode)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        (_search, _keyFilter, _modeFilter) = (search, key, mode);
-        return Prefs.SetAsync(BrowserPrefs.LibraryFiltersKey, new LibraryFilters(search, key, mode),
+        if (!firstRender)
+        {
+            return;
+        }
+        try
+        {
+            _offlineJs = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/offline.js");
+            _offline = [.. await _offlineJs.InvokeAsync<string[]>("savedIds")];
+            await using var transitions = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/transitions.js");
+            await transitions.InvokeVoidAsync("install");
+            if (_offline.Count > 0)
+            {
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // No Cache Storage (a private window): nothing is kept offline, and links stay links.
+        }
+    }
+
+    private Task SetQueryAsync(string text)
+    {
+        _query = LibraryQuery.Parse(text);
+        return Prefs.SetAsync(BrowserPrefs.LibraryFiltersKey, new LibraryFilters(text),
             PrefsJsonContext.Default.LibraryFilters);
     }
 
@@ -290,6 +333,7 @@
         }
 
         _compareResults.Clear();
+        _similar = null;
         if (_entries is not null)
         {
             foreach (var selected in _entries.Where(e => _compare.Contains(e.JobId)))
@@ -298,6 +342,17 @@
                 {
                     _compareResults.Add((selected, result));
                 }
+            }
+        }
+        if (_compareResults.Count == 1)
+        {
+            try
+            {
+                _similar = await Analysis.GetSimilarAsync(_compareResults[0].Entry.JobId);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+            {
+                // The preview stands without suggestions.
             }
         }
     }
@@ -314,4 +369,18 @@
             .Where(w => w is { InsufficientEvidence: false, Matches.Count: > 0 })
             .Select(w => w.Matches[0].Mode.ToString())
             .Distinct();
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_offlineJs is not null)
+            {
+                await _offlineJs.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
 }

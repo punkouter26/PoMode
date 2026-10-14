@@ -39,6 +39,36 @@ public static class LibraryEndpoints
             return TypedResults.Ok(entries.OrderByDescending(e => e.CreatedAt).ToList());
         }).RequireAuthorization();
 
+        // The caller's other analysed songs, most alike first (SongSimilarity). Only their own library
+        // is searched, the same rule as the listing above.
+        app.MapGet("/api/library/{jobId}/similar", async Task<Results<Ok<List<SimilarSongDto>>, NotFound>> (
+            string jobId, HttpContext context, JobStore store, CancellationToken ct) =>
+        {
+            var owner = PoUser.IdOf(context.User);
+            if (owner is null || !JobId.IsValid(jobId)
+                || await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct) is not { } song)
+            {
+                return TypedResults.NotFound();
+            }
+            var alike = new List<SimilarSongDto>();
+            foreach (var otherId in store.ListJobIds())
+            {
+                if (otherId == jobId || !JobId.IsValid(otherId)
+                    || await store.LoadAsync(otherId, ct) is not { Stage: JobStage.Complete } other
+                    || other.OwnerId != owner || other.Origin?.Kind == TakeOrigin.Beat
+                    || await store.ReadArtifactAsync<ModalResult>(otherId, "result.json", ct) is not { } result)
+                {
+                    continue;
+                }
+                var score = SongSimilarity.Score(song, result);
+                if (score >= SongSimilarity.MinScore)
+                {
+                    alike.Add(new SimilarSongDto(otherId, other.InputFileName, Math.Round(score, 3), SongSimilarity.Reason(song, result)));
+                }
+            }
+            return TypedResults.Ok(alike.OrderByDescending(s => s.Score).Take(5).ToList());
+        }).RequireAuthorization();
+
         return app;
     }
 

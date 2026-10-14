@@ -1,0 +1,28 @@
+.song-tile {
+    flex: 0 0 auto;
+    vertical-align: middle;
+    margin-right: var(--pm-space-2);
+}
+
+.tile-ground {
+    fill: var(--pm-chord-block);
+}
+
+.tile-stripe {
+    fill: rgb(255 255 255 / 0.55);
+}
+
+.tile-glyph {
+    fill: var(--pm-fg-muted);
+}
+
+/* Fills, the same per-mode hues as the library's mode timelines, so a tile and a timeline agree. */
+.tile-ionian .tile-ground { fill: #2563eb; }
+.tile-dorian .tile-ground { fill: #059669; }
+.tile-phrygian .tile-ground { fill: #dc2626; }
+.tile-lydian .tile-ground { fill: #7c3aed; }
+.tile-mixolydian .tile-ground { fill: #d97706; }
+.tile-aeolian .tile-ground { fill: #475569; }
+.tile-locrian .tile-ground { fill: #be185d; }
+.tile-minorpentatonic .tile-ground { fill: #0891b2; }
+.tile-majorpentatonic .tile-ground { fill: #65a30d; }

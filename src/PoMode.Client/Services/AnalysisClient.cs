@@ -121,6 +121,10 @@ public sealed class AnalysisClient(HttpClient http)
         => http.GetFromJsonAsync<DiagnosticsReport>("diag");
 
     /// <summary>The selectable executors per pipeline stage, in the planner's own order.</summary>
+    /// <summary>The caller's other songs most like this one, with the reason in words.</summary>
+    public Task<List<SimilarSongDto>?> GetSimilarAsync(string jobId)
+        => http.GetFromJsonAsync<List<SimilarSongDto>>($"api/library/{jobId}/similar");
+
     /// <summary>Deletes every job the caller owns; answers how many went.</summary>
     public async Task<int> DeleteMyDataAsync()
     {

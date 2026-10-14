@@ -59,7 +59,7 @@ public sealed class BrowserPrefs(IJSRuntime js)
 }
 
 /// <summary>The Library's search and filters as they were left.</summary>
-public sealed record LibraryFilters(string Search, string? Key, string? Mode);
+public sealed record LibraryFilters(string Search);
 
 /// <summary>Practice's backing as it was left.</summary>
 public sealed record PracticeBacking(int TonicPitchClass, ScaleMode Mode, string ProgressionId, double Bpm);

@@ -180,10 +180,6 @@
     min-width: 10rem;
 }
 
-.library-filters ::deep .library-filter {
-    width: 10rem;
-}
-
 .library-count {
     margin-left: auto;
     font-size: 0.8rem;
@@ -191,13 +187,80 @@
     white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-    .library-filters ::deep .library-filter {
-        width: 100%;
-    }
+/* What the search box understood, one removable chip per filter. */
+.library-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--pm-space-1) var(--pm-space-2);
+    list-style: none;
+    margin: 0 0 var(--pm-space-2);
+    padding: 0;
+}
 
-    .library-count {
-        margin-left: 0;
+.library-chip {
+    min-height: 1.5rem;
+    padding: 0.1rem 0.6rem;
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    background: var(--pm-accent-soft);
+    color: var(--pm-fg);
+    font: inherit;
+    font-size: var(--pm-text-sm);
+    cursor: pointer;
+}
+
+.library-chip:hover,
+.library-chip:focus-visible {
+    border-color: var(--pm-accent);
+}
+
+.library-offline {
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--pm-ok-edge);
+    background: var(--pm-ok-bg);
+    color: var(--pm-ok);
+    font-size: var(--pm-text-xs);
+    font-weight: 600;
+}
+
+.similar {
+    margin-top: var(--pm-space-3);
+}
+
+.similar-list {
+    list-style: none;
+    margin: var(--pm-space-1) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--pm-space-1);
+}
+
+.similar-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--pm-space-2);
+    min-width: 0;
+}
+
+.similar-reason {
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-sm);
+}
+
+/* Column priority: the date a song was added is the first thing to go when the row runs short. The
+   name, key and tempo are what a song is found by. */
+@media (max-width: 900px) {
+    .library-grid ::deep .rz-grid-table .col-date {
+        display: none;
+    }
+}
+
+@media (pointer: coarse) {
+    .library-chip {
+        min-height: 2.75rem;
     }
 }
 

@@ -1,0 +1,60 @@
+@using PoMode.Shared.Analysis
+@* A small mark that is the song's own analysis drawn as a picture, so a library of thirty rows can be
+   scanned by eye: the ground is the main mode's colour, the stripes are the tempo (one per 30 BPM,
+   two to six), and their angle is the key (30 degrees a semitone round the circle of pitch). Nothing
+   on it is decoration: two tiles that look alike are two songs that measured alike. A beat, a song
+   still being read, or one with no mode gets a plain tile rather than a guess. *@
+<svg class="song-tile @GroundClass" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" focusable="false">
+    <rect class="tile-ground" x="0" y="0" width="32" height="32" rx="7" />
+    @if (Stripes > 0)
+    {
+        <g transform="@($"rotate({Angle} 16 16)")">
+            @for (var i = 0; i < Stripes; i++)
+            {
+                var y = 16 - (Stripes * 4 / 2.0) + (i * 4) + 1;
+                <rect class="tile-stripe" x="-8" y="@y.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)" width="48" height="2" />
+            }
+        </g>
+    }
+    else if (Entry.Origin?.Kind == TakeOrigin.Beat)
+    {
+        @* A note head on a stem: a beat, kept for the drum loop. *@
+        <ellipse class="tile-glyph" cx="13" cy="21" rx="4.5" ry="3.5" />
+        <rect class="tile-glyph" x="16.5" y="8" width="2" height="13" />
+    }
+    else if (Entry.Stage != JobStage.Complete)
+    {
+        @* Three dots: still being read. *@
+        <circle class="tile-glyph" cx="10" cy="16" r="2" />
+        <circle class="tile-glyph" cx="16" cy="16" r="2" />
+        <circle class="tile-glyph" cx="22" cy="16" r="2" />
+    }
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public required LibraryEntryDto Entry { get; set; }
+
+    private static readonly string[] Names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    private static readonly string[] Flats = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+
+    private bool Analysed => Entry.Stage == JobStage.Complete && Entry.Origin?.Kind != TakeOrigin.Beat
+        && !string.IsNullOrEmpty(Entry.PrimaryMode);
+
+    private string GroundClass => Analysed ? $"tile-{Entry.PrimaryMode!.ToLowerInvariant()}" : "tile-plain";
+
+    private int Stripes => Analysed && Entry.TempoBpm is { } bpm ? Math.Clamp((int)Math.Round(bpm / 30), 2, 6) : 0;
+
+    private int Angle
+    {
+        get
+        {
+            var name = Entry.TonicName ?? "";
+            var index = Array.IndexOf(Names, name);
+            if (index < 0)
+            {
+                index = Array.IndexOf(Flats, name);
+            }
+            return Math.Max(index, 0) * 30;
+        }
+    }
+}

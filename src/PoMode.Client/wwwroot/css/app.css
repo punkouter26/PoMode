@@ -323,6 +323,26 @@
     color: var(--pm-fg-muted);
 }
 
+/* The library-to-analysis morph (js/shell/transitions.js): the song's key moves from its row into
+   the headline. Only the named element travels; the rest of the page cuts over almost at once. */
+.pm-morph-key {
+    view-transition-name: pm-key;
+}
+
+::view-transition-group(pm-key) {
+    animation-duration: 420ms;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 160ms;
+}
+
+:root[data-fx="off"] .pm-morph-key {
+    view-transition-name: none;
+}
+
 /* Typography: a gently fluid base size, calm heading rhythm, and lining tabular figures so
    times, percentages and BPM readouts never wobble as they tick. */
 body {

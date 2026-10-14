@@ -14,6 +14,7 @@ namespace PoMode.Shared.Serialization;
 [JsonSerializable(typeof(JobStatusDto))]
 [JsonSerializable(typeof(TakeOrigin))]
 [JsonSerializable(typeof(List<LibraryEntryDto>))]
+[JsonSerializable(typeof(List<SimilarSongDto>))]
 [JsonSerializable(typeof(AnalysisPreviewDto))]
 [JsonSerializable(typeof(HardwareReport))]
 [JsonSerializable(typeof(List<NoteEvent>))]
