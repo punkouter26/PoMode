@@ -1,11 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
-using PoMode.API.Audio;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
 using PoMode.Shared.Analysis;
-using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
 using tusdotnet.Models.Expiration;
@@ -115,7 +113,8 @@ public sealed class ResumableUploads(JobStore jobs, TimeProvider time, ILogger<R
         AnalysisIntake intake,
         bool clientCanInfer,
         IReadOnlyDictionary<string, string> preferredExecutors,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool asBeat = false)
     {
         if (!await new OwnerScopedFileIdProvider(ownerId).ValidateId(uploadId))
         {
@@ -153,44 +152,22 @@ public sealed class ResumableUploads(JobStore jobs, TimeProvider time, ILogger<R
                 rejection = await AudioFormatValidator.ValidateAsync(probe, length, ct);
             }
 
-            // An .m4a normally arrives already converted by the browser. One that arrives as it was
-            // recorded came from a browser with no AAC decoder, and is converted here if this host can.
-            string? converted = null;
-            if (rejection is UploadRejection.NeedsConversion)
+            if (rejection is { } reason)
             {
-                converted = await ConvertToWavAsync(uploadId, file, ct);
-                rejection = converted is null ? UploadRejection.CannotConvert
-                    : new FileInfo(converted).Length > AudioFormatValidator.MaxBytes ? UploadRejection.TooLarge
-                    : null;
+                // Nothing will ever make these bytes acceptable, so they go now rather than at expiry.
+                await store.DeleteFileAsync(uploadId, ct);
+                return new UploadHandoff.Rejected(reason);
             }
-            try
-            {
-                if (rejection is { } reason)
-                {
-                    // Nothing will ever make these bytes acceptable, so they go now rather than at expiry.
-                    await store.DeleteFileAsync(uploadId, ct);
-                    return new UploadHandoff.Rejected(reason);
-                }
 
-                var metadata = await file.GetMetadataAsync(ct);
-                var fileName = SafeFileName(metadata.TryGetValue("filename", out var name) ? name.GetString(Encoding.UTF8) : null);
-                if (converted is not null)
-                {
-                    // The stored input's extension comes from this name, and the bytes are WAV now.
-                    fileName = Path.ChangeExtension(fileName, ".wav");
-                }
-
-                await using var content = converted is null
-                    ? await file.GetContentAsync(ct)
-                    : File.OpenRead(converted);
-                state = await intake.StartAsync(fileName, content, clientCanInfer, ct, preferredExecutors, ownerId: ownerId);
-            }
-            finally
+            var metadata = await file.GetMetadataAsync(ct);
+            var fileName = SafeFileName(metadata.TryGetValue("filename", out var name) ? name.GetString(Encoding.UTF8) : null);
+            await using (var content = await file.GetContentAsync(ct))
             {
-                if (converted is not null)
-                {
-                    File.Delete(converted);
-                }
+                // A beat is kept, not analysed: the Mode Lab cuts it from the original audio and
+                // nothing reads a mode, chords or a melody out of a drum take.
+                state = asBeat
+                    ? await intake.KeepBeatAsync(fileName, content, ownerId, ct)
+                    : await intake.StartAsync(fileName, content, clientCanInfer, ct, preferredExecutors, ownerId: ownerId);
             }
 
             Directory.CreateDirectory(HandedOffDir);
@@ -204,32 +181,6 @@ public sealed class ResumableUploads(JobStore jobs, TimeProvider time, ILogger<R
             // Anyone already waiting holds this semaphore and finds the marker; anyone later makes a
             // fresh one and finds the same marker. Dropping it keeps the map from growing forever.
             _handoffLocks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(uploadId, gate));
-        }
-    }
-
-    /// <summary>The upload as a WAV in the system temp folder, or null when this host cannot make one.
-    /// ffmpeg wants a path it can seek in, so the upload is copied out of the tus store first.</summary>
-    private async Task<string?> ConvertToWavAsync(string uploadId, ITusFile file, CancellationToken ct)
-    {
-        var source = Path.Combine(Path.GetTempPath(), $"pomode-{uploadId}.m4a");
-        var wav = Path.ChangeExtension(source, ".wav");
-        try
-        {
-            await using (var content = await file.GetContentAsync(ct))
-            await using (var copy = File.Create(source))
-            {
-                await content.CopyToAsync(copy, ct);
-            }
-            if (await FfmpegTranscoder.TryToWavAsync(source, wav, logger, ct))
-            {
-                return wav;
-            }
-            File.Delete(wav);
-            return null;
-        }
-        finally
-        {
-            File.Delete(source);
         }
     }
 

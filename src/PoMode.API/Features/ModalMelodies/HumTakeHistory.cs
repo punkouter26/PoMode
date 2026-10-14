@@ -97,16 +97,24 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
     }
 
     /// <summary>An analysed song's melody against the caller's own range: the transposition that would
-    /// centre it on where they sing. Null when there is nothing honest to say - too few takes, too few
-    /// notes in the song, or a job that is itself a take or the demo.</summary>
+    /// centre it on where they sing. Null when there is nothing honest to say - too few takes, a song
+    /// whose singing the profiler declines, or a job that is itself a take, a beat or the demo.</summary>
+    /// <remarks>The song's span is the one the singer card draws (<see cref="VoiceProfiler"/>'s map), so
+    /// the sentence under the card can never quote a second, slightly different range for the same
+    /// melody. The intonation read behind it is cached per job, and the card has just asked for it.</remarks>
     public async Task<SongVoiceFitDto?> SongFitAsync(string? ownerId, string jobId, CancellationToken ct)
     {
-        if (await store.LoadAsync(jobId, ct) is not { Stage: JobStage.Complete, Origin: null })
+        if (await store.LoadAsync(jobId, ct) is not { Stage: JobStage.Complete, Origin: null } song)
+        {
+            return null;
+        }
+        var songRange = VoiceProfiler.Build(await voices.IntonationAsync(song, ct), VoiceSubject.Song).Map;
+        if (songRange is null)
         {
             return null;
         }
         var (_, takes) = await RecentTakesAsync(ownerId, ct);
-        return SongFit(Profile(takes, ScaleMode.Ionian), await store.ReadArtifactListAsync<NoteEvent>(jobId, "notes.json", ct));
+        return SongFit(Profile(takes, ScaleMode.Ionian), songRange.LowMidi, songRange.HighMidi);
     }
 
     /// <summary>
@@ -115,25 +123,28 @@ public sealed class HumTakeHistory(JobStore store, ModalMelodyGenerator generato
     /// a singer takes a melody in whichever octave suits them; the range it would then run is spelled
     /// out, which is what says which octave that is.
     /// </summary>
-    public static SongVoiceFitDto? SongFit(VocalRangeDto voice, IReadOnlyList<NoteEvent> song)
+    public static SongVoiceFitDto? SongFit(VocalRangeDto voice, int low, int high)
     {
-        var pitches = song.Where(note => note.DurationSec >= MinNoteSec).Select(note => note.MidiPitch).Order().ToArray();
-        if (voice.LowMidi is not { } myLow || voice.HighMidi is not { } myHigh || pitches.Length < MinNotes)
+        if (voice.LowMidi is not { } myLow || voice.HighMidi is not { } myHigh)
         {
             return null;
         }
-        var low = SongStatsBuilder.Percentile(pitches, LowPercentile);
-        var high = SongStatsBuilder.Percentile(pitches, HighPercentile);
         var move = (int)Math.Round(((myLow + myHigh) - (low + high)) / 2.0, MidpointRounding.AwayFromZero);
         var shift = ((((move + 6) % 12) + 12) % 12) - 6;
-        var sung = $"{SongStatsBuilder.PitchLabel(low + move)}–{SongStatsBuilder.PitchLabel(high + move)}";
-
-        var sentence = $"This melody sits {SongStatsBuilder.PitchLabel(low)}–{SongStatsBuilder.PitchLabel(high)}; "
-            + $"your takes sit {voice.LowLabel}–{voice.HighLabel}.";
+        // A semitone either way is not worth a key change: the song stays in its own key, and the
+        // range quoted is that key's, moved by whole octaves only.
         if (Math.Abs(shift) <= 1)
         {
             shift = 0;
-            sentence += move == 0 ? " It already sits in your range." : $" In its own key it fits your range, sung {sung}.";
+        }
+        var octaves = move - (((((move + 6) % 12) + 12) % 12) - 6);
+        var sung = $"{SongStatsBuilder.PitchLabel(low + octaves + shift)}–{SongStatsBuilder.PitchLabel(high + octaves + shift)}";
+
+        var sentence = $"This melody sits {SongStatsBuilder.PitchLabel(low)}–{SongStatsBuilder.PitchLabel(high)}; "
+            + $"your takes sit {voice.LowLabel}–{voice.HighLabel}.";
+        if (shift == 0)
+        {
+            sentence += octaves == 0 ? " It already sits in your range." : $" In its own key it fits your range, sung {sung}.";
         }
         else
         {

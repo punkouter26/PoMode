@@ -512,8 +512,10 @@
             _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
             if (await _uploader.InvokeAsync<string?>("unsentName") is { Length: > 0 } name)
             {
+                // A beat left unsent is still a beat: it carries on into the Mode Lab, not an analysis.
+                var asBeat = await _uploader.InvokeAsync<bool>("unsentIsBeat");
                 await using var file = await _uploader.InvokeAsync<IJSObjectReference>("takeUnsent");
-                await UploadAndAnalyzeAsync(file, name);
+                await UploadAndAnalyzeAsync(file, name, asBeat);
             }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException)
@@ -573,8 +575,8 @@
     /// handed to the analyzer with this browser's capability and model picks. <paramref name="source"/>
     /// is whatever resumable-upload.js accepts — the file input, a Blob reference, or a recording's
     /// bytes. Returns false when nothing was started, with the reason in <c>_uploadError</c>.
-    /// A beat takes the same route in, because the Mode Lab fetches it back out of the library, and
-    /// then goes there rather than to its own analysis.
+    /// A beat takes the same route in, because the Mode Lab fetches it back out of the library, but is
+    /// only kept, never analysed, and goes straight there.
     /// </summary>
     private async Task<bool> UploadAndAnalyzeAsync(object source, string? name, bool asBeat = false)
     {
@@ -589,9 +591,9 @@
         {
             _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
             _self ??= DotNetObjectReference.Create(this);
-            var uploadId = await _uploader.InvokeAsync<string>("upload", source, name, _self);
+            var uploadId = await _uploader.InvokeAsync<string>("upload", source, name, _self, asBeat);
             var (status, error) = await Analysis.StartFromUploadAsync(
-                uploadId, _clientCapability is not null, _executorChoices);
+                uploadId, _clientCapability is not null, _executorChoices, asBeat);
             if (status is null)
             {
                 return Refused(error ?? "The analyzer would not accept the file.");

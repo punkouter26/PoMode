@@ -41,8 +41,10 @@ public static class AnalysisEndpoints
             var clientCanInfer = bool.TryParse(request.Query["clientCanInfer"], out var canInfer) && canInfer;
             // The home page's per-stage model pickers arrive as plain query params; an absent or
             // bogus name simply leaves that stage on the planner's normal ranked order.
+            // A beat for the Mode Lab's drum loop is stored, not analysed (AnalysisIntake.KeepBeatAsync).
+            var asBeat = bool.TryParse(request.Query["beat"], out var beat) && beat;
             var handoff = await uploads.StartAnalysisAsync(
-                uploadId, owner, intake, clientCanInfer, PreferredExecutors(request), ct);
+                uploadId, owner, intake, clientCanInfer, PreferredExecutors(request), ct, asBeat);
             // The throw arm makes an unhandled outcome fail closed (500) instead of silently
             // answering 200 for a file that was never queued.
             return handoff switch
@@ -54,7 +56,7 @@ public static class AnalysisEndpoints
                 UploadHandoff.Rejected { Reason: UploadRejection.TooLarge } => TypedResults.BadRequest("File exceeds the 100 MB limit."),
                 UploadHandoff.Rejected { Reason: UploadRejection.UnsupportedFormat } => TypedResults.BadRequest("Only .mp3 and .wav files are supported."),
                 UploadHandoff.Rejected { Reason: UploadRejection.CannotConvert } => TypedResults.BadRequest(
-                    "Neither this browser nor this server can decode that file. Open PoMode in Chrome or Edge, or convert the file to WAV or MP3."),
+                    "This browser cannot decode that file. Open PoMode in Chrome or Edge, or convert the file to WAV or MP3."),
                 _ => throw new InvalidOperationException($"Unhandled upload hand-off {handoff}."),
             };
         })

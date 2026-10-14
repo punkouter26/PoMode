@@ -6,6 +6,7 @@
 // reason the hum recorder shares it: two clocks cannot be held in step, one clock needs no holding.
 
 import { encodeWav } from '../capture/wav.js';
+import { peaks, toMono } from './buffers.js';
 import { STEPS_PER_BAR, buildLoop, findOnsets, layOut, pulseBpm } from './loop-cut.js';
 import { getPlaybackStartTime, getSharedContext } from './modal-player.js';
 
@@ -58,11 +59,7 @@ export async function load(jobId) {
     if (buffer.duration > MAX_SECONDS) return 'long';
 
     // Mixed to mono: the hits are found on one signal, and one signal is what gets cut.
-    const samples = new Float32Array(buffer.length);
-    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-        const data = buffer.getChannelData(channel);
-        for (let i = 0; i < data.length; i++) samples[i] += data[i] / buffer.numberOfChannels;
-    }
+    const samples = toMono(buffer);
     const onsets = findOnsets(samples, buffer.sampleRate);
     if (onsets.length === 0) return 'empty';
 
@@ -212,16 +209,10 @@ function draw() {
     g.globalAlpha = 1;
 
     g.fillStyle = token('--pm-accent');
-    const perPixel = loop.length / width;
+    const sketch = peaks(loop, width);
     for (let x = 0; x < width; x++) {
-        let low = 0;
-        let high = 0;
-        for (let i = Math.floor(x * perPixel); i < (x + 1) * perPixel && i < loop.length; i++) {
-            if (loop[i] < low) low = loop[i];
-            if (loop[i] > high) high = loop[i];
-        }
-        low = Math.max(-1, low);
-        high = Math.min(1, high);
+        const low = Math.max(-1, sketch[x * 2]);
+        const high = Math.min(1, sketch[x * 2 + 1]);
         g.fillRect(x, mid - high * half, 1, Math.max(1, (high - low) * half));
     }
 

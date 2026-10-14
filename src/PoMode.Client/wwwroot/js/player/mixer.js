@@ -11,6 +11,7 @@ import {
     setWaveform, dropNotes, resetFx, sectionBoundsAt,
 } from './canvas.js';
 import { VOICES, bus } from './voices.js';
+import { peaks } from './buffers.js';
 import { tap } from '../shell/sfx.js';
 
 const states = new Map();
@@ -707,24 +708,8 @@ export async function load(root, urls) {
     // ~1k min/max columns is plenty for a backdrop and cheap to extract once per load.
     const waveSource = state.buffers.vocals ?? state.buffers.mix;
     if (waveSource) {
-        const channel = waveSource.getChannelData(0);
-        const columns = 1024;
-        const peaks = new Float32Array(columns * 2);
-        const samplesPerColumn = Math.max(Math.floor(channel.length / columns), 1);
-        for (let column = 0; column < columns; column++) {
-            let low = 0;
-            let high = 0;
-            const start = column * samplesPerColumn;
-            const end = Math.min(start + samplesPerColumn, channel.length);
-            for (let i = start; i < end; i += 8) { // stride 8: a backdrop needs no exactness
-                const value = channel[i];
-                if (value < low) low = value;
-                if (value > high) high = value;
-            }
-            peaks[column * 2] = low;
-            peaks[(column * 2) + 1] = high;
-        }
-        setWaveform(state.canvas, peaks, waveSource.duration);
+        // Stride 8: a backdrop needs no exactness.
+        setWaveform(state.canvas, peaks(waveSource.getChannelData(0), 1024, 8), waveSource.duration);
     }
 
     if (state.frame === null) {

@@ -49,4 +49,18 @@ public sealed class AnalysisIntake(JobStore store, JobQueue queue, ExecutionPlan
         await queue.EnqueueAsync(state.JobId, ct);
         return state;
     }
+
+    /// <summary>
+    /// A drum take for the Mode Lab: stored as an ordinary library job, so it is restart-safe,
+    /// blob-mirrored and listed, but never planned or queued. Separating, transcribing and
+    /// chord-reading a beat held the single worker for minutes to produce a "song" nobody read.
+    /// </summary>
+    public async Task<JobState> KeepBeatAsync(string fileName, Stream content, string? ownerId, CancellationToken ct)
+    {
+        var state = await store.CreateAsync(fileName, content, ct, ownerId);
+        state.Origin = new TakeOrigin(TakeOrigin.Beat, "Beat · kept for the Mode Lab's drum loop, not analysed");
+        state.Stage = JobStage.Complete;
+        await store.SaveAsync(state, ct);
+        return state;
+    }
 }

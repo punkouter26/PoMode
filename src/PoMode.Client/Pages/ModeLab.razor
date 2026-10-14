@@ -346,8 +346,10 @@
         try
         {
             // File names repeat (every microphone take is "recording.wav"), so the time tells them apart.
+            // Beats first: they are what the strip is for; any other upload can still be picked.
             _drumChoices = [.. (await Analysis.GetLibraryAsync() ?? [])
                 .Where(entry => entry.Origin?.Kind != TakeOrigin.Demo)
+                .OrderByDescending(entry => entry.Origin?.Kind == TakeOrigin.Beat)
                 .Select(entry => new DrumChoice(entry.JobId, $"{entry.FileName} · {entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}"))];
         }
         catch (HttpRequestException)

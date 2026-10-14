@@ -1,4 +1,5 @@
 using PoMode.API.Features.ModalMelodies;
+using PoMode.API.Features.SongStatistics;
 using PoMode.Shared.Analysis;
 using Xunit;
 
@@ -65,18 +66,20 @@ public class HumTakeHistoryTests
     {
         var voice = HumTakeHistory.Profile([Take(55), Take(55), Take(55)], ScaleMode.Ionian);
 
+        var (low, high) = (voice.LowMidi!.Value, voice.HighMidi!.Value);
+
         // Centred a fourth above the voice: five semitones down.
-        var high = HumTakeHistory.SongFit(voice, [.. Take(60), .. Take(60)])!;
-        Assert.Equal(-5, high.Semitones);
-        Assert.Contains("5 semitones down", high.Sentence);
+        var fourth = HumTakeHistory.SongFit(voice, low + 5, high + 5)!;
+        Assert.Equal(-5, fourth.Semitones);
+        Assert.Contains("5 semitones down", fourth.Sentence);
 
-        // An octave up is the same key: nothing to transpose, sung an octave lower.
-        var octave = HumTakeHistory.SongFit(voice, [.. Take(67), .. Take(67)])!;
+        // An octave and a semitone up is still its own key, and the range quoted is that key's an
+        // octave down, not the voice's own span a semitone off it.
+        var octave = HumTakeHistory.SongFit(voice, low + 13, high + 13)!;
         Assert.Equal(0, octave.Semitones);
-        Assert.Contains("In its own key", octave.Sentence);
+        Assert.Contains($"In its own key it fits your range, sung {SongStatsBuilder.PitchLabel(low + 1)}", octave.Sentence);
 
-        // Too little of either side and nothing is claimed.
-        Assert.Null(HumTakeHistory.SongFit(voice, Take(60)));
-        Assert.Null(HumTakeHistory.SongFit(HumTakeHistory.Profile([Take(55)], ScaleMode.Ionian), [.. Take(60), .. Take(60)]));
+        // Too few takes and nothing is claimed.
+        Assert.Null(HumTakeHistory.SongFit(HumTakeHistory.Profile([Take(55)], ScaleMode.Ionian), low, high));
     }
 }

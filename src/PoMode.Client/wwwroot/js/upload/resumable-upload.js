@@ -33,23 +33,26 @@ const RETRY_DELAYS = [0, 1000, 3000, 5000, 10000, 15000, 20000, 30000, 30000, 30
 /// Uploads `source` — a file input element, a Blob, or the bytes of a recording — and resolves with
 /// the upload id once the server holds every byte. Progress goes to `dotNet.OnUploadProgress(sent,
 /// total, resuming)`, at most once per whole percent. Rejects with a message fit to show as-is.
-export async function upload(source, name, dotNet) {
+/// `beat` is remembered with an unsent recording, so a resumed beat still goes to the Mode Lab.
+export async function upload(source, name, dotNet, beat = false) {
     const picked = toBlob(source);
     if (!picked || picked.size === 0) {
         throw new Error('The file is empty.');
     }
     const file = await asWavOrMp3(picked);
+    // Fingerprinted by content, not by size and name: every recording is "recording.wav", and two
+    // takes of one length would otherwise resume one onto the other's bytes.
+    const fingerprint = resumable(file) ? null : `pm-unsent-${await digest(file)}`;
     if (file.size > MAX_BYTES) {
         // Refused before a byte is sent; the server would refuse it at creation anyway.
         throw new Error('File exceeds the 100 MB limit.');
     }
     const fileName = file === picked ? (name || file.name || 'audio') : wavName(name || picked.name);
-    const resumable = typeof File !== 'undefined' && file instanceof File;
     // A recording, a shared file or a converted one exists nowhere but this page's memory. It is
     // kept in IndexedDB until the server has it, so a reload or a discarded tab can carry on with
     // it (takeUnsent) under the same fingerprint, from the byte the server last confirmed.
-    if (!resumable) {
-        await stash({ blob: file, name: fileName });
+    if (fingerprint) {
+        await stash({ blob: file, name: fileName, beat });
     }
 
     let resuming = false;
@@ -71,7 +74,7 @@ export async function upload(source, name, dotNet) {
             retryDelays: RETRY_DELAYS,
             metadata: { filename: fileName, filetype: file.type || 'application/octet-stream' },
             storeFingerprintForResuming: true,
-            ...(resumable ? {} : { fingerprint: async () => `pm-unsent-${file.size}-${fileName}` }),
+            ...(fingerprint ? { fingerprint: async () => fingerprint } : {}),
             removeFingerprintOnSuccess: true,
             onShouldRetry: (error) => {
                 const status = error?.originalResponse?.getStatus?.() ?? 0;
@@ -106,7 +109,7 @@ export async function upload(source, name, dotNet) {
                 if (status >= 400 && status < 500) {
                     stash(null); // refused outright: offering it again next visit would only repeat that
                 }
-                reject(new Error(describe(error, resumable)));
+                reject(new Error(describe(error, !fingerprint)));
             },
         });
 
@@ -127,19 +130,35 @@ export async function upload(source, name, dotNet) {
 const UNSENT_DB = 'pm-uploads';
 const UNSENT_STORE = 'unsent';
 
-/// One slot: the latest recording that has not reached the server, or nothing. Every failure here
-/// is swallowed, because a browser without IndexedDB only loses the resume, not the upload.
-function unsentStore(mode, run) {
-    return new Promise((resolve) => {
+let database = null;
+
+/// The one connection, opened on first use and kept: every stash used to open its own.
+function openUnsent() {
+    database ??= new Promise((resolve) => {
         try {
             const open = indexedDB.open(UNSENT_DB, 1);
             open.onupgradeneeded = () => open.result.createObjectStore(UNSENT_STORE);
             open.onerror = () => resolve(null);
-            open.onsuccess = () => {
-                const request = run(open.result.transaction(UNSENT_STORE, mode).objectStore(UNSENT_STORE));
-                request.onsuccess = () => resolve(request.result ?? null);
-                request.onerror = () => resolve(null);
-            };
+            open.onsuccess = () => resolve(open.result);
+        } catch {
+            resolve(null);
+        }
+    });
+    return database;
+}
+
+/// One slot: the latest recording that has not reached the server, or nothing. Every failure here
+/// is swallowed, because a browser without IndexedDB only loses the resume, not the upload.
+async function unsentStore(mode, run) {
+    const db = await openUnsent();
+    if (!db) {
+        return null;
+    }
+    return new Promise((resolve) => {
+        try {
+            const request = run(db.transaction(UNSENT_STORE, mode).objectStore(UNSENT_STORE));
+            request.onsuccess = () => resolve(request.result ?? null);
+            request.onerror = () => resolve(null);
         } catch {
             resolve(null);
         }
@@ -157,6 +176,10 @@ let unsent = null;
 export async function unsentName() {
     unsent = await unsentStore('readonly', (store) => store.get(0));
     return unsent?.blob instanceof Blob ? unsent.name : null;
+}
+
+export function unsentIsBeat() {
+    return !!unsent?.beat;
 }
 
 export function takeUnsent() {
@@ -182,18 +205,27 @@ function toBlob(source) {
     return null;
 }
 
-/// The server takes WAV and MP3, by their first bytes. Anything else the browser can decode (a
-/// phone's .m4a voice memo, most often) is decoded here and sent as WAV instead, so every way in
-/// accepts it and the server's rule stays WAV or MP3. The price is that such a file is a Blob, not
-/// the picked File, and so resumes within the session only.
+/// A picked file from disk: tus-js-client fingerprints it by name and date, so it resumes across a
+/// reload. Anything else exists only in this page.
+function resumable(file) {
+    return typeof File !== 'undefined' && file instanceof File;
+}
+
+async function digest(blob) {
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+    return Array.from(hash.subarray(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/// Types sent as they are. The server is the one judge of the bytes (AudioFormatValidator); this
+/// only decides whether decoding first is worth it, from what the file says it is.
+const SENT_AS_IS = new Set(['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/mpeg', 'audio/mp3']);
+
+/// The server takes WAV and MP3. Anything else the browser can decode (a phone's .m4a voice memo,
+/// most often) is decoded here and sent as WAV instead, so every way in accepts it and the server's
+/// rule stays WAV or MP3. The price is that such a file is a Blob, not the picked File, and so
+/// resumes within the session only.
 async function asWavOrMp3(file) {
-    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-    const text = (from, to) => String.fromCharCode(...head.subarray(from, to));
-    const isWav = text(0, 4) === 'RIFF' && text(8, 12) === 'WAVE';
-    // Frame sync plus a non-zero layer: raw AAC (ADTS) has the same sync bits and layer 00.
-    const isMp3 = text(0, 3) === 'ID3'
-        || (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0 && (head[1] & 0x06) !== 0);
-    if (isWav || isMp3) {
+    if (SENT_AS_IS.has(file.type)) {
         return file;
     }
 
@@ -211,13 +243,9 @@ async function asWavOrMp3(file) {
         buffer = await ctx.decodeAudioData(bytes);
     } catch (error) {
         // The decoder is the browser's own. Chrome, Edge and Safari carry AAC; an editor's built-in
-        // browser and some Linux Chromium builds do not. An MP4 container (.m4a) then goes up as it
-        // is, and the server converts it if it has an ffmpeg, or refuses it in words if it has not.
+        // browser and some Linux Chromium builds do not, and the server decodes nothing itself.
         console.warn('decodeAudioData refused the file', error);
-        if (text(4, 8) === 'ftyp') {
-            return file;
-        }
-        throw new Error('This browser cannot decode that file. Convert it to WAV or MP3.');
+        throw new Error('This browser cannot decode that file. Open PoMode in Chrome or Edge, or convert it to WAV or MP3.');
     }
     // A compressed file grows about tenfold as WAV. Stereo that would pass the cap goes up as it
     // is; past it the channels are averaged to one, and past that the file is refused for what it

@@ -1103,14 +1103,19 @@ function countUp() {
         if (!Number.isFinite(target)) {
             continue;
         }
+        let written = node.nodeValue;
         const frame = (now) => {
-            const t = Math.min((now - start) / 900, 1);
-            if (t >= 1 || !node.isConnected) {
-                node.nodeValue = final;
+            // Blazor wrote a newer figure (the live tempo) mid-run: it wins, and the run stops
+            // rather than finishing on the stale one it started from.
+            if (!node.isConnected || node.nodeValue !== written) {
                 return;
             }
-            node.nodeValue = final.replace(/\d+/, String(Math.round(target * (1 - ((1 - t) ** 3)))));
-            requestAnimationFrame(frame);
+            const t = Math.min((now - start) / 900, 1);
+            written = t >= 1 ? final : final.replace(/\d+/, String(Math.round(target * (1 - ((1 - t) ** 3)))));
+            node.nodeValue = written;
+            if (t < 1) {
+                requestAnimationFrame(frame);
+            }
         };
         requestAnimationFrame(frame);
     }

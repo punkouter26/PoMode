@@ -155,7 +155,7 @@ public static class ModalMelodyEndpoints
                 return TypedResults.BadRequest(rejection switch
                 {
                     UploadRejection.TooLarge => "The recording exceeds the 100 MB limit.",
-                    UploadRejection.UnsupportedFormat or UploadRejection.NeedsConversion => "The recording must be .wav or .mp3 audio.",
+                    UploadRejection.UnsupportedFormat or UploadRejection.CannotConvert => "The recording must be .wav or .mp3 audio.",
                     _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Unhandled upload rejection."),
                 });
             }

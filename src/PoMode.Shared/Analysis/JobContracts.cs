@@ -86,6 +86,10 @@ public sealed record TakeOrigin(string Kind, string Description, ModalMelodyRequ
     /// <summary>The first-run example: a piece the server synthesized in a known mode and analyzed
     /// once, copied into a new user's library so they see a finished result before uploading.</summary>
     public const string Demo = "Demo";
+
+    /// <summary>A drum take kept whole for the Mode Lab's drum loop. Stored, never analysed, so it
+    /// has no result: the library opens it in the Mode Lab rather than on an analysis page.</summary>
+    public const string Beat = "Beat";
 }
 
 /// <summary><paramref name="IsPlaceholder"/> mirrors the executor's own placeholder flag so the

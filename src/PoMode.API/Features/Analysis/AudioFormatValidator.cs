@@ -6,10 +6,8 @@ public enum UploadRejection
     TooLarge,
     UnsupportedFormat,
 
-    /// <summary>An MP4/M4A: not accepted as it is, but convertible where the host has an ffmpeg.</summary>
-    NeedsConversion,
-
-    /// <summary>An MP4/M4A the browser could not decode and this host has no ffmpeg to convert.</summary>
+    /// <summary>An MP4/M4A that reached the server as recorded: the browser that should have decoded
+    /// it to WAV had no AAC decoder, and the server reads nothing but WAV and MP3.</summary>
     CannotConvert,
 }
 
@@ -38,7 +36,7 @@ public static class AudioFormatValidator
         var read = await content.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
         var sniffed = header.AsSpan(0, read);
         return IsSupported(sniffed, out _) ? null
-            : IsMp4(sniffed) ? UploadRejection.NeedsConversion
+            : IsMp4(sniffed) ? UploadRejection.CannotConvert
             : UploadRejection.UnsupportedFormat;
     }
 

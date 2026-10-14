@@ -138,9 +138,14 @@ public sealed class AnalysisClient(HttpClient http)
     /// Returns the server's reason when it refuses.</para>
     /// </summary>
     public async Task<(JobStatusDto? Status, string? Error)> StartFromUploadAsync(
-        string uploadId, bool clientCanInfer, IReadOnlyDictionary<string, string> executorChoices)
+        string uploadId, bool clientCanInfer, IReadOnlyDictionary<string, string> executorChoices, bool asBeat = false)
     {
         var query = new List<string>(4);
+        if (asBeat)
+        {
+            // Kept for the Mode Lab's drum loop, never analysed: model picks would mean nothing.
+            query.Add("beat=true");
+        }
         if (clientCanInfer)
         {
             query.Add("clientCanInfer=true");

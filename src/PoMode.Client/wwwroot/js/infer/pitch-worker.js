@@ -9,6 +9,7 @@
 // local tier produce comparable results from the same model file.
 
 import { decodeNotes } from './basic-pitch-decoder.js';
+import { toMono } from '../player/buffers.js';
 
 // This pinned nmp.onnx export takes [1, 43844, 1] audio at 22.05 kHz. Used only when the runtime
 // does not expose input metadata; the value is a property of the pinned model file, not a guess.
@@ -89,15 +90,7 @@ async function fetchVocalsMono22k(jobId) {
     const bytes = await response.arrayBuffer();
     // decodeAudioData resamples to the context's rate, which is exactly the model's front-end rate.
     const context = new OfflineAudioContext(1, 1, TARGET_SAMPLE_RATE);
-    const decoded = await context.decodeAudioData(bytes);
-    const mono = new Float32Array(decoded.length);
-    for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
-        const data = decoded.getChannelData(channel);
-        for (let i = 0; i < data.length; i++) {
-            mono[i] += data[i] / decoded.numberOfChannels;
-        }
-    }
-    return mono;
+    return toMono(await context.decodeAudioData(bytes));
 }
 
 async function fetchModel() {

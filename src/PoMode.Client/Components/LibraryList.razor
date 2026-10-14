@@ -23,7 +23,7 @@
     else
     {
         @* One tick previews a song under the table, two put them side by side. *@
-        var canCompare = _entries.Any(e => e.Stage == JobStage.Complete);
+        var canCompare = _entries.Any(IsAnalysed);
         <div class="library-filters" role="search" aria-label="Filter songs">
             <RadzenTextBox @bind-Value="_search" Placeholder="Search songs…" aria-label="Search by file name"
                            class="library-search" @oninput="@(e => SetFiltersAsync(e.Value?.ToString() ?? "", _keyFilter, _modeFilter))" />
@@ -45,7 +45,7 @@
                             <Template Context="entry">
                                 <RadzenCheckBox TValue="bool" Value="@_compare.Contains(entry.JobId)"
                                                 Change="@(_ => ToggleCompareAsync(entry))"
-                                                Disabled="@(entry.Stage != JobStage.Complete || (_compare.Count == 2 && !_compare.Contains(entry.JobId)))"
+                                                Disabled="@(!IsAnalysed(entry) || (_compare.Count == 2 && !_compare.Contains(entry.JobId)))"
                                                 title="Preview this song; tick a second to compare"
                                                 aria-label="@($"Preview or compare {entry.FileName}")" />
                             </Template>
@@ -53,7 +53,12 @@
                     }
                     <RadzenDataGridColumn TItem="LibraryEntryDto" Property="FileName" Title="Song" CssClass="col-song">
                         <Template Context="entry">
-                            @if (entry.Stage == JobStage.Complete)
+                            @if (entry.Origin?.Kind == TakeOrigin.Beat)
+                            {
+                                @* A beat has no analysis to open: it was kept for the Mode Lab's drum loop. *@
+                                <a class="library-open" href="@($"/modes?beat={entry.JobId}")">@entry.FileName</a>
+                            }
+                            else if (entry.Stage == JobStage.Complete)
                             {
                                 <a class="library-open" href="@($"/?job={entry.JobId}")">@entry.FileName</a>
                             }
@@ -78,6 +83,11 @@
                             {
                                 <span class="library-origin-badge library-origin-badge--demo" title="@demo.Description"
                                       data-origin-kind="@demo.Kind">🎹 demo</span>
+                            }
+                            else if (entry.Origin is { Kind: TakeOrigin.Beat } beat)
+                            {
+                                <span class="library-origin-badge" title="@beat.Description"
+                                      data-origin-kind="@beat.Kind">🥁 beat</span>
                             }
                             else if (entry.Origin is { } origin)
                             {
@@ -185,6 +195,11 @@
     private bool IsLatest(LibraryEntryDto entry)
         => _entries?.First(e => e.FileName == entry.FileName).JobId == entry.JobId;
 
+    /// <summary>A finished analysis: something to preview, compare or open. A beat is complete but
+    /// was only kept, so it has none.</summary>
+    private static bool IsAnalysed(LibraryEntryDto entry)
+        => entry.Stage == JobStage.Complete && entry.Origin?.Kind != TakeOrigin.Beat;
+
     private int RunCountOf(LibraryEntryDto entry)
         => _entries?.Count(e => e.FileName == entry.FileName) ?? 1;
 
@@ -236,7 +251,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _entries = await Analysis.GetLibraryAsync() ?? [];
+        try
+        {
+            _entries = await Analysis.GetLibraryAsync() ?? [];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            // The list is beside the intake card, not under it: a failed read draws no list and
+            // leaves the ways to add a song working.
+            _entries = [];
+            return;
+        }
         try
         {
             // The filters as they were left: "my Dorian songs" should not need picking again each visit.
