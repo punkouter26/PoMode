@@ -36,6 +36,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // Guest and Microsoft sign-in in every environment; FakeAuth headers in Development and Test only.
 builder.AddPoAuthentication();
+builder.AddPoTelemetry();
 // App Service terminates TLS in front of Kestrel. Without the forwarded scheme the OIDC redirect URI
 // is built as http://, which does not match the app registration and the sign-in fails at Microsoft.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -89,7 +90,9 @@ builder.Services.AddSingleton<HumTakeSeeder>();
 builder.Services.AddSingleton<VoiceProfileService>();
 builder.Services.AddSingleton<HumTakeHistory>();
 builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
+builder.Services.AddSingleton<ISongInterpreter, AzureOpenAiSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
+builder.Services.AddSingleton<InterpreterStats>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
 builder.Services.AddSingleton<ClientWorkRegistry<IReadOnlyList<PoMode.Shared.Analysis.NoteEvent>>>();
 builder.Services.AddSingleton<ClientWorkRegistry<ClientStems>>();

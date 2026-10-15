@@ -1,0 +1,82 @@
+@using PoMode.Shared.Analysis
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* The strip's lesson made physical: the same notes, a different home. Each note is a body on a
+   chromatic clock around the mode's home note; picking a card springs the new home to the centre.
+   Which notes, and which is home, come from ScaleModes; mode-gravity.js only moves them. *@
+<div class="studio-gravity-panel pm-panel">
+    <div class="gravity-text">
+        <span class="pm-label gravity-label">Home note</span>
+        <span class="gravity-home">@ModeNames.OnRoot(Tonic, Mode)</span>
+        <span class="gravity-desc">Each note sits on the clock by how far it is above home. Another card: the same notes, a new home, a new shape. Tap a note to hear it.</span>
+    </div>
+    <canvas class="gravity-canvas" @ref="_canvas" id="mode-gravity" role="img"
+            aria-label="@($"{ModeNames.OnRoot(Tonic, Mode)}: home note at the centre, the other notes of the scale around it by distance above it")"></canvas>
+</div>
+
+@code {
+    /// <summary>One body per note of the mode on screen, as the home-note view draws it.</summary>
+    private sealed record GravityBody(int PitchClass, string Label, int Interval, bool Home, bool Characteristic);
+
+    [Parameter] public int Tonic { get; set; }
+
+    [Parameter] public ScaleMode Mode { get; set; }
+
+    private ElementReference _canvas;
+    private IJSObjectReference? _module;
+    private (int Tonic, ScaleMode Mode)? _sent;
+
+    /// <summary>The canvas the MIDI keyboard lights notes on.</summary>
+    public ElementReference Canvas => _canvas;
+
+    /// <summary>The mode's notes as the home-note view wants them, from the shared ScaleModes tables,
+    /// so this view and the cards above it cannot disagree.</summary>
+    private IReadOnlyList<GravityBody> Bodies()
+    {
+        var root = (Tonic + ScaleModes.ModeDegreeOffset(Mode)) % 12;
+        var characteristic = ScaleModes.CharacteristicIntervals(Mode) is [var first, ..] ? first : -1;
+        return [.. ScaleModes.Intervals(Mode).Select(interval =>
+        {
+            var pitchClass = (root + interval) % 12;
+            return new GravityBody(pitchClass, ScaleModes.NoteName(pitchClass), interval, interval == 0, interval == characteristic);
+        })];
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_sent == (Tonic, Mode))
+        {
+            return;
+        }
+        try
+        {
+            if (_module is null)
+            {
+                _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/mode-gravity.js");
+                await _module.InvokeVoidAsync("init", _canvas);
+            }
+            _sent = (Tonic, Mode);
+            var token = ModeNames.CssClass(Mode) is { Length: > 0 } css ? $"--pm-{css}" : "--pm-accent";
+            await _module.InvokeVoidAsync("setMode", _canvas, Bodies(), token);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("dispose", _canvas);
+                await _module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

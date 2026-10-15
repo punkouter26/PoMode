@@ -8,8 +8,11 @@ param location string = 'eastus2'
 @description('Location for Web App and App Service Plan')
 param webAppLocation string = 'westus3'
 
-@description('Create the storage role assignment. CI passes false: its identity is Contributor, which cannot write role assignments.')
+@description('Create the role assignments (storage, monitoring, OpenAI). CI passes false: its identity is Contributor, which cannot write role assignments.')
 param assignStorageRole bool = true
+
+@description('Deploy the optional Azure OpenAI interpreter (bills per use; see docs/ai-cost.md).')
+param enableCloudInterpreter bool = false
 
 var resourceGroupName = 'PoMode'
 var sharedResourceGroupName = 'PoShared'
@@ -39,6 +42,7 @@ module resources 'resources.bicep' = {
     appInsightsName: appInsightsName
     sharedResourceGroupName: sharedResourceGroupName
     assignStorageRole: assignStorageRole
+    enableCloudInterpreter: enableCloudInterpreter
   }
 }
 

@@ -55,7 +55,15 @@ public static class InterpretationPrompt
         + "- If something is not in the data, do not mention it. Do not list the measurements back: "
         + "say what they mean.\n"
         + "- Be confident. Do not hedge about data you were given.\n"
-        + "- Plain prose only. No headings, no bullet points, no markdown.";
+        + "- Plain prose only. No headings, no bullet points, no markdown.\n"
+        + "\n"
+        + "Every figure you write is checked against the measurements, and a reply with a figure that "
+        + "is not there is sent back. What passes and what does not:\n"
+        + "- Given 'Tempo: 84 BPM': 'at 84 BPM' passes; 'around 85 BPM' is a figure you made up.\n"
+        + "- Given '57.1% steps': '57.1%' or 'more than half its moves are steps' passes; "
+        + "'about 58%' is a new figure.\n"
+        + "- Given 'Widest leap: 12 semitones': 'an octave' passes; 'a 13-semitone stretch' is a "
+        + "new figure.";
 
     /// <summary>
     /// What the summary asks for: both audiences in a single response. One call, not two, and the

@@ -245,6 +245,24 @@ export function init(canvas) {
     states.set(canvas, state);
 }
 
+/// A note played from outside the loop (a MIDI keyboard) lights its body the way a tap does. A
+/// pitch the mode does not contain has no body; it is counted on the canvas instead, so a player can
+/// see they left the mode.
+export function pulsePitch(canvas, midi) {
+    const state = states.get(canvas);
+    if (!state) {
+        return false;
+    }
+    const body = state.bodies.get(((midi % 12) + 12) % 12);
+    if (body && body.present) {
+        body.pulse = 1;
+        wake(state);
+        return true;
+    }
+    canvas.dataset.outsideNotes = String(Number(canvas.dataset.outsideNotes ?? 0) + 1);
+    return false;
+}
+
 /// The mode on screen, as bodies: { pitchClass, label, interval, home, characteristic }.
 /// `homeToken` is the CSS custom property naming the mode's colour. Bodies are matched by pitch
 /// class, so a note shared with the previous mode moves rather than being replaced.

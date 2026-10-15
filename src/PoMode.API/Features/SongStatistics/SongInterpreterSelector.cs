@@ -13,25 +13,28 @@ namespace PoMode.API.Features.SongStatistics;
 /// local model server must degrade the answer, not the request.
 ///
 /// <para>Order is this seam's own — see <see cref="Rank"/> — a real local model first, then the
-/// deterministic template. No cloud interpreter is registered; if one is added, decide its rank here
-/// deliberately rather than borrowing the stage planner's, because the cost question is different.
+/// optional cloud model (paid, so only after the free one), then the deterministic template. The
+/// stage planner's ranking is not borrowed, because the cost question is different.
 /// The browser's built-in model is not here at all: it runs in the page, which builds the same
 /// prompt and runs the same <see cref="GroundingCheck"/> itself.</para>
 /// </summary>
 public sealed class SongInterpreterSelector(
     IEnumerable<ISongInterpreter> interpreters,
     JobStore store,
-    ILogger<SongInterpreterSelector> logger)
+    ILogger<SongInterpreterSelector> logger,
+    InterpreterStats? record = null)
 {
     /// <summary>
-    /// Interpreter order: a real local model, then the deterministic template. Ranking by answer
+    /// Interpreter order: a real local model, then a configured cloud model, then the deterministic
+    /// template. Ranking by answer
     /// quality rather than by <see cref="Pipeline.ExecutionPlanner.EffectiveRank"/> is deliberate,
     /// because the cost question a stage planner answers does not apply to one small prompt.
     /// </summary>
     private static int Rank(ISongInterpreter interpreter) => interpreter switch
     {
-        { IsClassicFallback: true } => 1,   // the deterministic template: honest, never clever
-        _ => 0,                             // a real local model
+        { IsClassicFallback: true } => 2,       // the deterministic template: honest, never clever
+        { Tier: ExecutionTier.Cloud } => 1,     // a paid cloud model: after a free local one
+        _ => 0,                                 // a real local model
     };
 
     /// <summary>Recomputed per call so a configuration change needs no restart.</summary>
@@ -146,6 +149,7 @@ public sealed class SongInterpreterSelector(
                 {
                     logger.LogWarning(failure,
                         "Interpreter {Interpreter} failed; falling through to the next one.", interpreter.Name);
+                    record?.FellThrough(interpreter.Name);
                     break;
                 }
 
@@ -158,9 +162,15 @@ public sealed class SongInterpreterSelector(
                         "Interpreter {Interpreter} wrote figures the measurements do not contain ({Figures}) "
                         + "on attempt {Attempt}.", interpreter.Name, string.Join(", ", unsupported), attempt);
                     request = request with { Prompt = prompt.Corrected(raw.ToString(), unsupported) };
+                    record?.Retried(interpreter.Name);
+                    if (attempt == attempts)
+                    {
+                        record?.FellThrough(interpreter.Name);
+                    }
                     continue;
                 }
 
+                record?.Replied(interpreter.Name);
                 if (result.Summary is { } summary)
                 {
                     await store.WriteArtifactAsync(

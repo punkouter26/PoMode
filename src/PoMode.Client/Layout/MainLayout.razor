@@ -244,6 +244,10 @@
         _self = DotNetObjectReference.Create(this);
         _palette = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/palette.js");
         await _palette.InvokeVoidAsync("listen", _self);
+        await using (var layout = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/layout.js"))
+        {
+            await layout.InvokeVoidAsync("watchHeader");
+        }
         // The install prompt fires once, on the browser's own schedule; pwa.js captures it so the
         // app can offer it from the menu rather than leaving it to Chrome's infobar.
         _pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/pwa.js");

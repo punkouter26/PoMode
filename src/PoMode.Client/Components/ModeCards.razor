@@ -1,0 +1,92 @@
+@using PoMode.Shared.Analysis
+
+@* The seven relative modes and the two pentatonics: one scale read nine ways, side by side. The
+   pentatonics used to be two buttons in a ribbon of their own; they are modes of the same key, so
+   they are cards like the rest. *@
+<div class="studio-modes-wrap">
+    <div class="studio-modes-strip">
+        @foreach (var modeItem in StripModes)
+        {
+            var isSelected = Selected == modeItem.Mode;
+            var modeNotes = ScaleModes.RelativeScaleNoteNames(Tonic, modeItem.Mode);
+            @* The whole card is the button: it was a clickable <div> the keyboard could not reach, with a
+               23px "Sample" button inside doing the same thing. *@
+            <button type="button"
+                    class="compact-mode-card @ModeNames.CssClass(modeItem.Mode) @(isSelected ? "selected" : "") @(isSelected && Playing ? "playing" : "")"
+                    aria-pressed="@(isSelected ? "true" : "false")"
+                    @onclick="@(() => OnPick.InvokeAsync(modeItem.Mode))">
+                <span class="mode-card-top">
+                    <span class="compact-mode-title">@CardTitle(modeItem)</span>
+                    <span class="compact-degree-badge">@modeItem.Degree</span>
+                </span>
+                <span class="compact-scale-notes">
+                    @for (var n = 0; n < modeNotes.Length; n++)
+                    {
+                        var noteName = modeNotes[n];
+                        var isRoot = n == 0;
+                        var isChar = n > 0 && IsCharacteristicNote(modeItem.Mode, noteName);
+                        <span class="note-token @(isRoot ? "root-token" : (isChar ? "char-token" : ""))" title="@(isRoot ? "Mode Root Note" : (isChar ? "Characteristic Color Tone" : "Scale Note"))">@noteName</span>
+                        if (n < modeNotes.Length - 1)
+                        {
+                            <span class="note-dot">·</span>
+                        }
+                    }
+                </span>
+                <span class="compact-mode-desc">@modeItem.Mood</span>
+                <span class="compact-card-cta">@(isSelected && Playing ? "🔊 Playing" : "▶ Sample")</span>
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed record ModePresetInfo(ScaleMode Mode, string BaseName, string Degree, string Mood);
+
+    // The 7 Church Modes ordered from Degree 1 to Degree 7
+    private static readonly IReadOnlyList<ModePresetInfo> SevenModesOrdered =
+    [
+        new(ScaleMode.Ionian, "Ionian (Major)", "Deg 1", "Bright, joyful, heroic"),
+        new(ScaleMode.Dorian, "Dorian", "Deg 2", "Jazzy, soulful, hopeful"),
+        new(ScaleMode.Phrygian, "Phrygian", "Deg 3", "Dark flamenco tension"),
+        new(ScaleMode.Lydian, "Lydian", "Deg 4", "Dreamy, floating wonder"),
+        new(ScaleMode.Mixolydian, "Mixolydian", "Deg 5", "Bluesy classic rock"),
+        new(ScaleMode.Aeolian, "Aeolian (Minor)", "Deg 6", "Emotional natural minor"),
+        new(ScaleMode.Locrian, "Locrian", "Deg 7", "Tense, diminished"),
+    ];
+
+    private static readonly IReadOnlyList<ModePresetInfo> PentatonicModes =
+    [
+        new(ScaleMode.MajorPentatonic, "Major Pentatonic", "5-Tone", "Open, pastoral"),
+        new(ScaleMode.MinorPentatonic, "Minor Pentatonic", "5-Tone", "Bluesy rock"),
+    ];
+
+    /// <summary>Every card on the strip, in the order it reads: the seven modes, then the two pentatonics.</summary>
+    private static readonly IReadOnlyList<ModePresetInfo> StripModes = [.. SevenModesOrdered, .. PentatonicModes];
+
+    /// <summary>The parent key's tonic pitch class.</summary>
+    [Parameter] public int Tonic { get; set; }
+
+    [Parameter] public ScaleMode Selected { get; set; }
+
+    [Parameter] public bool Playing { get; set; }
+
+    [Parameter] public EventCallback<ScaleMode> OnPick { get; set; }
+
+    /// <summary>The seven modes are named on their own root ("D Dorian"); a pentatonic by its own name
+    /// on the root its notes start from.</summary>
+    private string CardTitle(ModePresetInfo info) => PentatonicModes.Contains(info)
+        ? $"{ScaleModes.RelativeScaleNoteNames(Tonic, info.Mode)[0]} {info.BaseName}"
+        : ModeNames.OnRoot(Tonic, info.Mode);
+
+    private bool IsCharacteristicNote(ScaleMode mode, string noteName)
+    {
+        var modeRootClass = (Tonic + ScaleModes.ModeDegreeOffset(mode)) % 12;
+        // The table lives in PoMode.Shared so the client and the analyzer cannot drift apart on which
+        // degree gives a mode its colour. A scale with no characteristic tone marks none.
+        if (ScaleModes.CharacteristicIntervals(mode) is not [var charInterval, ..])
+        {
+            return false;
+        }
+        return string.Equals(noteName, ScaleModes.NoteName((modeRootClass + charInterval) % 12), StringComparison.OrdinalIgnoreCase);
+    }
+}

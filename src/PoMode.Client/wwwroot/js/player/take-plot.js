@@ -207,6 +207,13 @@ function render(s, now) {
     }
     ctx.shadowBlur = 0;
 
+    // 2b. During a take, the voice's leading edge as a comet: the pitch being sung now as a bright
+    //     head, the last second and a bit behind it as a tail that thins and fades. The colour is the
+    //     playhead's, not the agree/pass pair: it marks where the voice is, not how it sits.
+    if (s.live) {
+        drawComet(s, ctx, height);
+    }
+
     // 3. The playhead, and the moment's agreement sounded as well as shown.
     if (playhead !== null && playhead >= 0 && playhead <= s.duration) {
         const x = xFor(s, playhead);
@@ -223,6 +230,49 @@ function render(s, now) {
             soundAgreement(s, playhead);
         }
     }
+}
+
+const COMET_SECONDS = 1.2;
+
+function drawComet(s, ctx, height) {
+    const readings = s.readings;
+    let head = null;
+    for (let i = readings.length - 1; i >= 0; i--) {
+        if (readings[i].midi !== null) {
+            head = readings[i];
+            break;
+        }
+        if (s.liveSeconds - readings[i].timeSec > 0.25) {
+            return; // the singer has stopped: no comet over a rest
+        }
+    }
+    if (!head) {
+        return;
+    }
+    const base = Math.max(height * 0.012, 2);
+    ctx.fillStyle = s.colours.playhead;
+    for (let i = readings.length - 1; i >= 0; i--) {
+        const reading = readings[i];
+        const age = s.liveSeconds - reading.timeSec;
+        if (age > COMET_SECONDS) {
+            break;
+        }
+        if (reading.midi === null) {
+            continue;
+        }
+        const fade = 1 - (age / COMET_SECONDS);
+        ctx.globalAlpha = 0.35 * fade;
+        ctx.beginPath();
+        ctx.arc(xFor(s, reading.timeSec), yFor(s, reading.midi), base * (0.6 + fade), 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = s.colours.playhead;
+    ctx.shadowBlur = Math.max(height * 0.06, 10);
+    ctx.beginPath();
+    ctx.arc(xFor(s, head.timeSec), yFor(s, head.midi), base * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
 }
 
 /// A near-subliminal tick as the playhead crosses into a note that agrees with the chord under it.

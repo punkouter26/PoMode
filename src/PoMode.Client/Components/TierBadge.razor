@@ -1,6 +1,6 @@
 @using PoMode.Shared.Analysis
 
-@* Single source of truth for the tier glyphs: 💻 local model / 🌐 the viewer's browser.
+@* Single source of truth for the tier glyphs: 💻 local model / 🌐 the viewer's browser / ☁ cloud.
    Used by JobProgress and anywhere else a tier is shown, so the mapping cannot drift. *@
 <span class="tier-badge" title="@Description">@Glyph</span>
 
@@ -11,6 +11,7 @@
     {
         ExecutionTier.Local => "💻",
         ExecutionTier.ClientDelegated => "🌐",
+        ExecutionTier.Cloud => "☁",
         _ => "?",
     };
 
@@ -18,6 +19,7 @@
     {
         ExecutionTier.Local => "Ran locally on this machine",
         ExecutionTier.ClientDelegated => "Ran in your browser",
+        ExecutionTier.Cloud => "Written by a cloud model (Azure OpenAI)",
         _ => "Unknown execution tier",
     };
 }

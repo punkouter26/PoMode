@@ -6,18 +6,23 @@
     <ProjectReference Include="..\PoMode.Shared\PoMode.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
     <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Lib.Net.Http.WebPush" />
     <PackageReference Include="Melanchall.DryWetMidi" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Identity.Web" />
+    <PackageReference Include="Microsoft.Identity.Web.GraphServiceClient" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="NAudio" />
     <PackageReference Include="NLayer.NAudioSupport" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="tusdotnet" />
+    <PackageReference Include="Whisper.net" />
+    <PackageReference Include="Whisper.net.Runtime" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,58 @@
+/* --- Home-note view: a short sentence beside a square-ish canvas, stacking under 720px --- */
+.studio-gravity-panel {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.45rem 0.7rem;
+    flex-wrap: wrap;
+}
+
+.gravity-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex: 1 1 14rem;
+    min-width: 0;
+}
+
+.gravity-label {
+    font-weight: 700;
+}
+
+.gravity-home {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--pm-fg);
+}
+
+.gravity-desc {
+    font-size: var(--pm-text-xs);
+    color: var(--pm-fg-muted);
+}
+
+.gravity-canvas {
+    display: block;
+    flex: 1 1 18rem;
+    min-width: 0;
+    height: 200px;
+    cursor: pointer;
+    touch-action: pan-y;
+}
+
+@media (max-width: 720px) {
+    .studio-gravity-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    /* In a column the row layout's flex-basis became a height: the three lines of text were given
+       14rem and left a blank band above the clock. */
+    .gravity-text {
+        flex: none;
+    }
+
+    .gravity-canvas {
+        flex: none;
+        width: 100%;
+    }
+}

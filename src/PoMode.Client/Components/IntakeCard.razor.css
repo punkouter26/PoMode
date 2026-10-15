@@ -1,0 +1,111 @@
+.upload-error {
+    color: var(--pm-warn-bg);
+}
+
+.upload-progress {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.upload-progress-text {
+    font-size: 0.85rem;
+    color: var(--pm-fg-muted);
+}
+
+.intake-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--pm-space-2);
+    align-items: center;
+}
+
+.demo-pointer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--pm-info-edge);
+    border-radius: 0.5rem;
+    background: var(--pm-info-bg);
+}
+
+.demo-pointer-sub {
+    min-width: 0;
+    color: var(--pm-info);
+    font-size: var(--pm-text-sm);
+}
+
+.recording-hint {
+    color: var(--pm-note-outside);
+}
+
+.upload-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    text-align: center;
+    padding: 1.25rem 1rem 1rem;
+    border: 2px dashed var(--pm-border);
+    border-radius: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.upload-hero ::deep .upload-hero-icon {
+    font-size: 2rem;
+    color: var(--pm-accent);
+}
+
+/* The file input lies over the whole button, invisible: a click opens the picker and a file dropped
+   on the button lands in the input — the arrangement RadzenUpload itself uses. Kept focusable
+   rather than display:none, so the keyboard reaches the picker through it. */
+.upload-choose {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--pm-space-1);
+    cursor: pointer;
+}
+
+.upload-choose:focus-within {
+    outline: 2px solid var(--pm-accent);
+    outline-offset: 2px;
+}
+
+.upload-choose:has(input:disabled) {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.upload-choose input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: inherit;
+}
+
+.upload-hero-sub {
+    color: var(--pm-fg-muted);
+    max-width: 34rem;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+    .upload-hero {
+        padding: 0.9rem 0.75rem;
+        gap: 0.55rem;
+    }
+}
+
+.executor-pins {
+    font-size: var(--pm-text-sm);
+    color: var(--pm-fg-muted);
+    min-height: 1.5rem;
+}

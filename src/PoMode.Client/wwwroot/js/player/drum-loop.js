@@ -9,6 +9,7 @@ import { encodeWav } from '../capture/wav.js';
 import { peaks, toMono } from './buffers.js';
 import { STEPS_PER_BAR, buildLoop, findOnsets, layOut, pulseBpm } from './loop-cut.js';
 import { getPlaybackStartTime, getSharedContext } from './modal-player.js';
+import * as prefs from '../shell/prefs.js';
 
 // A loop is bars, not a song: eight bars at 40 BPM is 48 s, and the tempo search is quadratic in hits.
 const MAX_SECONDS = 120;
@@ -24,6 +25,9 @@ let backdrop = null;    // the still picture (grid, waveform, markers); the play
 let colors = null;      // { track, playhead }: the playhead's tokens, read once per splice rather than per frame
 let startedAt = 0;      // the audio-clock instant the loop last started from its first sample
 let frameId = 0;
+let lastStep = -1;      // the sixteenth the playhead was on last frame
+const flashes = new Map();  // step -> performance.now() of the hit that just sounded there
+const FLASH_MS = 220;
 
 // Canvas bands, in CSS pixels: labels, then the hit markers, the waveform, and the progress bar.
 const LABEL_BAND = 16;
@@ -142,6 +146,8 @@ export function stop() {
     try { source.stop(); } catch { }
     try { source.disconnect(); } catch { }
     source = null;
+    lastStep = -1;
+    flashes.clear();
     cancelAnimationFrame(frameId);
     paint(null);
     publish();
@@ -152,6 +158,20 @@ function tick() {
     if (!source || !cut) return;
     const seconds = cut.loop.length / take.rate;
     const progress = (Math.max(ctx.currentTime - startedAt, 0) % seconds) / seconds;
+    // Each hit flashes on its marker as it sounds: the strip shows the loop being played, hit by hit,
+    // not a bar sweeping past a picture.
+    const steps = cut.bars * STEPS_PER_BAR;
+    const step = Math.floor(progress * steps);
+    if (step !== lastStep && prefs.allowsMotion()) {
+        // Every sixteenth crossed since the last frame, wrapping at the loop's end.
+        const now = performance.now();
+        let s = lastStep < 0 ? step - 1 : lastStep;
+        do {
+            s = (s + 1) % steps;
+            if (cut.steps.includes(s)) flashes.set(s, now);
+        } while (s !== step);
+    }
+    lastStep = step;
     paint(progress);
     const shown = progress.toFixed(2);
     if (document.body.dataset.drumLoopProgress !== shown) document.body.dataset.drumLoopProgress = shown;
@@ -183,7 +203,7 @@ function draw() {
     const g = backdrop.getContext('2d');
     const style = getComputedStyle(canvas);
     const token = (name) => style.getPropertyValue(name);
-    colors = { track: token('--pm-fg-muted'), playhead: token('--pm-playhead') };
+    colors = { track: token('--pm-fg-muted'), playhead: token('--pm-playhead'), hit: token('--pm-ok') };
     const loop = cut.loop;
 
     const waveTop = (LABEL_BAND + MARKER_BAND) * ratio;
@@ -265,6 +285,27 @@ function paint(progress) {
     g.fillStyle = colors.playhead;
     g.fillRect(0, height - band + 2 * ratio, x, band - 2 * ratio);
     g.fillRect(x, 0, Math.ceil(2 * ratio), height);
+
+    // The hits that just sounded: a glow on each marker, fading over a fifth of a second.
+    const now = performance.now();
+    const steps = cut.bars * STEPS_PER_BAR;
+    for (const [step, at] of flashes) {
+        const age = (now - at) / FLASH_MS;
+        if (age >= 1) {
+            flashes.delete(step);
+            continue;
+        }
+        const fx = Math.round(step / steps * width);
+        g.globalAlpha = 1 - age;
+        g.shadowColor = colors.hit;
+        g.shadowBlur = 14 * ratio;
+        g.fillStyle = colors.hit;
+        g.beginPath();
+        g.arc(fx, (LABEL_BAND + MARKER_BAND / 2) * ratio, (4 + 4 * (1 - age)) * ratio, 0, Math.PI * 2);
+        g.fill();
+    }
+    g.shadowBlur = 0;
+    g.globalAlpha = 1;
 }
 
 /// Forgets the recording: another one picked, or none.

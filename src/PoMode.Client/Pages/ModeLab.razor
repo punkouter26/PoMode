@@ -20,18 +20,17 @@
         <div class="better-fit-banner" role="status" data-better-fit="@betterFit.Name">
             <span class="pm-label better-fit-lead">This actually sounds like</span>
             <span class="better-fit-mode">@betterFit.Name</span>
-            <span class="better-fit-score">@($"{betterFit.Percentage:0.#}% fit, against {_melody.ModePercentage:0.#}% for {GetModeDisplayName(_selectedMode)}")</span>
+            <span class="better-fit-score">@($"{betterFit.Percentage:0.#}% fit, against {_melody.ModePercentage:0.#}% for {ModeNames.OnRoot(_selectedTonic, _selectedMode)}")</span>
         </div>
     }
 
-    @* One bar: what you can do to the loop, then what it is made of. The page title and the nav
-       already say "Mode Lab", so the bar does not. *@
-    <div class="studio-top-bar pm-panel">
+    @* The transport sticks under the header as the page scrolls: the lab is a tall page by design
+       (ui-rules), and Play, the dice and what is sounding stay in reach from the cards, the home-note
+       view and the roll alike. The settings that make the loop are in the panel below it. *@
+    <div class="studio-transport-bar pm-panel">
         <div class="studio-transport">
             @* Play and pause share a button; picking a card, rolling, or changing a setting restarts
-               the loop from bar one, which is what a separate Stop was for. Radzen buttons like every
-               other page: this bar used to be hand-rolled, green/amber/violet with emoji, and read as a
-               different app. A toggle that is on is a tinted primary. *@
+               the loop from bar one, which is what a separate Stop was for. *@
             <RadzenButton Text="@(_isPlaying ? "Pause" : "Play")" Icon="@(_isPlaying ? "pause" : "play_arrow")"
                           Size="ButtonSize.Small" Click="@(() => _isPlaying ? PauseAsync() : PlayAsync())"
                           Disabled="@(!_isPlaying && (_isLoading || _melody is null))"
@@ -58,8 +57,24 @@
                           Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light" class="send-analyzer"
                           Click="@SendToAnalyzerAsync" Disabled="@(_isSendingToAnalyzer || _melody is null)"
                           title="Synthesize this loop and run it through the song analyzer" />
-        </div>
 
+            @if (_midiSupported)
+            {
+                @* A MIDI keyboard plays along in the loop's room and lights its notes on the home-note
+                   view (midi-in.js). Asked for on this click only, never on load. *@
+                <RadzenButton Text="@(_midiInputs is null ? "MIDI keyboard" : $"MIDI · {_midiInputs.Count}")" Icon="piano"
+                              Size="ButtonSize.Small" Click="@ToggleMidiAsync"
+                              ButtonStyle="@(_midiInputs is null ? ButtonStyle.Light : ButtonStyle.Primary)"
+                              Variant="@(_midiInputs is null ? Variant.Filled : Variant.Flat)"
+                              Shade="@(_midiInputs is null ? Shade.Default : Shade.Lighter)"
+                              aria-pressed="@(_midiInputs is null ? "false" : "true")" class="midi-toggle"
+                              title="@MidiTitle" />
+            }
+        </div>
+        <span class="studio-now" role="status">@ModeNames.OnRoot(_selectedTonic, _selectedMode) · @($"{_bpm:0} BPM")@MidiReadout</span>
+    </div>
+
+    <div class="studio-top-bar pm-panel">
         <BackingControls Tonic="_selectedTonic" TonicChanged="OnTonicPickedAsync"
                          ProgressionId="@_selectedProgressionId" ProgressionIdChanged="OnProgressionPickedAsync"
                          Progressions="_progressions"
@@ -83,8 +98,7 @@
                                     Change="@(_ => OnConfigChanged())" class="style-dd" id="style-select"
                                     aria-labelledby="style-label" />
                 </div>
-                @* One purity readout: the target you set and what the generated melody measured. It used
-                   to be stated five times across the card pill, two badges and the canvas header. *@
+                @* One purity readout: the target you set and what the generated melody measured. *@
                 <div class="backing-field purity-field">
                     <span class="pm-label backing-label" id="purity-label">Purity</span>
                     <RadzenSlider TValue="double" @bind-Value="_targetPurity" Min="0" Max="100" Step="10"
@@ -103,102 +117,11 @@
         </BackingControls>
     </div>
 
-    @* A beat from the library, spliced to the tempo above and played under the chords and melody on
-       the same clock. The recording comes in through the Library page like every other; this only
-       picks one and cuts it, in the browser (drum-loop.js, loop-cut.js). The WAV is the drums alone. *@
-    <div class="studio-drums-panel pm-panel" data-drum-job="@_drumJobId">
-        <div class="drums-row">
-            <div class="drums-field drums-pick">
-                <span class="pm-label drums-label" id="drums-label">Drums</span>
-                @if (_drumChoices.Count > 0)
-                {
-                    <RadzenDropDown TValue="string" Data="@_drumChoices" TextProperty="Label" ValueProperty="JobId"
-                                    Value="@_drumJobId" Change="@(value => OnDrumsPickedAsync((string?)value))"
-                                    AllowClear="true" Placeholder="None" Disabled="@_drumsBusy"
-                                    class="drums-dd" id="drums-select" aria-labelledby="drums-label" />
-                }
-                else
-                {
-                    <span class="drums-none">Use "Choose a beat" on the <a href="">Library</a> page and it appears here.</span>
-                }
-            </div>
-            @if (_drumsReady)
-            {
-                <div class="drums-field">
-                    <span class="pm-label drums-label" id="drums-bars-label">Bars</span>
-                    <RadzenNumeric TValue="int" Value="@_drumBars" Change="@OnDrumBarsChangedAsync" Min="1" Max="MaxDrumBars"
-                                   class="drums-bars" id="drums-bars" aria-labelledby="drums-bars-label"
-                                   title="How many bars to keep from the start. Set from what was played; fewer drops the rest." />
-                </div>
-                <RadzenButton Text="Export WAV" Icon="download" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
-                              Click="@ExportDrumsAsync" id="drums-export"
-                              title="Save the drum loop alone, cut to this tempo" />
-            }
-        </div>
-        @* In the page whether or not a beat is picked, so drum-loop.js always has it to draw on; it
-           takes room only once there is a loop to show. *@
-        <canvas class="drums-wave @(_drumsReady ? "" : "drums-wave-empty")" @ref="_drumCanvas" aria-hidden="true"></canvas>
-        @if (_drumsReady)
-        {
-            <p class="drums-readout">@DrumReadout</p>
-        }
-        @if (_drumError is { } drumError)
-        {
-            <p class="drums-error" role="alert">@drumError</p>
-        }
-    </div>
+    <DrumStrip @ref="_drums" InitialJobId="@Beat" Bpm="_bpm" OnBeatTempo="OnBeatTempoAsync" />
 
-    @* The seven relative modes and the two pentatonics: one scale read nine ways, side by side. The
-       pentatonics used to be two buttons in a ribbon of their own; they are modes of the same key, so
-       they are cards like the rest. *@
-    <div class="studio-modes-wrap">
-    <div class="studio-modes-strip">
-        @foreach (var modeItem in StripModes)
-        {
-            var isSelected = _selectedMode == modeItem.Mode;
-            var modeNotes = ScaleModes.RelativeScaleNoteNames(_selectedTonic, modeItem.Mode);
-            @* The whole card is the button: it was a clickable <div> the keyboard could not reach, with a
-               23px "Sample" button inside doing the same thing. *@
-            <button type="button"
-                    class="compact-mode-card @GetModeCssClass(modeItem.Mode) @(isSelected ? "selected" : "") @(isSelected && _isPlaying ? "playing" : "")"
-                    aria-pressed="@(isSelected ? "true" : "false")"
-                    @onclick="@(() => SampleModeAsync(modeItem.Mode))">
-                <span class="mode-card-top">
-                    <span class="compact-mode-title">@CardTitle(modeItem)</span>
-                    <span class="compact-degree-badge">@modeItem.Degree</span>
-                </span>
-                <span class="compact-scale-notes">
-                    @for (var n = 0; n < modeNotes.Length; n++)
-                    {
-                        var noteName = modeNotes[n];
-                        var isRoot = n == 0;
-                        var isChar = n > 0 && IsCharacteristicNote(_selectedTonic, modeItem.Mode, noteName);
-                        <span class="note-token @(isRoot ? "root-token" : (isChar ? "char-token" : ""))" title="@(isRoot ? "Mode Root Note" : (isChar ? "Characteristic Color Tone" : "Scale Note"))">@noteName</span>
-                        if (n < modeNotes.Length - 1)
-                        {
-                            <span class="note-dot">·</span>
-                        }
-                    }
-                </span>
-                <span class="compact-mode-desc">@modeItem.Mood</span>
-                <span class="compact-card-cta">@(isSelected && _isPlaying ? "🔊 Playing" : "▶ Sample")</span>
-            </button>
-        }
-    </div>
-    </div>
+    <ModeCards Tonic="_selectedTonic" Selected="_selectedMode" Playing="_isPlaying" OnPick="SampleModeAsync" />
 
-    @* The strip's lesson made physical: the same notes, a different home. Each note is a body on a
-       chromatic clock around the mode's home note; picking a card springs the new home to the centre.
-       Which notes, and which is home, come from ScaleModes; mode-gravity.js only moves them. *@
-    <div class="studio-gravity-panel pm-panel">
-        <div class="gravity-text">
-            <span class="pm-label gravity-label">Home note</span>
-            <span class="gravity-home">@GetModeDisplayName(_selectedMode)</span>
-            <span class="gravity-desc">Each note sits on the clock by how far it is above home. Another card: the same notes, a new home, a new shape. Tap a note to hear it.</span>
-        </div>
-        <canvas class="gravity-canvas" @ref="_gravityCanvas" id="mode-gravity"
-                role="img" aria-label="@GravityLabel"></canvas>
-    </div>
+    <GravityPanel @ref="_gravity" Tonic="_selectedTonic" Mode="_selectedMode" />
 
     @if (_melody is not null)
     {
@@ -229,8 +152,6 @@
 </div>
 
 @code {
-    private sealed record ModePresetInfo(ScaleMode Mode, string BaseName, string Degree, string Mood, string CharacteristicTone);
-
     private static readonly IReadOnlyList<MelodyStyle> StyleOptions =
     [
         MelodyStyle.Lyrical,
@@ -238,33 +159,6 @@
         MelodyStyle.Syncopated,
         MelodyStyle.Motific
     ];
-
-    // The 7 Church Modes ordered from Degree 1 to Degree 7
-    private static readonly IReadOnlyList<ModePresetInfo> SevenModesOrdered =
-    [
-        new(ScaleMode.Ionian, "Ionian (Major)", "Deg 1", "Bright, joyful, heroic", "Starts on 1st degree"),
-        new(ScaleMode.Dorian, "Dorian", "Deg 2", "Jazzy, soulful, hopeful", "Natural 6th"),
-        new(ScaleMode.Phrygian, "Phrygian", "Deg 3", "Dark flamenco tension", "Minor 2nd"),
-        new(ScaleMode.Lydian, "Lydian", "Deg 4", "Dreamy, floating wonder", "Sharp 4th"),
-        new(ScaleMode.Mixolydian, "Mixolydian", "Deg 5", "Bluesy classic rock", "Flat 7th"),
-        new(ScaleMode.Aeolian, "Aeolian (Minor)", "Deg 6", "Emotional natural minor", "Minor 6th"),
-        new(ScaleMode.Locrian, "Locrian", "Deg 7", "Tense, diminished", "Diminished 5th & b2")
-    ];
-
-    private static readonly IReadOnlyList<ModePresetInfo> PentatonicModes =
-    [
-        new(ScaleMode.MajorPentatonic, "Major Pentatonic", "5-Tone", "Open, pastoral", "Degrees 1-2-3-5-6"),
-        new(ScaleMode.MinorPentatonic, "Minor Pentatonic", "5-Tone", "Bluesy rock", "Degrees 6-1-2-3-5")
-    ];
-
-    /// <summary>Every card on the strip, in the order it reads: the seven modes, then the two pentatonics.</summary>
-    private static readonly IReadOnlyList<ModePresetInfo> StripModes = [.. SevenModesOrdered, .. PentatonicModes];
-
-    /// <summary>The seven modes are named on their own root ("D Dorian"); a pentatonic by its own name
-    /// on the root its notes start from.</summary>
-    private string CardTitle(ModePresetInfo info) => PentatonicModes.Contains(info)
-        ? $"{ScaleModes.RelativeScaleNoteNames(_selectedTonic, info.Mode)[0]} {info.BaseName}"
-        : GetModeDisplayName(info.Mode);
 
     /// <summary>The loop as files, built from the same request the preview plays.</summary>
     private IReadOnlyList<DownloadMenu.Item> DownloadItems
@@ -300,213 +194,34 @@
     private int? _activeWindowIndex;
 
     private IJSObjectReference? _playerModule;
+    private IJSObjectReference? _sfx;
+    private IJSObjectReference? _midi;
+    private DrumStrip? _drums;
+    private GravityPanel? _gravity;
+    private bool _midiSupported;
+    private List<string>? _midiInputs;
+    private int _midiNotes;
+    private int _midiOutside;
 
-    // ---- Drum loop ----
-
-    private sealed record DrumChoice(string JobId, string Label);
-
-    private const int MaxDrumBars = 16;
-
-    /// <summary>Where a beat's tempo is looked for: its pulse is read as the note value that lands
-    /// nearest this, so a take comes out between about 85 and 170 BPM.</summary>
-    private const double BeatStartBpm = 120;
-
-    /// <summary>The library job to open as the drums, set by the Library page's "Choose a beat".</summary>
+    /// <summary>The library job to open as the drums, set by the Library's "Choose a beat".</summary>
     [SupplyParameterFromQuery] public string? Beat { get; set; }
 
-    private IReadOnlyList<DrumChoice> _drumChoices = [];
-    private IJSObjectReference? _drumModule;
-    private ElementReference _drumCanvas;
-    private string? _drumJobId;
-    private bool _drumsReady;
-    private bool _drumsBusy;
-    private string? _drumError;
-    private int _drumBars = 1;
-    private int _drumHits;
-    private double _drumPlayedBpm;
-
-    /// <summary>The tempo the loop on screen was cut at; a different <see cref="_bpm"/> means a recut.</summary>
-    private double _drumCutBpm;
-
-    /// <summary>Set when a beat has just loaded: its canvas has no size until the render that shows
-    /// it, so the first cut waits for that render.</summary>
-    private bool _drumCutPending;
-
-    /// <summary>True until the bar count is typed in. While it holds, the count follows what was
-    /// played, which matters when a large tempo change reads the same take in double time.</summary>
-    private bool _drumBarsAuto = true;
-
-    private string DrumReadout
-        => $"{_drumHits} {(_drumHits == 1 ? "hit" : "hits")}, played at about {_drumPlayedBpm:0} BPM. "
-            + $"Each now starts on its sixteenth at {_drumCutBpm:0.#} BPM: {_drumBars} {(_drumBars == 1 ? "bar" : "bars")}. "
-            + "It plays with the chords and melody.";
-
-    private async Task LoadDrumChoicesAsync()
-    {
-        try
-        {
-            // File names repeat (every microphone take is "recording.wav"), so the time tells them apart.
-            // Beats first: they are what the strip is for; any other upload can still be picked.
-            _drumChoices = [.. (await Analysis.GetLibraryAsync() ?? [])
-                .Where(entry => entry.Origin?.Kind != TakeOrigin.Demo)
-                .OrderByDescending(entry => entry.Origin?.Kind == TakeOrigin.Beat)
-                .Select(entry => new DrumChoice(entry.JobId, $"{entry.FileName} · {entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}"))];
-        }
-        catch (HttpRequestException)
-        {
-            // The lab works without drums; the strip just has nothing to offer.
-        }
-        if (Beat is { Length: > 0 } beat && _drumChoices.Any(choice => choice.JobId == beat))
-        {
-            await OnDrumsPickedAsync(beat);
-        }
-    }
-
-    private async Task OnDrumsPickedAsync(string? jobId)
-    {
-        _drumJobId = jobId;
-        _drumsReady = false;
-        _drumError = null;
-        _drumsBusy = true;
-        try
-        {
-            // The player first: the loop is decoded and played on its AudioContext.
-            await EnsurePlayerAsync();
-            _drumModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/drum-loop.js");
-            if (string.IsNullOrEmpty(jobId))
-            {
-                await _drumModule.InvokeVoidAsync("clear");
-                return;
-            }
-            var status = await _drumModule.InvokeAsync<string>("load", jobId);
-            if (status != "ok")
-            {
-                _drumError = status switch
-                {
-                    "long" => "That recording is over two minutes. A loop wants a few bars.",
-                    "empty" => "No hits were found in that recording.",
-                    _ => "That recording could not be read.",
-                };
-                return;
-            }
-            _drumsReady = true;
-            _drumBarsAuto = true;
-            _drumCutPending = true;
-            // The beat sets the tempo: the lab moves to the whole BPM nearest what was played (87.8
-            // becomes 88), the chords and melody are regenerated there, and the drums are then cut
-            // to that same figure, so the hits move as little as they can. The slider still changes it.
-            var played = await _drumModule.InvokeAsync<double>("playedBpm", BeatStartBpm);
-            if (played > 0)
-            {
-                _bpm = Math.Clamp(Math.Round(played), BackingControls.MinBpm, BackingControls.MaxBpm);
-                await RefreshMelodyAsync();
-            }
-        }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away mid-decode.
-        }
-        finally
-        {
-            _drumsBusy = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task OnDrumBarsChangedAsync(int bars)
-    {
-        _drumBars = Math.Clamp(bars, 1, MaxDrumBars);
-        _drumBarsAuto = false;
-        await CutDrumsAsync();
-    }
-
-    /// <summary>Splices the picked recording at the lab's tempo. The recording stays decoded in the
-    /// module, so a tempo change is a recut, and the module restarts it in step if the loop is playing.</summary>
-    private async Task CutDrumsAsync()
-    {
-        if (_drumModule is null || !_drumsReady)
-        {
-            return;
-        }
-        _drumCutBpm = _bpm;
-        await _drumModule.InvokeVoidAsync("build", _bpm, _drumBarsAuto ? 0 : _drumBars, _drumCanvas);
-        _drumBars = await _drumModule.InvokeAsync<int>("bars");
-        _drumHits = await _drumModule.InvokeAsync<int>("hits");
-        _drumPlayedBpm = await _drumModule.InvokeAsync<double>("sourceBpm");
-    }
-
-    /// <summary>Tells the drum loop the transport moved: it starts from the chord loop's own downbeat
-    /// when that is playing and falls silent when it is not.</summary>
-    private async Task SyncDrumsAsync()
-    {
-        if (_drumModule is not null && _drumsReady)
-        {
-            await _drumModule.InvokeVoidAsync("sync");
-        }
-    }
-
-    private async Task ExportDrumsAsync()
-    {
-        if (_drumModule is not null)
-        {
-            await _drumModule.InvokeVoidAsync("exportWav");
-        }
-    }
     private DotNetObjectReference<ModeLab>? _selfRef;
-
-    /// <summary>One body per note of the mode on screen, as the home-note view draws it.</summary>
-    private sealed record GravityBody(int PitchClass, string Label, int Interval, bool Home, bool Characteristic);
-
-    private ElementReference _gravityCanvas;
-    private IJSObjectReference? _gravityModule;
-    private (int Tonic, ScaleMode Mode)? _gravitySent;
-
-    /// <summary>The mode's notes as the home-note view wants them: pitch class, name, semitones above
-    /// the mode's own root, and whether it is home or the mode's characteristic tone. All from the
-    /// shared ScaleModes tables, so this view and the cards above it cannot disagree.</summary>
-    private IReadOnlyList<GravityBody> GravityBodies()
-    {
-        var root = (_selectedTonic + ScaleModes.ModeDegreeOffset(_selectedMode)) % 12;
-        var characteristic = ScaleModes.CharacteristicIntervals(_selectedMode) is [var first, ..] ? first : -1;
-        return [.. ScaleModes.Intervals(_selectedMode).Select(interval =>
-        {
-            var pitchClass = (root + interval) % 12;
-            return new GravityBody(pitchClass, ScaleModes.NoteName(pitchClass), interval, interval == 0, interval == characteristic);
-        })];
-    }
-
-    private string GravityLabel
-        => $"{GetModeDisplayName(_selectedMode)}: home note at the centre, the other notes of the scale around it by distance above it";
-
-    /// <summary>Pushes the mode to the home-note view whenever the key or the mode changed.</summary>
-    private async Task SyncGravityAsync()
-    {
-        if (_gravitySent == (_selectedTonic, _selectedMode))
-        {
-            return;
-        }
-        if (_gravityModule is null)
-        {
-            _gravityModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/mode-gravity.js");
-            await _gravityModule.InvokeVoidAsync("init", _gravityCanvas);
-        }
-        _gravitySent = (_selectedTonic, _selectedMode);
-        var token = GetModeCssClass(_selectedMode) is { Length: > 0 } css ? $"--pm-{css}" : "--pm-accent";
-        await _gravityModule.InvokeVoidAsync("setMode", _gravityCanvas, GravityBodies(), token);
-    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
         {
-            await SyncGravityAsync();
-            if (_drumCutPending)
+            if (firstRender)
             {
-                // The render that just finished gave the loop's canvas its size.
-                _drumCutPending = false;
-                await CutDrumsAsync();
-                StateHasChanged();
+                _midi = await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/midi-in.js");
+                _midiSupported = await _midi.InvokeAsync<bool>("supported");
+                if (_midiSupported)
+                {
+                    StateHasChanged();
+                }
             }
+            await SyncSfxPaletteAsync();
         }
         catch (JSDisconnectedException)
         {
@@ -514,37 +229,81 @@
         }
     }
 
-    private string GetModeDisplayName(ScaleMode mode)
+    private (int Tonic, ScaleMode Mode)? _paletteSent;
+
+    /// <summary>The interface's own sounds (the chimes and taps) are voiced in the mode on screen, as
+    /// they are in the song's key on an analysis page.</summary>
+    private async Task SyncSfxPaletteAsync()
     {
-        var offset = ScaleModes.ModeDegreeOffset(mode);
-        var modeRootName = ScaleModes.NoteName((_selectedTonic + offset) % 12);
-        return $"{modeRootName} {mode}";
+        if (_paletteSent == (_selectedTonic, _selectedMode))
+        {
+            return;
+        }
+        _paletteSent = (_selectedTonic, _selectedMode);
+        _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/sfx.js");
+        await _sfx.InvokeVoidAsync("setPalette", ModeNames.Pitches(_selectedTonic, _selectedMode));
     }
 
-    private static string GetModeCssClass(ScaleMode mode) => mode switch
+    private string MidiTitle => _midiInputs switch
     {
-        ScaleMode.Ionian => "mode-ionian",
-        ScaleMode.Dorian => "mode-dorian",
-        ScaleMode.Phrygian => "mode-phrygian",
-        ScaleMode.Lydian => "mode-lydian",
-        ScaleMode.Mixolydian => "mode-mixolydian",
-        ScaleMode.Aeolian => "mode-aeolian",
-        ScaleMode.Locrian => "mode-locrian",
-        _ => "",
+        null => "Play along on a MIDI keyboard: notes sound with the loop and light on the home-note view",
+        { Count: 0 } => "Connected, but no MIDI keyboard is plugged in",
+        var names => $"Listening to {string.Join(", ", names)}. Press again to stop.",
     };
 
-    private static bool IsCharacteristicNote(int parentTonic, ScaleMode mode, string noteName)
+    private string MidiReadout => _midiInputs is null || _midiNotes == 0
+        ? ""
+        : $" · {_midiNotes} {(_midiNotes == 1 ? "note" : "notes")} played, {_midiOutside} outside the mode";
+
+    private async Task ToggleMidiAsync()
     {
-        var offset = ScaleModes.ModeDegreeOffset(mode);
-        var modeRootClass = (parentTonic + offset) % 12;
-        // The table lives in PoMode.Shared so the client and the analyzer cannot drift apart on which
-        // degree gives a mode its colour. A scale with no characteristic tone marks none.
-        if (ScaleModes.CharacteristicIntervals(mode) is not [var charInterval, ..])
+        if (_midi is null)
         {
-            return false;
+            return;
         }
-        var charPitchClass = (modeRootClass + charInterval) % 12;
-        return string.Equals(noteName, ScaleModes.NoteName(charPitchClass), StringComparison.OrdinalIgnoreCase);
+        if (_midiInputs is not null)
+        {
+            await _midi.InvokeVoidAsync("disconnect");
+            _midiInputs = null;
+            return;
+        }
+        _selfRef ??= DotNetObjectReference.Create(this);
+        var names = await _midi.InvokeAsync<string[]?>("connect", _selfRef, _gravity?.Canvas);
+        if (names is null)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "MIDI", "This browser would not open its MIDI keyboards.");
+            return;
+        }
+        (_midiInputs, _midiNotes, _midiOutside) = ([.. names], 0, 0);
+    }
+
+    [JSInvokable]
+    public void OnMidiInputs(string[] names)
+    {
+        if (_midiInputs is not null)
+        {
+            _midiInputs = [.. names];
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnMidiNote(int midi, bool inMode)
+    {
+        _midiNotes++;
+        if (!inMode)
+        {
+            _midiOutside++;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>A newly picked beat sets the tempo it was played at; the drums are then cut to it.</summary>
+    private async Task OnBeatTempoAsync(double bpm)
+    {
+        _bpm = bpm;
+        await RefreshMelodyAsync();
+        StateHasChanged();
     }
 
     protected override async Task OnInitializedAsync()
@@ -565,11 +324,10 @@
                 {
                     // Arriving with a beat: 120 only until the recording has been read, and as the
                     // hint for which note value its pulse is. The beat's own tempo replaces it.
-                    _bpm = BeatStartBpm;
+                    _bpm = DrumStrip.StartBpm;
                 }
             }
             await RefreshMelodyAsync();
-            await LoadDrumChoicesAsync();
         }
         catch (Exception ex)
         {
@@ -611,11 +369,6 @@
             {
                 await _playerModule.InvokeVoidAsync("updateMelody", _melody.MelodyNotes, _melody.BackingNotes, _totalDurationSec);
             }
-        }
-        // Every setting that can move the tempo comes through here, so this is where the drums follow it.
-        if (_drumsReady && !_drumCutPending && _drumCutBpm != _bpm)
-        {
-            await CutDrumsAsync();
         }
     }
 
@@ -846,6 +599,9 @@
         await SyncDrumsAsync();
     }
 
+    /// <summary>Tells the drum loop the transport moved (DrumStrip.SyncAsync).</summary>
+    private Task SyncDrumsAsync() => _drums?.SyncAsync() ?? Task.CompletedTask;
+
     private async Task ToggleMatchHarmonyAsync()
     {
         _matchHarmonyToMode = !_matchHarmonyToMode;
@@ -923,21 +679,26 @@
     {
         try
         {
-            if (_drumModule is not null)
+            if (_drums is not null)
             {
                 // Before the player: the loop sounds on the player's context.
-                await _drumModule.InvokeVoidAsync("dispose");
-                await _drumModule.DisposeAsync();
+                await _drums.DisposeAsync();
+            }
+            if (_midi is not null)
+            {
+                await _midi.InvokeVoidAsync("disconnect");
+                await _midi.DisposeAsync();
+            }
+            if (_sfx is not null)
+            {
+                // Back to the keyless defaults: the Library should not click in the lab's mode.
+                await _sfx.InvokeVoidAsync("setPalette", (int[]?)null);
+                await _sfx.DisposeAsync();
             }
             if (_playerModule is not null)
             {
                 await _playerModule.InvokeVoidAsync("dispose");
                 await _playerModule.DisposeAsync();
-            }
-            if (_gravityModule is not null)
-            {
-                await _gravityModule.InvokeVoidAsync("dispose", _gravityCanvas);
-                await _gravityModule.DisposeAsync();
             }
             _selfRef?.Dispose();
         }

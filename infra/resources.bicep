@@ -25,6 +25,18 @@ param appInsightsName string = 'poappideinsights8f9c9a4e'
 @description('Name of the shared resource group')
 param sharedResourceGroupName string = 'PoShared'
 
+@description('Deploy the optional Azure OpenAI interpreter. Off by default: it is the one resource that bills per use (docs/ai-cost.md).')
+param enableCloudInterpreter bool = false
+
+@description('Azure OpenAI account name (also its subdomain, so its endpoint is known before it exists)')
+param openAiAccountName string = 'oai-pomode'
+
+@description('Azure OpenAI model deployment name')
+param openAiDeploymentName string = 'interpreter'
+
+@description('Azure OpenAI location')
+param openAiLocation string = 'eastus2'
+
 // ─────────────────────────────────────────────
 // Storage Account (stpomode) in PoMode RG
 // ─────────────────────────────────────────────
@@ -106,7 +118,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
       alwaysOn: false
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
-      appSettings: [
+      appSettings: concat([
         {
           // Must match the key SecretsBootstrap reads, 'KeyVault:VaultUri'. Under the old name the
           // value never reached configuration, so the app silently used environment variables while
@@ -141,7 +153,18 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'ASPNETCORE_URLS'
           value: 'http://+:8080'
         }
-      ]
+      ], enableCloudInterpreter ? [
+        {
+          // An endpoint and a deployment name, never a key: the account has local auth disabled and
+          // the app reaches it with its managed identity (AzureOpenAiSongInterpreter).
+          name: 'PoMode__AzureOpenAI__Endpoint'
+          value: 'https://${openAiAccountName}.openai.azure.com/'
+        }
+        {
+          name: 'PoMode__AzureOpenAI__Deployment'
+          value: openAiDeploymentName
+        }
+      ] : [])
     }
   }
 }
@@ -170,6 +193,30 @@ module webAppKeyVaultAccess 'keyvault-access.bicep' = {
     keyVaultName: keyVaultName
     principalId: webApp.identity.principalId
     tenantId: subscription().tenantId
+  }
+}
+
+// Monitoring Metrics Publisher on the shared App Insights, so the OpenTelemetry exporter signs in with
+// the managed identity rather than the connection string's key. A role assignment, so gated like the
+// storage role above.
+module webAppMonitoringRole 'monitoring-role.bicep' = if (assignStorageRole) {
+  name: 'monitoring-role'
+  scope: resourceGroup(sharedResourceGroupName)
+  params: {
+    appInsightsName: appInsightsName
+    principalId: webApp.identity.principalId
+  }
+}
+
+// The optional cloud interpreter.
+module cloudInterpreter 'openai.bicep' = if (enableCloudInterpreter) {
+  name: 'cloud-interpreter'
+  params: {
+    location: openAiLocation
+    accountName: openAiAccountName
+    deploymentName: openAiDeploymentName
+    principalId: webApp.identity.principalId
+    assignRole: assignStorageRole
   }
 }
 

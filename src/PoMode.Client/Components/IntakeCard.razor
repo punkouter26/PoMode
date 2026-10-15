@@ -1,0 +1,376 @@
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject NavigationManager Navigation
+@inject NotificationService Notifications
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Every way audio gets in: choose or record a song, choose or record a beat, a file shared from
+   another app, and an unsent recording a closed tab left behind. Each goes over tus
+   (js/upload/resumable-upload.js) and ends as a job the page then follows (OnStarted), or, for a
+   beat, opens in the Mode Lab. *@
+<RadzenCard class="intake-card">
+    <div class="upload-hero">
+        <RadzenIcon Icon="graphic_eq" class="upload-hero-icon" />
+        <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H1" Text="Drop a track, get the theory" />
+        <RadzenText class="upload-hero-sub" Text=".mp3, .wav or .m4a · up to 100 MB" />
+        @* A plain file input dressed as a Radzen button rather than RadzenUpload: RadzenUpload POSTs
+           the file itself in one request, and the point here is that the bytes go over tus so a
+           dropped connection resumes instead of restarting. The input covers the button, so a click
+           or a dropped file both land on it. *@
+        <div class="intake-actions">
+            @* A beat is not a song: it is not here to be read for its mode but to be cut to a tempo, so
+               it is kept rather than analysed and opens in the Mode Lab, under its chords. *@
+            <label class="rz-button rz-button-md rz-variant-filled rz-light rz-shade-default upload-choose"
+                   title="A drum beat recorded without a click: it opens in the Mode Lab, cut to a loop at the lab's tempo and played with the chords">
+                <RadzenIcon Icon="album" />
+                <span>Choose a beat</span>
+                <input type="file" class="beat-input" accept="audio/*,.mp3,.wav,.m4a"
+                       aria-label="Choose a beat" disabled="@_uploading"
+                       @ref="_beatInput" @onchange="OnBeatChosenAsync" />
+            </label>
+            @if (!_recording)
+            {
+                <RadzenButton Text="Record a beat" Icon="graphic_eq" ButtonStyle="ButtonStyle.Light"
+                              Click="@(() => OnStartRecording(beat: true))" Disabled="@_uploading" id="record-beat"
+                              title="Tap or play a beat into the microphone, no click needed: it opens in the Mode Lab, cut to a loop at 120 BPM that you can change" />
+            }
+            <label class="rz-button rz-button-md rz-variant-filled rz-primary rz-shade-default upload-choose"
+                   data-upload-state="@(_uploading ? (_uploadResuming ? "resuming" : "uploading") : "idle")">
+                <RadzenIcon Icon="upload_file" />
+                <span>Choose a song</span>
+                <input type="file" class="upload-input" accept="audio/*,.mp3,.wav,.m4a"
+                       aria-label="Choose a song" disabled="@_uploading"
+                       @ref="_fileInput" @onchange="OnFileChosenAsync" />
+            </label>
+            @if (!_recording)
+            {
+                <RadzenButton Text="Record a song" Icon="mic" ButtonStyle="ButtonStyle.Light"
+                              Click="@(() => OnStartRecording(beat: false))" Disabled="@_uploading" id="record-song"
+                              title="Record from your microphone and analyze it" />
+            }
+            else
+            {
+                @* One microphone, so one Stop: it says where the take is going. *@
+                <RadzenButton Text="@(_recordingBeat ? "Stop and open in Mode Lab" : "Stop and analyze")" Icon="stop"
+                              ButtonStyle="ButtonStyle.Danger" Click="@OnStopRecording" id="record-stop" />
+                <RadzenText class="recording-hint" role="status"
+                            Text="@(_recordingBeat ? "Recording a beat…" : "Recording a song…")" />
+            }
+        </div>
+        @if (_recordError is not null)
+        {
+            <RadzenText class="upload-error" Text="@_recordError" />
+        }
+
+        @* First run: a finished analysis is one click away, so the canvas, mixer and stats can be seen
+           in seconds instead of after a multi-minute first upload. Only while the demo is all the
+           library holds. *@
+        @if (Demo is { Origin: { } demoOrigin } demo)
+        {
+            <div class="demo-pointer" data-demo-job="@demo.JobId">
+                <RadzenButton Text="See a finished example" Icon="play_circle" ButtonStyle="ButtonStyle.Light"
+                              Click="@(() => OnOpenDemo.InvokeAsync(demo.JobId))" />
+                <RadzenText class="demo-pointer-sub" Text="@demoOrigin.Description" />
+            </div>
+        }
+
+        @if (Pins.Count > 0)
+        {
+            @* The models are picked on the Settings page; a pinned one is named here so an upload never
+               runs on a choice the person has forgotten making. *@
+            <a class="executor-pins" href="settings">@Pins.Count analysis @(Pins.Count == 1 ? "model" : "models") pinned · change</a>
+        }
+        @if (_uploading)
+        {
+            <div class="upload-progress">
+                <RadzenProgressBar Value="@_uploadPercent" ShowValue="false" />
+                <RadzenText class="upload-progress-text" Text="@UploadProgressText" />
+            </div>
+        }
+        @if (_uploadError is not null)
+        {
+            <RadzenText class="upload-error" Text="@_uploadError" role="alert" />
+        }
+    </div>
+    @* Machine-readable probe result: browser tests wait for it before uploading, so a capability
+       declaration can never race the probe. "none" = probed, nothing usable; empty = still probing. *@
+    <span class="client-capability" hidden data-capability="@(Probed ? ClientCapability ?? "none" : "")"></span>
+</RadzenCard>
+
+@code {
+    /// <summary>The library's demo row, when it is the only row: what the empty state points at.</summary>
+    [Parameter] public LibraryEntryDto? Demo { get; set; }
+
+    /// <summary>The analysis models pinned on the Settings page, by stage.</summary>
+    [Parameter] public IReadOnlyDictionary<string, string> Pins { get; set; } = new Dictionary<string, string>();
+
+    /// <summary>This browser's Tier-2 capability ("webgpu", "wasm"), null when it has none.</summary>
+    [Parameter] public string? ClientCapability { get; set; }
+
+    /// <summary>True once the capability probe has answered. A shared or unsent file waits for it, so
+    /// it gets the same browser-tier treatment as one dropped on the page.</summary>
+    [Parameter] public bool Probed { get; set; }
+
+    /// <summary>Set by the service worker after another app shared audio into PoMode (/?shared=1).</summary>
+    [Parameter] public string? Shared { get; set; }
+
+    [Parameter] public EventCallback<JobStatusDto> OnStarted { get; set; }
+
+    [Parameter] public EventCallback<string> OnOpenDemo { get; set; }
+
+    private string? _uploadError;
+    private bool _uploading;
+    private bool _uploadResuming;
+    private ElementReference _fileInput;
+    private ElementReference _beatInput;
+    private IJSObjectReference? _uploader;
+    private IJSObjectReference? _recorder;
+    private IJSObjectReference? _sfx;
+    private DotNetObjectReference<IntakeCard>? _self;
+    private int _uploadPercent;
+    private long _uploadLoaded;
+    private long _uploadTotal;
+    private bool _recording;
+    private string? _recordError;
+    private bool _pickedUp;
+
+    /// <summary>Which of the two recordings is running: a beat goes to the Mode Lab, a song is analysed.</summary>
+    private bool _recordingBeat;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Probed || _pickedUp)
+        {
+            return;
+        }
+        _pickedUp = true;
+        await TakeSharedFileAsync();
+        await ResumeUnsentAsync();
+    }
+
+    private string UploadProgressText
+        => _uploadResuming
+            ? $"Connection lost — resuming… {_uploadPercent}% ({_uploadLoaded / 1048576.0:0.0} of {_uploadTotal / 1048576.0:0.0} MB)"
+            : _uploadPercent >= 100 ? "Upload sent — waiting for the server…"
+            : _uploadTotal > 0
+                ? $"Uploading… {_uploadPercent}% ({_uploadLoaded / 1048576.0:0.0} of {_uploadTotal / 1048576.0:0.0} MB)"
+                : $"Uploading… {_uploadPercent}%";
+
+    /// <summary>Called by resumable-upload.js at most once per whole percent, and whenever the upload
+    /// starts or stops recovering from a dropped connection.</summary>
+    [JSInvokable]
+    public Task OnUploadProgress(long sent, long total, bool resuming)
+    {
+        _uploadLoaded = sent;
+        _uploadTotal = total;
+        _uploadPercent = total > 0 ? (int)(sent * 100 / total) : 0;
+        _uploadResuming = resuming;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnFileChosenAsync() => UploadAsync(_fileInput, name: null);
+
+    private Task OnBeatChosenAsync() => UploadAsync(_beatInput, name: null, asBeat: true);
+
+    /// <summary>
+    /// Every intake path's one route to a job: the bytes go over tus, then the finished upload is
+    /// handed to the analyzer with this browser's capability and model picks. <paramref name="source"/>
+    /// is whatever resumable-upload.js accepts: the file input, a Blob reference, or a recording's
+    /// bytes. A beat takes the same route in, because the Mode Lab fetches it back out of the library,
+    /// but is only kept, never analysed, and goes straight there.
+    /// </summary>
+    private async Task UploadAsync(object source, string? name, bool asBeat = false)
+    {
+        _uploading = true;
+        _uploadResuming = false;
+        _uploadError = null;
+        _uploadPercent = 0;
+        _uploadLoaded = 0;
+        _uploadTotal = 0;
+        StateHasChanged();
+        try
+        {
+            _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
+            _self ??= DotNetObjectReference.Create(this);
+            var uploadId = await _uploader.InvokeAsync<string>("upload", source, name, _self, asBeat);
+            var (status, error) = await Analysis.StartFromUploadAsync(
+                uploadId, ClientCapability is not null, Pins, asBeat);
+            if (status is null)
+            {
+                Refused(error ?? "The analyzer would not accept the file.");
+                return;
+            }
+            _uploading = false;
+            await PlaySfxAsync("chime");
+            if (asBeat)
+            {
+                Navigation.NavigateTo($"modes?beat={Uri.EscapeDataString(status.JobId)}");
+                return;
+            }
+            await OnStarted.InvokeAsync(status);
+        }
+        catch (JSException ex)
+        {
+            // resumable-upload.js rejects with a sentence written to be shown as it is; interop
+            // appends the JS stack after the first line.
+            Refused(ex.Message.Split('\n')[0]);
+        }
+        catch (HttpRequestException)
+        {
+            Refused("The server could not be reached. Please try again.");
+        }
+        finally
+        {
+            _uploading = false;
+            _uploadResuming = false;
+        }
+    }
+
+    private void Refused(string reason)
+    {
+        _uploadError = reason;
+        Notifications.Notify(NotificationSeverity.Error, "Upload failed", reason);
+    }
+
+    /// <summary>Fire-and-forget UI sound; any failure (autoplay policy, torn-down circuit) is silent.</summary>
+    private async Task PlaySfxAsync(string name)
+    {
+        try
+        {
+            _sfx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/sfx.js");
+            await _sfx.InvokeVoidAsync(name);
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task OnStartRecording(bool beat)
+    {
+        _recordError = null;
+        _recordingBeat = beat;
+        try
+        {
+            _recorder ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/capture/audio-recorder.js");
+            await _recorder.InvokeVoidAsync("startRecording");
+            _recording = true;
+        }
+        catch (JSException)
+        {
+            _recordError = "Microphone access was denied or is unavailable.";
+        }
+    }
+
+    private async Task OnStopRecording()
+    {
+        if (_recorder is null)
+        {
+            return;
+        }
+        _recording = false;
+        await _recorder.InvokeVoidAsync("stopRecording");
+        var wavBytes = await _recorder.InvokeAsync<byte[]>("getRecordedWavBytes");
+        if (wavBytes.Length <= 44) // header-only WAV: nothing was captured
+        {
+            _recordError = "Nothing was recorded.";
+            return;
+        }
+        await UploadAsync(wavBytes, _recordingBeat ? "beat.wav" : "recording.wav", asBeat: _recordingBeat);
+    }
+
+    /// <summary>
+    /// Picks up audio another app shared into PoMode and analyses it like any other upload. Android's
+    /// share sheet POSTs the file to <c>/share-target</c>, which the service worker answers by stashing
+    /// the bytes and redirecting here: a POST cannot be handed to a single-page app as a navigation.
+    /// </summary>
+    private async Task TakeSharedFileAsync()
+    {
+        if (Shared != "1")
+        {
+            return;
+        }
+        // Cleared immediately so a refresh cannot look for a file that has already been claimed.
+        Navigation.NavigateTo("/", replace: true);
+        try
+        {
+            await using var pwa = await JS.InvokeAsync<IJSObjectReference>("import", "./js/shell/pwa.js");
+            if (await pwa.InvokeAsync<string?>("takeSharedName") is not { Length: > 0 } name)
+            {
+                return;
+            }
+            // A reference, not the bytes: the Blob goes from pwa.js to the uploader without a 40 MB
+            // detour through .NET memory.
+            await using var file = await pwa.InvokeAsync<IJSObjectReference>("takeSharedFile");
+            await UploadAsync(file, name);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigated away before the handoff finished.
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+    }
+
+    /// <summary>A recording or shared file whose upload an earlier visit never finished: the uploader
+    /// kept it, and it carries on from the byte the server last confirmed.</summary>
+    private async Task ResumeUnsentAsync()
+    {
+        if (_uploading)
+        {
+            return;
+        }
+        try
+        {
+            _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
+            if (await _uploader.InvokeAsync<string?>("unsentName") is { Length: > 0 } name)
+            {
+                // A beat left unsent is still a beat: it carries on into the Mode Lab, not an analysis.
+                var asBeat = await _uploader.InvokeAsync<bool>("unsentIsBeat");
+                await using var file = await _uploader.InvokeAsync<IJSObjectReference>("takeUnsent");
+                await UploadAsync(file, name, asBeat);
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException)
+        {
+            // Nothing kept, or nothing readable: the page is simply idle.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_uploader is not null)
+            {
+                await _uploader.DisposeAsync();
+            }
+            if (_recorder is not null)
+            {
+                if (_recording)
+                {
+                    // Leaving mid-recording: without this the mic stays live (and its indicator lit)
+                    // after the page is gone, still buffering audio nobody will ever upload.
+                    try
+                    {
+                        await _recorder.InvokeVoidAsync("stopRecording");
+                    }
+                    catch (JSException)
+                    {
+                    }
+                }
+                await _recorder.DisposeAsync();
+            }
+            if (_sfx is not null)
+            {
+                await _sfx.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        _self?.Dispose();
+    }
+}

@@ -1,5 +1,6 @@
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Push;
+using PoMode.API.Features.SongStatistics;
 using PoMode.API.Infrastructure;
 using PoMode.API.Pipeline;
 using PoMode.API.Platform;
@@ -16,7 +17,8 @@ public sealed class DiagnosticsService(
     JobQueue queue,
     ExecutionPlanner planner,
     IConfiguration configuration,
-    PushSettings push)
+    PushSettings push,
+    InterpreterStats interpreters)
 {
     public async Task<DiagnosticsReport> BuildReportAsync(CancellationToken ct) => new(
         EnvironmentName: environment.EnvironmentName,
@@ -26,7 +28,8 @@ public sealed class DiagnosticsService(
         Hardware: await hardwareProbe.ProbeAsync(ct),
         QueueDepth: queue.Depth,
         DefaultPlan: await DefaultPlanAsync(ct),
-        Operational: Operational());
+        Operational: Operational(),
+        Interpreters: interpreters.Snapshot());
 
     /// <summary>
     /// The guards this instance is running with. Presence only — in particular the OTLP endpoint is
@@ -36,7 +39,8 @@ public sealed class DiagnosticsService(
     private OperationalReport Operational() => new(
         RateLimitsEnabled: PoRateLimits.IsEnabled(configuration),
         MaxQueueDepth: configuration.GetValue("Jobs:MaxQueueDepth", 24),
-        PushAvailable: push.Available);
+        PushAvailable: push.Available,
+        TelemetryEnabled: Telemetry.IsEnabled(configuration));
 
     private async Task<List<StagePlan>?> DefaultPlanAsync(CancellationToken ct)
     {

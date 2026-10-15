@@ -16,7 +16,13 @@ public sealed record DiagnosticsReport(
     IReadOnlyList<StagePlan>? DefaultPlan = null,
     /// <summary>The guards and exporters that are switched on. Presence only, like every other field
     /// here — no endpoints, no keys, nothing that could carry a secret.</summary>
-    OperationalReport? Operational = null);
+    OperationalReport? Operational = null,
+    /// <summary>How each song interpreter has done since start-up (InterpreterStats).</summary>
+    IReadOnlyList<InterpreterStatsDto>? Interpreters = null);
+
+/// <summary>One interpreter's record since start-up: replies that passed the grounding check, replies
+/// sent back for inventing a figure, and failures the next interpreter answered in its place.</summary>
+public sealed record InterpreterStatsDto(string Name, int Replies, int GroundingRetries, int FellThrough);
 
 /// <summary>
 /// Which operational guards this instance is running with.
@@ -30,4 +36,6 @@ public sealed record OperationalReport(
     bool RateLimitsEnabled,
     int MaxQueueDepth,
     /// <summary>Whether this instance has a VAPID key pair, i.e. can notify a closed tab at all.</summary>
-    bool PushAvailable = false);
+    bool PushAvailable = false,
+    /// <summary>Whether traces and metrics are exported to Application Insights. Presence only.</summary>
+    bool TelemetryEnabled = false);

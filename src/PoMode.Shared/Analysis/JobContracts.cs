@@ -24,6 +24,10 @@ public enum ExecutionTier
 {
     Local,
     ClientDelegated,
+
+    /// <summary>A paid cloud model. Only the optional written interpretation uses it (never a pipeline
+    /// stage); appended, because tiers are persisted as numbers in job.json.</summary>
+    Cloud,
 }
 
 /// <summary>The wire vocabulary for stage names — used in <see cref="StagePlan.Stage"/> and
