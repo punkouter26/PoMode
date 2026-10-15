@@ -144,6 +144,11 @@
     font-weight: 600;
 }
 
+/* The click toggle rides at the end of whichever buttons the take's state shows. */
+.take-actions ::deep .take-click {
+    margin-left: auto;
+}
+
 .take-cue.counting {
     color: var(--pm-fg-muted);
 }

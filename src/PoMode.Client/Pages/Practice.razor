@@ -130,6 +130,16 @@
                                   Disabled="@_sending" Click="@DiscardTakeAsync" id="practice-redo" />
                     break;
             }
+            @* A beat to sing against, not only chord changes: it plays under the preview, the take and
+               the playback, and can be flipped while any of them runs. *@
+            @* Tinted rather than solid when on, as the mixer's click is, so it does not outshout Sing. *@
+            <RadzenButton Text="Click" Icon="av_timer"
+                          ButtonStyle="@(_click ? ButtonStyle.Primary : ButtonStyle.Light)"
+                          Variant="@(_click ? Variant.Flat : Variant.Filled)"
+                          Shade="@(_click ? Shade.Lighter : Shade.Default)"
+                          aria-pressed="@(_click ? "true" : "false")" Click="@ToggleClickAsync"
+                          id="practice-click" class="take-click"
+                          title="@(_click ? $"Clicking every beat at {_bpm:0} BPM" : "No click, chords only")" />
         </div>
 
         @if (_error is { } error)
@@ -199,6 +209,7 @@ else if (_loadError is { } loadError)
     private int _tonic = 2;                 // the parent key: Dorian in D, so E Dorian chords
     private string _progressionId = "";
     private double _bpm = 92;
+    private bool _click = true;
 
     private TakeState _state = TakeState.Idle;
     private byte[]? _take;
@@ -271,13 +282,13 @@ else if (_loadError is { } loadError)
             && Enum.IsDefined(saved.Mode)
             && _progressions.Any(p => p.Id == saved.ProgressionId))
         {
-            (_tonic, _mode, _progressionId) = (saved.TonicPitchClass, saved.Mode, saved.ProgressionId);
+            (_tonic, _mode, _progressionId, _click) = (saved.TonicPitchClass, saved.Mode, saved.ProgressionId, saved.Click);
             _bpm = Math.Clamp(saved.Bpm, BackingControls.MinBpm, BackingControls.MaxBpm);
         }
     }
 
     private Task SaveSettingsAsync()
-        => Prefs.SetAsync(BrowserPrefs.PracticeBackingKey, new PracticeBacking(_tonic, _mode, _progressionId, _bpm),
+        => Prefs.SetAsync(BrowserPrefs.PracticeBackingKey, new PracticeBacking(_tonic, _mode, _progressionId, _bpm, _click),
             PrefsJsonContext.Default.PracticeBacking);
 
     /// <summary>
@@ -436,6 +447,22 @@ else if (_loadError is { } loadError)
     private ModalMelodyRequest CurrentRequest()
         => new(TonicPitchClass: _tonic, Mode: _mode, ProgressionId: _progressionId, Bpm: _bpm);
 
+    private async Task ToggleClickAsync()
+    {
+        _click = !_click;
+        await SyncClickAsync();
+        await SaveSettingsAsync();
+    }
+
+    /// <summary>The player's click to match the toggle and the tempo the chords were voiced at.</summary>
+    private async Task SyncClickAsync()
+    {
+        if (_player is not null)
+        {
+            await _player.InvokeVoidAsync("setClick", _click ? _bpm : 0);
+        }
+    }
+
     // ---- Preview ----
 
     private async Task TogglePreviewAsync()
@@ -455,6 +482,7 @@ else if (_loadError is { } loadError)
             return;
         }
         await _player.InvokeVoidAsync("setLooping", true);
+        await SyncClickAsync();
         // Chords only — an empty melody list, the same call the Mode Lab makes while a take runs.
         await _player.InvokeVoidAsync(
             "play", Array.Empty<NoteEvent>(), _melody.BackingNotes, LoopSeconds, _selfRef);
@@ -486,6 +514,7 @@ else if (_loadError is { } loadError)
             _take = null;
             _elapsedSec = 0;
             await _player.InvokeVoidAsync("setLooping", true);
+            await SyncClickAsync();
 
             // Microphone before the clicks: the first take of a session raises the permission
             // prompt, and counting down to a dialog box helps nobody.
@@ -564,6 +593,8 @@ else if (_loadError is { } loadError)
             return;
         }
         _reviewing = true;
+        await EnsurePlayerAsync();
+        await SyncClickAsync();
         // Hearing the voice alone says nothing about whether the phrase landed; the question is how
         // it sits against the harmony, so the take and the chords are scheduled from one instant.
         var seconds = await _hum.InvokeAsync<double>(

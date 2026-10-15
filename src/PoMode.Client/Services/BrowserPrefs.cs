@@ -61,8 +61,9 @@ public sealed class BrowserPrefs(IJSRuntime js)
 /// <summary>The Library's search and filters as they were left.</summary>
 public sealed record LibraryFilters(string Search);
 
-/// <summary>Practice's backing as it was left.</summary>
-public sealed record PracticeBacking(int TonicPitchClass, ScaleMode Mode, string ProgressionId, double Bpm);
+/// <summary>Practice's backing as it was left, and whether the click was on. A value saved before the
+/// click existed reads as on.</summary>
+public sealed record PracticeBacking(int TonicPitchClass, ScaleMode Mode, string ProgressionId, double Bpm, bool Click = true);
 
 [JsonSerializable(typeof(LibraryFilters))]
 [JsonSerializable(typeof(PracticeBacking))]

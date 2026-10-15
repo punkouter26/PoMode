@@ -5,7 +5,8 @@
 // transcribed as a sung note. That is what lets the Practice page keep clicking all the way through
 // a take instead of falling silent the moment it starts listening.
 
-/// One click on `ctx`'s clock at `when` (an absolute currentTime instant).
+/// One click on `ctx`'s clock at `when` (an absolute currentTime instant). Answers the oscillator, so
+/// a caller holding clicks in its own voice list can silence the pending ones on stop.
 export function click(ctx, when, isDownbeat) {
     const osc = ctx.createOscillator();
     osc.type = 'square';
@@ -21,6 +22,7 @@ export function click(ctx, when, isDownbeat) {
     osc.start(when);
     osc.stop(when + 0.09);
     osc.onended = () => { try { env.disconnect(); } catch { } };
+    return osc;
 }
 
 /// Schedules `beats` clicks at `bpm` starting at `startTime`, first one accented. Returns the

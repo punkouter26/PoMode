@@ -333,6 +333,12 @@ swaps in its own signature cadence through the shared `ProgressionCatalog.Signat
 Mode Lab's "Match to mode" default — a mode is a tonal centre, and rooting the chords on the parent
 key would put the wrong note under the first thing the singer hears.
 
+A click runs under the chords by default (the *Click* toggle, remembered with the backing): every
+beat at the backing's tempo, the downbeat accented, counted from bar one of each pass by
+`modal-player.js` `setClick` so it carries on straight out of the count-in and through the preview,
+the take and the playback. Chord changes alone are too sparse a pulse to sing to. It can stay on while
+the microphone is open because `click-track.js` pitches it above anything `live-pitch.js` listens for.
+
 The page reads the caller's own takes back through two reads in the same `ModalMelodies` group, both
 served by `HumTakeHistory` and derived on demand like `/stats`. `GET /api/modal-melodies/takes` lists
 earlier takes over the same backing and tallies what the analyzer found in one server-worded sentence

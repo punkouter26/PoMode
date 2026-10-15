@@ -5,6 +5,7 @@
 // Both play into the shared generated room from voices.js, so the Mode Lab is no longer dry.
 
 import { bus, epiano } from './voices.js';
+import { click } from './click-track.js';
 
 let audioCtx = null;
 let masterGain = null;
@@ -23,6 +24,11 @@ let playCount = 0;
 let currentMelodyNotes = [];
 let currentBackingNotes = [];
 let scheduledElapsed = 0;
+
+// The metronome under the loop, in BPM; 0 is off. Practice turns it on so there is a pulse to sing
+// against, not only chord changes. Module state shared with the Mode Lab, so dispose() clears it.
+let clickBpm = 0;
+const BEATS_PER_BAR = 4;
 
 // How far ahead of the audio clock notes are handed to Web Audio. PRIME_SEC covers the gap before
 // the first animation frame; LOOKAHEAD_SEC keeps each later frame a little ahead of the playhead.
@@ -332,6 +338,20 @@ function scheduleWindow(ctx, fromLoopSec, toLoopSec, loopBaseTime) {
 
     emit(currentBackingNotes, playPianoChordNote);  // Acoustic Piano chord accompaniment
     emit(currentMelodyNotes, playFluteMelodyNote);  // Concert Flute melody lead
+
+    // Counted from bar one of every pass, the same [from, to) test as the notes, so a beat on a window
+    // edge sounds once. A beat landing on the loop's own end is the next pass's downbeat, not this one's.
+    if (clickBpm > 0) {
+        const beat = 60 / clickBpm;
+        for (let k = Math.floor(fromLoopSec / beat); k * beat < toLoopSec; k++) {
+            const at = k * beat;
+            if (at < fromLoopSec || at > loopDuration - 0.001) continue;
+            const when = loopBaseTime + at;
+            if (when >= ctx.currentTime - 0.02) {
+                activeVoices.push(click(ctx, when, k % BEATS_PER_BAR === 0));
+            }
+        }
+    }
 }
 
 /// Fill the schedule out to <paramref name="targetElapsed"/> seconds past the start of playback,
@@ -462,7 +482,15 @@ export function setLooping(loop) {
     isLooping = loop;
 }
 
+/// Clicks every beat at `bpm` under the loop, the first of each bar accented; 0 turns it off. Takes
+/// effect from the next scheduled window, so it can be flipped mid-loop. Pitched above what
+/// live-pitch.js listens for (click-track.js), so it can keep going through a take.
+export function setClick(bpm) {
+    clickBpm = bpm > 0 ? bpm : 0;
+}
+
 export function dispose() {
+    clickBpm = 0;
     stop();
     onPlayheadCallback = null;
     dotNetRef = null;
