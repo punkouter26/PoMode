@@ -41,7 +41,7 @@ public static class ClientResultValidator
             return $"Too many notes: {notes.Count} were posted and the limit is {MaxNotes}.";
         }
 
-        var latestStart = (trackDurationSec ?? AudioDecoder.MaxDurationSecondsDefault) + EndSlackSeconds;
+        var latestStart = (trackDurationSec ?? AudioDecoder.MaxDurationSeconds) + EndSlackSeconds;
 
         for (var index = 0; index < notes.Count; index++)
         {

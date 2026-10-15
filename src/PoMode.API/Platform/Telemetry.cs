@@ -29,6 +29,9 @@ public static class Telemetry
             {
                 options.ConnectionString = builder.Configuration[ConnectionStringKey];
                 options.Credential = new DefaultAzureCredential();
+                // Live Metrics polls the service every few seconds for as long as the process is up,
+                // which on F1 is CPU spent against the 60-minute daily quota with nobody watching.
+                options.EnableLiveMetrics = false;
             });
         }
         return builder;

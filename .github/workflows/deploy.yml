@@ -109,6 +109,20 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # F1 gives the app about 60 CPU-minutes a day. Once they are spent Azure stops the site
+      # (usageState Exceeded) until 00:00 UTC, and OneDeploy fails with a bare "Site Disabled
+      # (CODE: 403)" that reads like a broken setting. Checked before Bicep, not after: on 2026-09-25
+      # Bicep rewrote the settings of a site that then refused the package, so the old build ran
+      # under settings it crashes on, crash-looped through the quota every day, and blocked every
+      # deploy after it.
+      - name: Check the F1 daily CPU quota
+        run: |
+          usage=$(az webapp show -g PoMode -n ${{ env.AZURE_WEBAPP_NAME }} --query usageState -o tsv)
+          if [ "$usage" = "Exceeded" ]; then
+            echo "::error::${{ env.AZURE_WEBAPP_NAME }} has used up the F1 daily CPU quota, so Azure stopped it and it will refuse the package. The quota resets at 00:00 UTC; rerun this job after that."
+            exit 1
+          fi
+
       # Always, not only when infra/ changed. Bicep is the source of truth for the app settings the
       # code depends on, and it is idempotent, so running it costs a minute and removes an outage
       # path: a push that did not touch infra/ used to skip this and leave whatever settings the App
@@ -128,17 +142,6 @@ jobs:
           cd publish
           zip -r ../webapp.zip . -q
           cd ..
-
-      # F1 gives the app about 60 CPU-minutes a day. Once they are spent Azure stops the site
-      # (usageState Exceeded) until 00:00 UTC, and OneDeploy fails with a bare "Site Disabled
-      # (CODE: 403)" that reads like a broken setting. Say what it actually is.
-      - name: Check the F1 daily CPU quota
-        run: |
-          usage=$(az webapp show -g PoMode -n ${{ env.AZURE_WEBAPP_NAME }} --query usageState -o tsv)
-          if [ "$usage" = "Exceeded" ]; then
-            echo "::error::${{ env.AZURE_WEBAPP_NAME }} has used up the F1 daily CPU quota, so Azure stopped it and it will refuse the package. The quota resets at 00:00 UTC; rerun this job after that."
-            exit 1
-          fi
 
       - name: Deploy to App Service
         uses: azure/webapps-deploy@v3

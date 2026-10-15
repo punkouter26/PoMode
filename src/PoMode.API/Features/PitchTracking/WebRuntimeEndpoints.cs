@@ -20,12 +20,23 @@ public static class WebRuntimeEndpoints
 
         var group = app.MapGroup("/web-runtime");
 
-        group.MapGet("/{asset}", async Task<Results<FileContentHttpResult, NotFound>> (
-            string asset, ModelRegistry registry, CancellationToken ct) =>
+        group.MapGet("/{asset}", async Task<Results<FileContentHttpResult, StatusCodeHttpResult, NotFound>> (
+            string asset, ModelRegistry registry, HttpContext http, CancellationToken ct) =>
         {
             if (!assets.TryGetValue(asset, out var descriptor))
             {
                 return TypedResults.NotFound();
+            }
+
+            // The pinned SHA-256 is the version, so it is the ETag. no-cache makes the browser ask every
+            // time, but a browser that already has the file gets a 304 before the server reads up to
+            // 67 MB off disk to send it again.
+            var etag = $"\"{descriptor.Sha256}\"";
+            http.Response.Headers.CacheControl = "no-cache";
+            http.Response.Headers.ETag = etag;
+            if (http.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
+            {
+                return TypedResults.StatusCode(StatusCodes.Status304NotModified);
             }
 
             // Downloaded on first request and SHA-256-verified, Azure included: these files run in

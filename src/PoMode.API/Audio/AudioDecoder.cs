@@ -1,6 +1,7 @@
 using NAudio.Wave;
 using NLayer.NAudioSupport;
 using PoMode.API.Features.Analysis;
+using PoMode.API.Infrastructure;
 
 namespace PoMode.API.Audio;
 
@@ -10,8 +11,18 @@ public static class AudioDecoder
     /// <summary>15 minutes — generous for a song, ~318 MB decoded worst case at stereo 44.1 kHz.</summary>
     public const double MaxDurationSecondsDefault = 900;
 
-    public static AudioBuffer Decode(string path, double maxDurationSeconds = MaxDurationSecondsDefault)
+    /// <summary>
+    /// 6 minutes on the hosted app. F1 gives the whole plan 1 GB, and the browser-stems path holds the
+    /// mix, the vocals and the instrumental decoded at once: ~380 MB here, ~950 MB at the 15-minute cap.
+    /// </summary>
+    public const double MaxDurationSecondsHosted = 360;
+
+    public static double MaxDurationSeconds =>
+        EnvironmentDetector.IsAzureHosted() ? MaxDurationSecondsHosted : MaxDurationSecondsDefault;
+
+    public static AudioBuffer Decode(string path, double? maxDurationSeconds = null)
     {
+        var limit = maxDurationSeconds ?? MaxDurationSeconds;
         var header = new byte[12];
         using (var probe = File.OpenRead(path))
         {
@@ -25,9 +36,9 @@ public static class AudioDecoder
         using var reader = OpenReader(path, header);
 
         var totalSeconds = reader.TotalTime.TotalSeconds;
-        if (totalSeconds > maxDurationSeconds)
+        if (totalSeconds > limit)
         {
-            throw new InvalidDataException($"Audio is {totalSeconds:0} s long; the limit is {maxDurationSeconds:0} s.");
+            throw new InvalidDataException($"Audio is {totalSeconds:0} s long; the limit is {limit:0} s.");
         }
 
         var provider = reader.ToSampleProvider();

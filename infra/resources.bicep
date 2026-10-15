@@ -151,6 +151,12 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: 'Auto'
         }
         {
+          // The demo template runs the real pipeline on the server; on F1 that CPU comes out of the
+          // 60-minute daily quota. New libraries start empty here instead.
+          name: 'Demo__Enabled'
+          value: 'false'
+        }
+        {
           name: 'ASPNETCORE_URLS'
           value: 'http://+:8080'
         }
