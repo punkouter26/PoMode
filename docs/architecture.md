@@ -206,7 +206,7 @@ plain-English paragraph; its rule is that a weak figure (unconfident mode, missi
 
 `GET /api/analysis/{id}/interpretation?interpreter=` turns those statistics into prose behind the
 `ISongInterpreter` seam: `OllamaSongInterpreter` (Local, whatever model Ollama has installed,
-preferring `gemma3` because it won the interpreter report) → `TemplateSongInterpreter`
+preferring `phi4-mini`, a five-for-five winner of the 2026-10-14 interpreter report; the constant's comment has the numbers) → `TemplateSongInterpreter`
 (deterministic, always available, `IsClassicFallback`). There is no cloud interpreter.
 `SongInterpreterSelector` falls through on failure exactly like `RunWithFallbackAsync`, and ranks by
 answer quality rather than by `ExecutionPlanner.EffectiveRank`, because one small prompt is not the

@@ -29,16 +29,18 @@ public sealed class OllamaSongInterpreter(
     private const string DefaultEndpoint = "http://localhost:11434";
 
     /// <summary>
-    /// Preferred when it happens to be installed, on the numbers: in the interpreter report
-    /// (<c>test-reports/interpreter-report.html</c>, 2026-09-25) gemma3:4b passed all five tasks —
-    /// schema, no invented figures, declining the unanswerable question — on both runs, before and
-    /// after the prompts were restructured for prefix reuse. llama3.2 passed three on the first (it
-    /// looped past the length cap on the summary and invented a figure in an answer) and five on the
-    /// second, a little faster; consistency won. Only a preference — see
+    /// Preferred when it happens to be installed, on the numbers: in the interpreter report of
+    /// 2026-10-14 (<c>test-reports/interpreter-report.html</c>, six installed models, the prompt with
+    /// its worked grounding examples) phi4-mini, qwen3:4b and gemma3n:e2b passed all five tasks;
+    /// gemma3:4b, the earlier preference, looped past the length cap on the summary, as did
+    /// qwen3:1.7b, and llama3.2 invented a figure in an answer. phi4-mini rather than the other two:
+    /// 2.5 GB beside gemma3n:e2b's 7.8 GB, which competes with stem separation's 5.7 GB peak, and a
+    /// name that cannot match a failing smaller sibling the way "qwen3" matches qwen3:1.7b. Mean reply
+    /// 26.4 s on the reference CPU, first token 12.3 s. Only a preference — see
     /// <see cref="ResolveModelAsync"/>, which falls back to whatever the user actually has rather than
     /// insisting on this name.
     /// </summary>
-    public const string PreferredModel = "gemma3";
+    public const string PreferredModel = "phi4-mini";
 
     /// <summary>
     /// The context window asked for. Set explicitly because Ollama's default is smaller than a
@@ -132,7 +134,7 @@ public sealed class OllamaSongInterpreter(
             if (installed.Count == 0)
             {
                 logger.LogInformation(
-                    "Ollama is running but has no models installed; run 'ollama pull {Preferred}:4b' to "
+                    "Ollama is running but has no models installed; run 'ollama pull {Preferred}' to "
                     + "enable the local interpreter.", PreferredModel);
                 return _resolvedModel = null;
             }
@@ -319,7 +321,7 @@ public sealed class OllamaSongInterpreter(
             throw new InvalidOperationException(
                 $"Ollama returned an empty response for model '{model}'"
                 + (thought
-                    ? " — it produced reasoning but no answer. Try a non-reasoning model, e.g. 'ollama pull gemma3:4b'."
+                    ? " — it produced reasoning but no answer. Try a non-reasoning model, e.g. 'ollama pull phi4-mini'."
                     : "."));
         }
     }

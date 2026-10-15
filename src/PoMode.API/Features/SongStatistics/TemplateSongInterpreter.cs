@@ -99,7 +99,7 @@ public sealed class TemplateSongInterpreter : ISongInterpreter
         return ("This answer was written without a language model, so "
             + "it can only report the measurements directly: the mode and the evidence for it, tempo, "
             + "vocal range, rhythm, harmony, melodic motion and phrasing. Install a local model with "
-            + "'ollama pull gemma3:4b' to ask anything else.", false);
+            + "'ollama pull phi4-mini' to ask anything else.", false);
     }
 
     /// <summary>
