@@ -47,88 +47,92 @@ public sealed class HumTakeEndpointTests : IDisposable
         => $"/api/modal-melodies/hum?tonicPitchClass=0&mode=Dorian&progressionId={progressionId}"
          + $"&bpm=120&style=Lyrical&seed=42&targetPurity={targetPurity.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
-    [Fact]
-    public async Task A_hum_take_is_queued_carrying_the_progression_it_was_sung_over()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-
-        using var take = TakeOf(seconds: 12.0);
-        var response = await client.PostAsync(Url(), take);
-        response.EnsureSuccessStatusCode();
-
-        var job = await response.Content.ReadFromJsonAsync<JobStatusDto>();
-        Assert.NotNull(job);
-        Assert.False(string.IsNullOrWhiteSpace(job.JobId));
-
-        // Chord detection never runs for a hum: the chords are a setting the singer chose, and the
-        // plan has to say so rather than crediting the recognizer that was scheduled.
-        Assert.Contains(StageNames.ChordDetecting, job.CompletedStages);
-        Assert.Contains(StageNames.Separating, job.CompletedStages);
-        Assert.Equal("ModeLabBacking", job.Plan.Single(p => p.Stage == StageNames.ChordDetecting).Executor);
-        Assert.Equal("SkippedDryVocal", job.Plan.Single(p => p.Stage == StageNames.Separating).Executor);
-
-        // Nothing fake ran, so the client must not raise the mock-data banner over a real take.
-        Assert.DoesNotContain(job.Plan, p => p.IsPlaceholder && p.Stage == StageNames.ChordDetecting);
-
-        // The seeded chord track is on the job before the worker could have touched it, and it
-        // repeats across the whole take rather than covering only the first pass.
-        var chords = await client.GetFromJsonAsync<List<ChordSpan>>($"/api/analysis/{job.JobId}/chords");
-        Assert.NotNull(chords);
-        Assert.NotEmpty(chords);
-        Assert.Equal(0.0, chords[0].StartSec, precision: 3);
-        Assert.True(chords[^1].EndSec > 8.0, "the chords must cover the later passes the singer hummed over");
-        Assert.True(chords[^1].EndSec <= 12.01, "the chords must not run past the end of the recording");
-
-        // The tempo came off the slider, so it is known rather than estimated.
-        var beats = await client.GetFromJsonAsync<BeatGridDto>($"/api/analysis/{job.JobId}/beats");
-        Assert.NotNull(beats);
-        Assert.Equal(120.0, beats.Bpm, precision: 3);
-        Assert.True(beats.Confidence > 0);
-    }
-
     /// <summary>
     /// The take says what it is. Without this the analyzer reports a mode on an unexplained file —
     /// and the sentence must describe the backing the singer heard, never assert a mode for the voice,
     /// which is the very thing the analysis is there to discover.
     /// </summary>
     [Fact]
-    public async Task A_hum_take_carries_the_progression_it_was_sung_over_as_its_provenance()
+    public async Task A_hum_take_is_queued_with_its_progression_as_chords_and_provenance_and_an_upload_has_none()
     {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
+        // A hum take is queued carrying the progression it was sung over.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
 
-        using var take = TakeOf(seconds: 9.0);
-        var job = await (await client.PostAsync(Url(), take)).Content.ReadFromJsonAsync<JobStatusDto>();
-        Assert.NotNull(job);
+            using var take = TakeOf(seconds: 12.0);
+            var response = await client.PostAsync(Url(), take);
+            response.EnsureSuccessStatusCode();
 
-        Assert.NotNull(job.Origin);
-        Assert.Equal(TakeOrigin.HumTake, job.Origin.Kind);
-        Assert.Contains("Hummed over", job.Origin.Description);
-        Assert.Contains("120 BPM", job.Origin.Description);
-        // The request named pop-axis, so that progression must be the one reported.
-        Assert.Contains("Axis", job.Origin.Description, StringComparison.OrdinalIgnoreCase);
+            var job = await response.Content.ReadFromJsonAsync<JobStatusDto>();
+            Assert.NotNull(job);
+            Assert.False(string.IsNullOrWhiteSpace(job.JobId));
 
-        // It survives the round trip to disk and back — the library reads it from job.json.
-        var library = await client.GetFromJsonAsync<List<LibraryEntryDto>>("/api/library");
-        Assert.NotNull(library);
-        var row = library.Single(entry => entry.JobId == job.JobId);
-        Assert.NotNull(row.Origin);
-        Assert.Equal(job.Origin.Description, row.Origin.Description);
-    }
+            // Chord detection never runs for a hum: the chords are a setting the singer chose, and the
+            // plan has to say so rather than crediting the recognizer that was scheduled.
+            Assert.Contains(StageNames.ChordDetecting, job.CompletedStages);
+            Assert.Contains(StageNames.Separating, job.CompletedStages);
+            Assert.Equal("ModeLabBacking", job.Plan.Single(p => p.Stage == StageNames.ChordDetecting).Executor);
+            Assert.Equal("SkippedDryVocal", job.Plan.Single(p => p.Stage == StageNames.Separating).Executor);
 
-    [Fact]
-    public async Task An_ordinary_upload_has_no_provenance_to_report()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
+            // Nothing fake ran, so the client must not raise the mock-data banner over a real take.
+            Assert.DoesNotContain(job.Plan, p => p.IsPlaceholder && p.Stage == StageNames.ChordDetecting);
 
-        var job = await (await client.UploadAudioAsync(TestAudio.MakeTone(2.0, frequencyHz: 220.0), "song.wav"))
-            .Content.ReadFromJsonAsync<JobStatusDto>();
+            // The seeded chord track is on the job before the worker could have touched it, and it
+            // repeats across the whole take rather than covering only the first pass.
+            var chords = await client.GetFromJsonAsync<List<ChordSpan>>($"/api/analysis/{job.JobId}/chords");
+            Assert.NotNull(chords);
+            Assert.NotEmpty(chords);
+            Assert.Equal(0.0, chords[0].StartSec, precision: 3);
+            Assert.True(chords[^1].EndSec > 8.0, "the chords must cover the later passes the singer hummed over");
+            Assert.True(chords[^1].EndSec <= 12.01, "the chords must not run past the end of the recording");
 
-        Assert.NotNull(job);
-        // A dropped file explains itself; inventing an origin for one would be noise.
-        Assert.Null(job.Origin);
+            // The tempo came off the slider, so it is known rather than estimated.
+            var beats = await client.GetFromJsonAsync<BeatGridDto>($"/api/analysis/{job.JobId}/beats");
+            Assert.NotNull(beats);
+            Assert.Equal(120.0, beats.Bpm, precision: 3);
+            Assert.True(beats.Confidence > 0);
+
+        }
+
+        // A hum take carries the progression it was sung over as its provenance.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var take = TakeOf(seconds: 9.0);
+            var job = await (await client.PostAsync(Url(), take)).Content.ReadFromJsonAsync<JobStatusDto>();
+            Assert.NotNull(job);
+
+            Assert.NotNull(job.Origin);
+            Assert.Equal(TakeOrigin.HumTake, job.Origin.Kind);
+            Assert.Contains("Hummed over", job.Origin.Description);
+            Assert.Contains("120 BPM", job.Origin.Description);
+            // The request named pop-axis, so that progression must be the one reported.
+            Assert.Contains("Axis", job.Origin.Description, StringComparison.OrdinalIgnoreCase);
+
+            // It survives the round trip to disk and back — the library reads it from job.json.
+            var library = await client.GetFromJsonAsync<List<LibraryEntryDto>>("/api/library");
+            Assert.NotNull(library);
+            var row = library.Single(entry => entry.JobId == job.JobId);
+            Assert.NotNull(row.Origin);
+            Assert.Equal(job.Origin.Description, row.Origin.Description);
+
+        }
+
+        // An ordinary upload has no provenance to report.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            var job = await (await client.UploadAudioAsync(TestAudio.MakeTone(2.0, frequencyHz: 220.0), "song.wav"))
+                .Content.ReadFromJsonAsync<JobStatusDto>();
+
+            Assert.NotNull(job);
+            // A dropped file explains itself; inventing an origin for one would be noise.
+            Assert.Null(job.Origin);
+
+        }
     }
 
     /// <summary>

@@ -41,31 +41,36 @@ public sealed class StemEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task Each_allow_listed_stem_is_served_as_playable_audio()
+    public async Task Allow_listed_stems_are_served_and_anything_else_is_refused()
     {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var jobId = await CompletedJobAsync(client);
+        // Each allow listed stem is served as playable audio.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            var jobId = await CompletedJobAsync(client);
 
-        var mixResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/mix");
-        mixResponse.EnsureSuccessStatusCode();
-        var mixBytes = await mixResponse.Content.ReadAsByteArrayAsync();
-        Assert.True(mixBytes.Length > 0);
+            var mixResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/mix");
+            mixResponse.EnsureSuccessStatusCode();
+            var mixBytes = await mixResponse.Content.ReadAsByteArrayAsync();
+            Assert.True(mixBytes.Length > 0);
 
-        var vocalResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/vocals");
-        vocalResponse.EnsureSuccessStatusCode();
-        var vocalBytes = await vocalResponse.Content.ReadAsByteArrayAsync();
-        Assert.True(vocalBytes.Length > 0);
+            var vocalResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/vocals");
+            vocalResponse.EnsureSuccessStatusCode();
+            var vocalBytes = await vocalResponse.Content.ReadAsByteArrayAsync();
+            Assert.True(vocalBytes.Length > 0);
+
+        }
+
+        // Unknown and unsupported stem names are rejected.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            var jobId = await CompletedJobAsync(client);
+
+            var badResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/drums");
+            Assert.Equal(System.Net.HttpStatusCode.NotFound, badResponse.StatusCode);
+
+        }
     }
 
-    [Fact]
-    public async Task Unknown_and_unsupported_stem_names_are_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var jobId = await CompletedJobAsync(client);
-
-        var badResponse = await client.GetAsync($"/api/analysis/{jobId}/stems/drums");
-        Assert.Equal(System.Net.HttpStatusCode.NotFound, badResponse.StatusCode);
-    }
 }

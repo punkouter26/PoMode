@@ -27,5 +27,16 @@ public class ShellSmokeTests(AppFixture app)
         // Diagnostics is an operator's page: it sits in the overflow menu, not in the main nav.
         await page.GetByRole(AriaRole.Button, new() { Name = "More" }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Menuitem, new() { Name = "Diagnostics" })).ToBeVisibleAsync(expectOptions);
+        await page.Keyboard.PressAsync("Escape");
+
+        // Ctrl+K goes anywhere: typing a page's name and Enter lands on it. Settings is where the
+        // optional choices live, each already at its best value.
+        await page.Keyboard.PressAsync("Control+k");
+        var palette = page.GetByRole(AriaRole.Combobox);
+        await Assertions.Expect(palette).ToBeFocusedAsync(new() { Timeout = AppFixture.ExpectTimeoutMs });
+        await palette.FillAsync("settings");
+        await page.Keyboard.PressAsync("Enter");
+        await Assertions.Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/settings$"), new() { Timeout = AppFixture.ExpectTimeoutMs });
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Settings", Level = 1 })).ToBeVisibleAsync(expectOptions);
     }
 }

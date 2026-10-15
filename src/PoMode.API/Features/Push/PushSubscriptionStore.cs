@@ -136,7 +136,11 @@ public sealed class PushSubscriptionStore(JobStore jobs, TimeProvider time, JobB
         var path = Path.Combine(RootPath, fileName);
         if (subscriptions.Count == 0)
         {
-            File.Delete(path);
+            // Exists first: File.Delete throws when the folder itself was never created.
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
             blobs?.DeleteBlob(BlobPrefix, fileName);
             return;
         }

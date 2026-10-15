@@ -159,7 +159,7 @@ public sealed partial class ModeLabDescriber(IEnumerable<ISongInterpreter> inter
     }
 
     /// <summary>Applies a model's JSON reply, ignoring anything outside the settings' own ranges.</summary>
-    internal static (ModalMelodyRequest, List<string>) Apply(string json, ModalMelodyRequest current)
+    public static (ModalMelodyRequest Request, List<string> Changes) Apply(string json, ModalMelodyRequest current)
     {
         var request = current;
         var changes = new List<string>();

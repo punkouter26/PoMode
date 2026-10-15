@@ -34,36 +34,41 @@ public sealed class ClientResultTests : IDisposable
     }
 
     [Fact]
-    public async Task A_valid_payload_is_accepted_and_satisfies_the_parked_stage()
+    public async Task A_valid_payload_satisfies_the_parked_stage_and_bad_ones_are_refused()
     {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        var parked = ParkAsync(factory);
+        // A valid payload is accepted and satisfies the parked stage.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            var parked = ParkAsync(factory);
 
-        NoteEvent[] notes = [new(60, 0.0, 0.5, 90), new(64, 0.5, 0.5, 88)];
-        var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", notes);
+            NoteEvent[] notes = [new(60, 0.0, 0.5, 90), new(64, 0.5, 0.5, 88)];
+            var response = await client.PostAsJsonAsync($"/api/analysis/{JobId}/client-result", notes);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var delivered = await parked;
-        Assert.Equal(2, delivered.Count);
-        Assert.Equal(60, delivered[0].MidiPitch);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var delivered = await parked;
+            Assert.Equal(2, delivered.Count);
+            Assert.Equal(60, delivered[0].MidiPitch);
+
+        }
+
+        // Invalid payload and unparked job are rejected.
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            _ = ParkAsync(factory);
+
+            var badResponse = await client.PostAsJsonAsync(
+                $"/api/analysis/{JobId}/client-result",
+                new[] { new NoteEvent(109, 0.0, 0.5, 90) });
+            Assert.Equal(HttpStatusCode.BadRequest, badResponse.StatusCode);
+
+            var unparkedResponse = await client.PostAsJsonAsync(
+                $"/api/analysis/00000000000000000000000000000000/client-result",
+                new[] { new NoteEvent(60, 0.0, 0.5, 90) });
+            Assert.Equal(HttpStatusCode.NotFound, unparkedResponse.StatusCode);
+
+        }
     }
 
-    [Fact]
-    public async Task Invalid_payload_and_unparked_job_are_rejected()
-    {
-        await using var factory = Factory();
-        using var client = factory.CreateClient();
-        _ = ParkAsync(factory);
-
-        var badResponse = await client.PostAsJsonAsync(
-            $"/api/analysis/{JobId}/client-result",
-            new[] { new NoteEvent(109, 0.0, 0.5, 90) });
-        Assert.Equal(HttpStatusCode.BadRequest, badResponse.StatusCode);
-
-        var unparkedResponse = await client.PostAsJsonAsync(
-            $"/api/analysis/00000000000000000000000000000000/client-result",
-            new[] { new NoteEvent(60, 0.0, 0.5, 90) });
-        Assert.Equal(HttpStatusCode.NotFound, unparkedResponse.StatusCode);
-    }
 }
