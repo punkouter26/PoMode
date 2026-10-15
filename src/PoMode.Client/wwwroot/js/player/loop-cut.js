@@ -19,6 +19,7 @@ const ATTACK_SHARE = 0.25;      // a slice starts where the hit first reaches th
 const PRE_ROLL = 64;            // and a little ahead of that
 const FADE_SEC = 0.003;         // every slice ends on a short fade, so a cut never clicks
 const TAIL_SEC = 0.25;          // decay past the last bar, folded over the start of the loop
+const LEAD_IN_GAP_SEC = 0.75;   // a first "hit" this far ahead of the next one, and quieter than the take's usual hit, is the mic opening or a bump before the playing starts
 export const STEPS_PER_BAR = 16;    // ponytail: straight sixteenths in 4/4; swing and triplets get squared off. A grid choice if someone needs them
 
 /// The lengths a loop may be: phrases come in 1, 2, 4 and 8 bars, and a loop of any other length
@@ -78,7 +79,25 @@ export function findOnsets(samples, sampleRate) {
         while (frame < to && Math.abs(samples[frame]) < ATTACK_SHARE * loudest) frame++;
         onsets.push({ frame, weight: flux[h] });
     }
-    return onsets;
+    return dropLeadIn(onsets, sampleRate);
+}
+
+/// The first hit is beat one, so it has to be the first thing the player played. A microphone take
+/// can open on a pop or a bump of the desk, and taken as beat one that puts the silence between it
+/// and the real first hit at the top of every pass. Such a sound is quieter than the take's typical hit and
+/// stands alone ahead of the playing; a real first hit is neither, so a hit, a sample cut to start on
+/// one, or a pickup straight into the groove is kept.
+function dropLeadIn(onsets, sampleRate) {
+    if (onsets.length < 2) return onsets;
+    const weights = onsets.map((onset) => onset.weight).sort((a, b) => a - b);
+    const typical = weights[weights.length >> 1];
+    let first = 0;
+    while (first < onsets.length - 1
+        && onsets[first].weight < typical
+        && onsets[first + 1].frame - onsets[first].frame > LEAD_IN_GAP_SEC * sampleRate) {
+        first++;
+    }
+    return first === 0 ? onsets : onsets.slice(first);
 }
 
 /// The take's pulse, in BPM: the period that the gaps between nearby hits are most nearly whole

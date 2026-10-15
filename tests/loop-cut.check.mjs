@@ -41,6 +41,19 @@ for (const step of steps.slice(0, -1)) {
     assert.ok(first >= line && first - line < 0.006 * rate, `step ${step} lands ${first - line} frames off`);
 }
 
+// A take that opens on a quiet pop (the mic switching on) and 1.5 s of nothing before the playing:
+// the pop is not beat one, so the loop starts on the first hit rather than on the silence after it.
+const lead = Math.round(1.5 * rate);
+const popped = new Float32Array(take.length + lead);
+popped.set(take, lead);
+for (let i = 0; i < 0.01 * rate; i++) popped[Math.round(0.05 * rate) + i] += 0.3 * Math.sin(i * 0.9) * Math.exp(-i / 100);
+const poppedOnsets = findOnsets(popped, rate);
+assert.equal(poppedOnsets.length, steps.length, 'the pop ahead of the playing is not a hit');
+const poppedCut = layOut(poppedOnsets, rate, targetBpm);
+const poppedLoop = buildLoop(popped, rate, targetBpm, poppedCut.slices, poppedCut.bars);
+const opening = poppedLoop.slice(0, Math.round(0.006 * rate)).reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+assert.ok(opening > 0.2, 'the loop opens on the first hit, not on silence');
+
 // Loops come in 1, 2, 4 or 8 bars: the longest the take fills.
 assert.deepEqual([1, 2, 3, 4, 5, 7, 8, 12].map(loopBars), [1, 2, 2, 4, 4, 4, 8, 8]);
 
