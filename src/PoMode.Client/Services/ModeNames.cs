@@ -10,8 +10,14 @@ namespace PoMode.Client.Services;
 public static class ModeNames
 {
     /// <summary>The mode named on its own root: the parent key's note at the mode's degree.</summary>
+    /// <remarks>
+    /// The mode's name goes through <see cref="ScaleModes.DisplayName"/>, so a pentatonic reads
+    /// "A Minor Pentatonic" rather than the enum's "MinorPentatonic", and the root is spelled in the
+    /// key's own accidental — both of which the mode cards already did, and the status line beside
+    /// them did not.
+    /// </remarks>
     public static string OnRoot(int parentTonic, ScaleMode mode)
-        => $"{ScaleModes.NoteName((parentTonic + ScaleModes.ModeDegreeOffset(mode)) % 12)} {mode}";
+        => $"{ScaleModes.NoteName((parentTonic + ScaleModes.ModeDegreeOffset(mode)) % 12, parentTonic)} {ScaleModes.DisplayName(mode.ToString())}";
 
     public static string CssClass(ScaleMode mode) => mode switch
     {

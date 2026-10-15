@@ -765,6 +765,9 @@ export async function loadNotes(root, urls) {
         state.dotNet?.invokeMethodAsync('OnStemLoadProgress', 'Loading melody notes & beat grid…');
     } catch { }
     const fetchList = async url => {
+        if (!url) {
+            return [];
+        }
         try {
             const response = await fetch(url);
             return response.ok ? await response.json() : [];
@@ -777,6 +780,17 @@ export async function loadNotes(root, urls) {
     state.notes = { vocal, backing, chords };
     state.synthIndex = perSource(0);
     return [vocal.length, backing.length, chords.length];
+}
+
+/// Which stems actually decoded. A pipeline stage that was skipped leaves its stem absent, and the
+/// mixer has nothing to solo for it — the caller disables the Vocals and Backing choices rather than
+/// offering a click that can only ever fail.
+export function stemAvailability(root) {
+    const state = states.get(root);
+    if (!state) {
+        return [];
+    }
+    return STEMS.filter(stem => Boolean(state.buffers?.[stem]));
 }
 
 export async function play(root) {

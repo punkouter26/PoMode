@@ -203,12 +203,16 @@ else if (_loadError is { } loadError)
     private bool _plotChecked;
 
     private List<ChordProgressionDefinition> _progressions = [];
+
+    /// <summary>The tempo a page starts on, and the one a remembered tempo that is not a number
+    /// falls back to. Named so restoring and the initial value cannot drift apart.</summary>
+    private const double DefaultBpm = 92;
     private GeneratedMelodyDto? _melody;
 
     private ScaleMode _mode = ScaleMode.Dorian;
     private int _tonic = 2;                 // the parent key: Dorian in D, so E Dorian chords
     private string _progressionId = "";
-    private double _bpm = 92;
+    private double _bpm = DefaultBpm;
     private bool _click = true;
 
     private TakeState _state = TakeState.Idle;
@@ -274,18 +278,22 @@ else if (_loadError is { } loadError)
     }
 
     /// <summary>The backing as it was left: a singer who found their key should come back to it.
-    /// Anything unreadable or out of range is ignored and the defaults stand.</summary>
-    private async Task RestoreSettingsAsync()
-    {
-        if (await Prefs.GetAsync(BrowserPrefs.PracticeBackingKey, PrefsJsonContext.Default.PracticeBacking) is
-            { TonicPitchClass: >= 0 and < 12 } saved
-            && Enum.IsDefined(saved.Mode)
-            && _progressions.Any(p => p.Id == saved.ProgressionId))
+        /// Anything unreadable or out of range is ignored and the defaults stand. NaN and infinity pass
+        /// <c>Math.Clamp</c> straight through, so they are caught here — a backing of NaN BPM renders as
+        /// "NaN BPM" and plays nothing.</summary>
+        private async Task RestoreSettingsAsync()
         {
-            (_tonic, _mode, _progressionId, _click) = (saved.TonicPitchClass, saved.Mode, saved.ProgressionId, saved.Click);
-            _bpm = Math.Clamp(saved.Bpm, BackingControls.MinBpm, BackingControls.MaxBpm);
+            if (await Prefs.GetAsync(BrowserPrefs.PracticeBackingKey, PrefsJsonContext.Default.PracticeBacking) is
+                { TonicPitchClass: >= 0 and < 12 } saved
+                && Enum.IsDefined(saved.Mode)
+                && _progressions.Any(p => p.Id == saved.ProgressionId))
+            {
+                (_tonic, _mode, _progressionId, _click) = (saved.TonicPitchClass, saved.Mode, saved.ProgressionId, saved.Click);
+                _bpm = double.IsFinite(saved.Bpm)
+                    ? Math.Clamp(saved.Bpm, BackingControls.MinBpm, BackingControls.MaxBpm)
+                    : DefaultBpm;
+            }
         }
-    }
 
     private Task SaveSettingsAsync()
         => Prefs.SetAsync(BrowserPrefs.PracticeBackingKey, new PracticeBacking(_tonic, _mode, _progressionId, _bpm, _click),
@@ -326,7 +334,8 @@ else if (_loadError is { } loadError)
     }
 
     /// <summary>A different mode brings its own signature cadence with it, matching the Mode Lab's
-    /// "Match to mode" default — otherwise picking Phrygian would leave Dorian's chords playing.</summary>
+        /// "Chords follow mode" default — otherwise picking Phrygian would leave Dorian's chords
+        /// playing. The tempo is left alone, exactly as it is there: speed is the user's to set.</summary>
     private async Task OnModeChangedAsync()
     {
         if (SignatureIdFor(_mode) is { } id)

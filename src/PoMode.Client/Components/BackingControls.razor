@@ -11,9 +11,10 @@
     {
         <div class="backing-field">
             <span class="pm-label backing-label" id="mode-label">Mode</span>
-            <RadzenDropDown TValue="ScaleMode" Data="@ScaleModes.All" Value="@Mode" Disabled="@Disabled"
-                            Change="@(value => ModeChanged.InvokeAsync((ScaleMode)value))"
-                            class="backing-dd backing-mode" id="mode-select" aria-labelledby="mode-label" />
+            <RadzenDropDown TValue="ScaleMode" Data="@ModeOptions" TextProperty="Label" ValueProperty="Mode"
+                                    Value="@Mode" Disabled="@Disabled"
+                                    Change="@(value => ModeChanged.InvokeAsync((ScaleMode)value))"
+                                    class="backing-dd backing-mode" id="mode-select" aria-labelledby="mode-label" />
         </div>
     }
     @* "Key" rather than "Tonic": the value is the parent key, and the chords are rooted on the mode's
@@ -54,6 +55,13 @@
     public const int MaxBpm = 180;
 
     private sealed record TonicOption(int PitchClass, string Name);
+
+    /// <summary>A mode option with the label a reader writes. Binding the enum straight into the
+    /// dropdown printed "MinorPentatonic" while the Mode Lab's cards read "A Minor Pentatonic".</summary>
+    private sealed record ModeOption(ScaleMode Mode, string Label);
+
+    private static readonly IReadOnlyList<ModeOption> ModeOptions =
+        [.. ScaleModes.All.Select(mode => new ModeOption(mode, ScaleModes.DisplayName(mode.ToString())))];
 
     private static readonly IReadOnlyList<TonicOption> TonicOptions =
     [

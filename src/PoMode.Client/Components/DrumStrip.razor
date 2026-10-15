@@ -81,7 +81,11 @@
     private IJSObjectReference? _module;
     private ElementReference _canvas;
     private string? _jobId;
-    private bool _ready;
+
+        /// <summary>Bumped by every pick so a slower earlier load knows it has been superseded.</summary>
+        private int _pickGeneration;
+
+        private bool _ready;
     private bool _busy;
     private string? _error;
     private int _bars = 1;
@@ -143,51 +147,70 @@
     }
 
     private async Task PickAsync(string? jobId)
-    {
-        _jobId = jobId;
-        _ready = false;
-        _error = null;
-        _busy = true;
-        try
         {
-            // The player's module first: the loop is decoded and played on its AudioContext.
-            await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/modal-player.js");
-            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/drum-loop.js");
-            if (string.IsNullOrEmpty(jobId))
+            // Picking beats quickly is normal — the dropdown is how you audition one. Each pick takes a
+            // generation number and a later one abandons the older load, which otherwise finished after
+            // the newer one and left the dropdown on beat B showing beat A's waveform and tempo.
+            var generation = ++_pickGeneration;
+            _jobId = jobId;
+            _ready = false;
+            _error = null;
+            _busy = true;
+            try
             {
-                await _module.InvokeVoidAsync("clear");
-                return;
-            }
-            var status = await _module.InvokeAsync<string>("load", jobId);
-            if (status != "ok")
-            {
-                _error = status switch
+                // The player's module first: the loop is decoded and played on its AudioContext.
+                await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/modal-player.js");
+                _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/player/drum-loop.js");
+                if (string.IsNullOrEmpty(jobId))
                 {
-                    "long" => "That recording is over two minutes. A loop wants a few bars.",
-                    "empty" => "No hits were found in that recording.",
-                    _ => "That recording could not be read.",
-                };
-                return;
+                    await _module.InvokeVoidAsync("clear");
+                    return;
+                }
+                var status = await _module.InvokeAsync<string>("load", jobId);
+                if (generation != _pickGeneration)
+                {
+                    return;
+                }
+                if (status != "ok")
+                {
+                    _error = status switch
+                    {
+                        "long" => "That recording is over two minutes. A loop wants a few bars.",
+                        "empty" => "No hits were found in that recording.",
+                        _ => "That recording could not be read.",
+                    };
+                    return;
             }
-            _ready = true;
-            _barsAuto = true;
-            _cutPending = true;
-            var played = await _module.InvokeAsync<double>("playedBpm", StartBpm);
-            if (played > 0)
+                _ready = true;
+                _barsAuto = true;
+                _cutPending = true;
+                var played = await _module.InvokeAsync<double>("playedBpm", StartBpm);
+                if (generation != _pickGeneration)
+                {
+                    return;
+                }
+                if (played > 0)
+                {
+                    await OnBeatTempo.InvokeAsync(Math.Clamp(Math.Round(played), BackingControls.MinBpm, BackingControls.MaxBpm));
+                }
+            }
+            catch (JSDisconnectedException)
             {
-                await OnBeatTempo.InvokeAsync(Math.Clamp(Math.Round(played), BackingControls.MinBpm, BackingControls.MaxBpm));
+                // Navigated away mid-decode.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The component was disposed between the await and the write below.
+            }
+            finally
+            {
+                _busy = false;
+                if (generation == _pickGeneration)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
             }
         }
-        catch (JSDisconnectedException)
-        {
-            // Navigated away mid-decode.
-        }
-        finally
-        {
-            _busy = false;
-            StateHasChanged();
-        }
-    }
 
     private async Task OnBarsChangedAsync(int bars)
     {

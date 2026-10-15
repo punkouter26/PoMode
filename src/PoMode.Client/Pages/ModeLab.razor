@@ -94,8 +94,8 @@
                          Bpm="_bpm" BpmChanged="OnTempoPickedAsync">
             <Between>
                 <div class="backing-field">
-                    <span class="pm-label backing-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody">
-                        Match to mode
+                    <span class="pm-label backing-label" title="Move the backing chords to the selected mode's own tonic, so the mode is heard as a colour rather than as the parent key with a displaced melody. Picking a mode card replaces the chords below; your tempo is left alone.">
+                                            Chords follow mode
                     </span>
                     <button class="match-toggle @(_matchHarmonyToMode ? "on" : "off")" type="button"
                             id="match-harmony-toggle" data-match-harmony="@(_matchHarmonyToMode ? "on" : "off")"
@@ -452,16 +452,25 @@
     /// just a note set: over a progression that keeps insisting on the parent key, every mode comes out
     /// sounding like that key with the melody starting somewhere else.
     /// </summary>
-    private void ApplyModeHarmony(ScaleMode mode)
-    {
-        if (!_matchHarmonyToMode) return;
+    /// <summary>
+        /// Moves the backing chords onto the selected mode's own signature.
+        /// </summary>
+        /// <remarks>
+        /// The chords are the point of the setting — picking Lydian and hearing Lydian's cadence is the
+        /// lab working. The tempo used to move with them, and that was the surprise: a 150 BPM loop set
+        /// up for practising was gone after clicking "Phrygian", and the tempo slider appeared to jump
+        /// by itself every time a card was pressed. Speed is a practice decision the user makes with the
+        /// slider beside it, so it stays put.
+        /// </remarks>
+        private void ApplyModeHarmony(ScaleMode mode)
+        {
+            if (!_matchHarmonyToMode) return;
 
-        var signature = _progressions.SignatureFor(mode);
-        if (signature is null || signature.Id == _selectedProgressionId) return;
+            var signature = _progressions.SignatureFor(mode);
+            if (signature is null || signature.Id == _selectedProgressionId) return;
 
-        _selectedProgressionId = signature.Id;
-        _bpm = signature.DefaultBpm;
-    }
+            _selectedProgressionId = signature.Id;
+        }
 
     private async Task SampleModeAsync(ScaleMode mode)
     {

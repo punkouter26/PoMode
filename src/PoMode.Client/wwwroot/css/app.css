@@ -567,3 +567,8 @@ img, svg, video, canvas {
         min-height: 2.75rem;
     }
 }
+
+/* A figure the pipeline never measured reads as a dash, so it cannot be quoted as one. */
+.basic-badge-unknown {
+    color: var(--pm-fg-muted);
+}

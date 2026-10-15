@@ -149,7 +149,7 @@ public sealed class ModalMelodyGenerator
             Id: "mode-locrian",
             Name: "Locrian Unrest (i dim - bII - bV - i dim)",
             Category: "Mode Signatures",
-            RomanNumerals: "i(dim) - bII - bV - i(dim)",
+            RomanNumerals: "i dim - bII - bV - i dim",
             ChordFormulas: ["i:dim", "bII:maj", "bV:maj", "i:dim"],
             Description: "The one mode whose own tonic chord is diminished. The flat 5th denies it a stable home, which is why it is heard as tension rather than a key.",
             SuggestedMode: ScaleMode.Locrian,
@@ -212,11 +212,11 @@ public sealed class ModalMelodyGenerator
         var progression = GetProgression(request.ProgressionId);
         var bpm = request.Bpm is >= 40 and <= 240 ? request.Bpm : progression.DefaultBpm;
         var parentTonicClass = ((request.TonicPitchClass % 12) + 12) % 12;
-        var parentTonicName = PitchNames.Name(parentTonicClass);
+        var parentTonicName = PitchNames.Name(parentTonicClass, parentTonicClass);
 
         var modeDegreeOffset = ScaleModes.ModeDegreeOffset(request.Mode);
         var modeRootClass = (parentTonicClass + modeDegreeOffset) % 12;
-        var modeRootName = PitchNames.Name(modeRootClass);
+        var modeRootName = PitchNames.Name(modeRootClass, parentTonicClass);
 
         // 0 is a real setting now, not a floor: at the bottom of the slider the melody stops anchoring
         // to the mode root and the loop stops opening on the home chord.
@@ -468,9 +468,13 @@ public sealed class ModalMelodyGenerator
             var numeral = parts[0];
             var quality = parts.Length > 1 ? parts[1] : "maj";
 
-            var semitoneOffset = ParseRomanOffset(numeral);
-            var rootClass = (tonicClass + semitoneOffset + 12) % 12;
-            var rootName = PitchNames.Name(rootClass);
+            var degree = ParseRoman(numeral);
+                        var semitoneOffset = degree.Semitones;
+                        var rootClass = (tonicClass + semitoneOffset + 12) % 12;
+                        // Spelled by letter, not by pitch class: G's flat five is D flat and E's flat two is F,
+                        // neither of which a pitch-class table can say - it would print C sharp, and F flat,
+                        // which sounds a semitone out and contradicts the flat in the numeral beside it.
+                        var rootName = SpellChordRoot(tonicClass, degree);
 
             var symbolSuffix = quality switch
             {
@@ -493,22 +497,42 @@ public sealed class ModalMelodyGenerator
         return chords;
     }
 
-    private static int ParseRomanOffset(string numeral) => numeral switch
-    {
-        "I" or "i" => 0,
-        "bII" or "bii" => 1,
-        "II" or "ii" => 2,
-        "bIII" or "biii" => 3,
-        "III" or "iii" => 4,
-        "IV" or "iv" => 5,
-        "#IV" or "#iv" or "bV" or "bv" => 6,
-        "V" or "v" => 7,
-        "bVI" or "bvi" => 8,
-        "VI" or "vi" => 9,
-        "bVII" or "bvii" => 10,
-        "VII" or "vii" => 11,
-        _ => 0,
-    };
+    /// <summary>A roman numeral read two ways at once: how many semitones above the root, and which
+        /// diatonic letter its degree falls on. The letter is what makes the name correct.</summary>
+        private readonly record struct RomanDegree(int Semitones, int LetterStep);
+
+        /// <summary>
+        /// The chord root's name. The numeral's letter decides the spelling and the pitch decides the
+        /// accidental, so the two can never disagree: G's flat five is D flat and E's flat two is F,
+        /// neither of which a pitch-class table could say (it would print C sharp, and F flat, which
+        /// sounds a semitone out).
+        /// </summary>
+        private static string SpellChordRoot(int tonicClass, RomanDegree degree)
+        {
+        var target = ((tonicClass + degree.Semitones) % 12 + 12) % 12;
+            var letter = (ScaleModes.LetterIndexOf(tonicClass) + degree.LetterStep) % 7;
+            var natural = ScaleModes.LetterPitchClass(letter);
+            var delta = ((target - natural) % 12 + 12) % 12;
+            return ScaleModes.SpellLetter(letter, delta == 1 ? 1 : delta == 11 ? -1 : 0);
+        }
+
+        private static RomanDegree ParseRoman(string numeral) => numeral switch
+        {
+            "I" or "i" => new(0, 0),
+            "bII" or "bii" => new(1, 1),
+            "II" or "ii" => new(2, 1),
+            "bIII" or "biii" => new(3, 2),
+            "III" or "iii" => new(4, 2),
+            "IV" or "iv" => new(5, 3),
+            "#IV" or "#iv" => new(6, 3),
+            "bV" or "bv" => new(6, 4),
+            "V" or "v" => new(7, 4),
+            "bVI" or "bvi" => new(8, 5),
+            "VI" or "vi" => new(9, 5),
+            "bVII" or "bvii" => new(10, 6),
+            "VII" or "vii" => new(11, 6),
+            _ => new(0, 0),
+        };
 
     /// <summary>
     /// The one degree that most separates a mode from its neighbours, taken from the canonical table

@@ -22,17 +22,22 @@
             <div class="pm-skeleton"></div>
         </div>
     }
-    else
+        else if (_loadError is not null)
     {
-        @* One tick previews a song under the table, two put them side by side. *@
-        var canCompare = _entries.Any(IsAnalysed);
+            @* A read that failed, not a library that is empty — the difference matters most here. *@
+            <p class="library-load-error" role="alert">@_loadError</p>
+        }
+        else
+        {
+            @* One tick previews a song under the table, two put them side by side. *@
+            var canCompare = _entries.Any(IsAnalysed);
         @* One box for everything a song can be found by: its name, key, mode, tempo or kind. What the
            box understood is shown back as chips, each removable, so "dorian 120" is visibly two filters. *@
         <div class="library-filters" role="search" aria-label="Filter songs">
             <RadzenTextBox Value="@_query.Text" Placeholder="Find songs, e.g. “dorian 120”"
                            aria-label="Find songs by name, key, mode, tempo or kind" class="library-search"
                            @oninput="@(e => SetQueryAsync(e.Value?.ToString() ?? ""))" />
-            <span class="library-count" role="status">@Filtered.Count of @_entries.Count</span>
+                    <span class="library-count" role="status">@LibraryCount</span>
         </div>
         @if (_query.Chips.Count > 0)
         {
@@ -47,7 +52,23 @@
             </ul>
         }
         <div class="library-grid" data-library-count="@_entries.Count">
-            <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
+                    @if (Filtered.Count == 0)
+                    {
+                        @* A filter that matches nothing used to leave the grid's bare "No records to display."
+                           and a "0 of 4" counter, with nothing on the page saying the search box is why.
+                           The way back is the point, so it is a button here rather than a guess in the box. *@
+                        <div class="library-empty" role="status">
+                            <RadzenIcon Icon="search" class="library-empty-icon" />
+                            <p class="library-empty-text">
+                                No song matches <strong>@(_query.Text)</strong>.
+                            </p>
+                            <RadzenButton Text="Clear the search" Icon="close" ButtonStyle="ButtonStyle.Light"
+                                          Click="@(() => SetQueryAsync(string.Empty))" />
+                        </div>
+                    }
+                    else
+                    {
+                    <RadzenDataGrid Data="@Filtered" TItem="LibraryEntryDto" AllowSorting="true" Density="Density.Compact"
                             AllowPaging="true" PageSize="8" PagerHorizontalAlign="HorizontalAlign.Center">
                 <Columns>
                     @* A tick per row rather than a toggle button beside an Open button: two ticked rows
@@ -144,9 +165,10 @@
                     }
                 </Columns>
             </RadzenDataGrid>
-        </div>
-    }
-</RadzenCard>
+                            }
+                        </div>
+                    }
+                </RadzenCard>
 
 @if (_compareResults.Count > 0)
 {
@@ -181,9 +203,9 @@
                             <span class="legend-item"><span class="mode-segment @SegmentClass(mode)"></span>@mode</span>
                         }
                     </div>
-                </div>
-            }
-        </div>
+                                    </div>
+                                }
+                                                </div>
         @* With one song previewed, the library answers "what else sounds like this": the other songs
            that spend their time in the same modes, each with the server's reason. *@
         @if (_compareResults.Count == 1 && _similar is { Count: > 0 })
@@ -206,7 +228,12 @@
 
 @code {
     private List<LibraryEntryDto>? _entries;
+    private string? _loadError;
     private readonly HashSet<string> _compare = [];
+
+    /// <summary>Bumped by every comparison change so a slower earlier fetch does not answer for a
+    /// selection the user has already moved on from.</summary>
+    private int _compareGeneration;
     private readonly List<(LibraryEntryDto Entry, ModalResult Result)> _compareResults = [];
     private List<SimilarSongDto>? _similar;
     private HashSet<string> _offline = [];
@@ -268,6 +295,28 @@
         }
     }
 
+    /// <summary>
+    /// The count, naming both units it is counting. "3 of 4" put a count of songs beside a count of
+    /// runs — a second analysis of one file is hidden until its row is expanded — so a library of one
+    /// song analysed twice read as if a song were missing. Runs are only mentioned when they differ.
+    /// </summary>
+    private string LibraryCount
+    {
+        get
+        {
+                        var runs = _entries?.Count ?? 0;
+                        // Distinct songs, not rows: the grid shows the latest run of each file, so comparing the
+                        // filtered row count against the run count would report a difference whenever any song
+                        // had been analysed twice — which is the normal case, not a missing song.
+                        var songs = Filtered.Select(entry => entry.FileName).Distinct().Count();
+                        var allSongs = _entries?.Select(entry => entry.FileName).Distinct().Count() ?? 0;
+                        var text = songs == allSongs
+                            ? allSongs == 1 ? "1 song" : $"{allSongs} songs"
+                            : $"{songs} of {allSongs} songs";
+                        return runs > allSongs ? $"{text} · {runs} analyses" : text;
+        }
+    }
+
     private List<LibraryEntryDto>? _filteredCache;
     private (List<LibraryEntryDto>? Entries, int Expanded, LibraryQuery Query) _filteredKey;
 
@@ -279,17 +328,19 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
         {
-            // The list is beside the intake card, not under it: a failed read draws no list and
-            // leaves the ways to add a song working.
-            _entries = [];
-            return;
+                // A failed read is not an empty library. Setting the list to empty drew the same page as
+                // "you have no songs", which read as though the songs had been deleted. The card says what
+                // happened instead, and the ways to add a song above it keep working.
+                _loadError = "Your library could not be read. The songs are still there.";
+                _entries = [];
+                return;
+            }
+            // The search as it was left: "my Dorian songs" should not need typing again each visit.
+            if (await Prefs.GetAsync(BrowserPrefs.LibraryFiltersKey, PrefsJsonContext.Default.LibraryFilters) is { } saved)
+            {
+                _query = LibraryQuery.Parse(saved.Search);
+            }
         }
-        // The search as it was left: "my Dorian songs" should not need typing again each visit.
-        if (await Prefs.GetAsync(BrowserPrefs.LibraryFiltersKey, PrefsJsonContext.Default.LibraryFilters) is { } saved)
-        {
-            _query = LibraryQuery.Parse(saved.Search);
-        }
-    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -332,25 +383,41 @@
             _compare.Add(entry.JobId);
         }
 
-        _compareResults.Clear();
-        _similar = null;
-        if (_entries is not null)
-        {
-            foreach (var selected in _entries.Where(e => _compare.Contains(e.JobId)))
+            // Ticking and unticking two rows in a few seconds fetches four results. Without a generation
+            // the first set's slow answer landed last and described songs the user had already unticked.
+            var generation = ++_compareGeneration;
+            _compareResults.Clear();
+            _similar = null;
+            if (_entries is not null)
             {
-                if (await Analysis.GetResultAsync(selected.JobId) is { } result)
+                foreach (var selected in _entries.Where(e => _compare.Contains(e.JobId)))
                 {
-                    _compareResults.Add((selected, result));
+                    var result = await Analysis.GetResultAsync(selected.JobId);
+                    if (generation != _compareGeneration)
+                    {
+                        return;
+                    }
+                    if (result is not null)
+                    {
+                        _compareResults.Add((selected, result));
+                    }
                 }
             }
-        }
-        if (_compareResults.Count == 1)
-        {
-            try
+            if (generation != _compareGeneration)
             {
-                _similar = await Analysis.GetSimilarAsync(_compareResults[0].Entry.JobId);
+                return;
             }
-            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+            if (_compareResults.Count == 1)
+            {
+                try
+                {
+                    var similar = await Analysis.GetSimilarAsync(_compareResults[0].Entry.JobId);
+                    if (generation == _compareGeneration)
+                    {
+                        _similar = similar;
+                    }
+                }
+                catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
             {
                 // The preview stands without suggestions.
             }

@@ -47,9 +47,12 @@
                     <Items>
                         @foreach (var (mode, label) in Modes)
                         {
-                            <RadzenSelectBarItem Text="@label" Value="@mode" />
-                        }
-                    </Items>
+                                                @* A pipeline stage that never ran leaves its stem absent, so the choice
+                                                   to solo it is not drawn: it could only ever fail. *@
+                                                <RadzenSelectBarItem Text="@label" Value="@mode"
+                                                                     Disabled="@(HasStem(mode) ? false : mode != "full")" />
+                                            }
+                                        </Items>
                 </RadzenSelectBar>
             </div>
 
@@ -130,6 +133,18 @@
         ("backing", "Backing"),
     ];
 
+        /// <summary>The stem key behind a source choice: the backing is the instrumental stem.</summary>
+        private static string StemFor(string mode) => mode switch
+        {
+            "vocals" => "vocals",
+            "backing" => "instrumental",
+            _ => "mix",
+        };
+
+        /// <summary>Whether the mixer decoded a stem for this source choice. Until the first load answers,
+        /// only the full mix is assumed — an optimistic guess would flash a choice that then greys out.</summary>
+        private bool HasStem(string mode) => _stems.Contains(StemFor(mode));
+
     /// <summary>Job whose stems to play. Changing it reloads the mixer.</summary>
     [Parameter, EditorRequired] public required string JobId { get; set; }
 
@@ -163,6 +178,7 @@
     private string _mode = "full";
     private double _duration;
     private int _vocalNoteCount;
+    private readonly HashSet<string> _stems = new(StringComparer.Ordinal);
     private int _backingNoteCount;
     private int _chordNoteCount;
 
@@ -330,6 +346,16 @@
                 {
                     _loadError = "Could not load audio stems from server.";
                 }
+                                else
+                                {
+                                    // Which stems arrived decides which source choices exist. A job whose separation
+                                    // was skipped offers Full mix only, instead of a Vocals button that 404s.
+                                    _stems.Clear();
+                                    foreach (var stem in await _module.InvokeAsync<string[]>("stemAvailability", _root))
+                                    {
+                                        _stems.Add(stem);
+                                    }
+                                }
             }
             catch (Exception ex)
             {
@@ -354,12 +380,15 @@
                 {
                     // The transcriptions feed the synth layers; a missing artifact keeps its button
                     // disabled rather than failing the mixer. Same for the beat grid and the click.
-                    var counts = await _module.InvokeAsync<int[]>("loadNotes", _root, new
-                    {
-                        vocal = $"api/analysis/{JobId}/notes",
-                        backing = $"api/analysis/{JobId}/notes-backing",
-                        chords = $"api/analysis/{JobId}/notes-chords",
-                    });
+                                        // The two backing artifacts are only asked for when the backing stem actually
+                                        // arrived — a job that skipped separation would 404 on both of them every load.
+                                        var hasBacking = _stems.Contains("instrumental");
+                                        var counts = await _module.InvokeAsync<int[]>("loadNotes", _root, new
+                                        {
+                                            vocal = $"api/analysis/{JobId}/notes",
+                                            backing = hasBacking ? $"api/analysis/{JobId}/notes-backing" : null,
+                                            chords = hasBacking ? $"api/analysis/{JobId}/notes-chords" : null,
+                                        });
                     // loadNotes always answers [vocal, backing, chords].
                     (_vocalNoteCount, _backingNoteCount, _chordNoteCount) = (counts[0], counts[1], counts[2]);
                     _beatBpm = await _module.InvokeAsync<double>("loadBeats", _root, $"api/analysis/{JobId}/beats");

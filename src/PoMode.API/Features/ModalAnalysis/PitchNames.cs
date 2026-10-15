@@ -7,6 +7,12 @@ public static class PitchNames
     /// <summary>Delegates to the Shared table so API and Client always spell pitches identically.</summary>
     public static string Name(int pitchClass) => PoMode.Shared.Analysis.ScaleModes.NoteName(pitchClass);
 
+        /// <summary>The pitch spelled to suit <paramref name="tonicPitchClass"/>'s key — flats in the six
+        /// flat keys. Delegates to the same Shared table as <see cref="Name(int)"/>, so a chord shown by
+        /// the API and the same chord shown by the client cannot spell each other differently.</summary>
+        public static string Name(int pitchClass, int tonicPitchClass)
+            => PoMode.Shared.Analysis.ScaleModes.NoteName(pitchClass, tonicPitchClass);
+
     public static string IntervalLabel(int semitones) => Degrees[((semitones % 12) + 12) % 12];
 
     /// <summary>Semitones a pitch sits above the tonic, 0-11 — the app's "scale degree" formula.</summary>

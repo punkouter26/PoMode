@@ -410,12 +410,23 @@
 
     private async Task InterpretAsync()
     {
-        _busy = true;
+            if (_busy)
+            {
+                return;
+            }
+            _busy = true;
         _error = null;
-        try
-        {
-            await ReadQuicklyAsync();
-            var result = BrowserInterpreters.IsBrowser(_chosen) && Stats is { } stats
+            // The quick read stops as soon as the rule-based summary arrives, which used to be done by
+            // walking away from the stream: the request showed as a failed ERR_ABORTED in devtools and
+            // the server went on generating a summary nobody would read. Cancelling says the same thing
+            // and actually stops it.
+            using var quickRead = new CancellationTokenSource();
+            try
+            {
+                await ReadQuicklyAsync(quickRead.Token);
+                // The rule-based summary is on screen and nothing more is needed from this request.
+                await quickRead.CancelAsync();
+                var result = BrowserInterpreters.IsBrowser(_chosen) && Stats is { } stats
                 ? await BrowserAsync(InterpretationPrompt.For(stats), null)
                 : null;
             // The browser model failing or inventing a figure falls back to the server's default, as
@@ -443,7 +454,7 @@
     /// When a model is about to write, the rule-based summary first: it takes a moment, and it means
     /// the reader has something true to read for the tens of seconds a local model takes.
     /// </summary>
-    private async Task ReadQuicklyAsync()
+    private async Task ReadQuicklyAsync(CancellationToken ct)
     {
         _quickRead = null;
         if (_interpreters?.FirstOrDefault(option => !option.UsesLlm) is not { } template
@@ -451,16 +462,23 @@
         {
             return;
         }
-        await foreach (var item in Client.StreamInterpretationAsync(JobId, template.Name))
+            try
         {
-            if (item.Summary is { } summary)
+                await foreach (var item in Client.StreamInterpretationAsync(JobId, template.Name, ct))
             {
-                _quickRead = summary;
-                StateHasChanged();
-                return;
+                    if (item.Summary is { } summary)
+                    {
+                        _quickRead = summary;
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Our own cancel: the summary is already shown.
             }
         }
-    }
 
     /// <summary>The reply being written, field by field, until the checked result replaces it.</summary>
     private readonly Dictionary<string, string> _draft = [];

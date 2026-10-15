@@ -327,3 +327,34 @@
     color: var(--pm-info);
 }
 
+
+/* A filter that matches nothing. The grid's own "No records to display." left the reader with no
+   idea the search box was why, and no way back from it. */
+.library-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: var(--pm-fg-muted);
+}
+
+.library-empty-icon {
+    font-size: 1.5rem;
+    color: var(--pm-fg-subtle, var(--pm-fg-muted));
+}
+
+.library-empty-text {
+    margin: 0;
+}
+
+/* A read that failed is not an empty library, and must not look like one. */
+.library-load-error {
+    margin: 0.5rem 0;
+    padding: 0.75rem 1rem;
+    border: var(--po-error-border) solid;
+    border-radius: var(--pm-radius, 8px);
+    background: var(--po-error-bg);
+    color: var(--pm-fg);
+}

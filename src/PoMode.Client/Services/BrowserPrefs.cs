@@ -39,23 +39,26 @@ public sealed class BrowserPrefs(IJSRuntime js)
     {
         try
         {
-            await js.InvokeVoidAsync("localStorage.setItem", key, JsonSerializer.Serialize(value, type));
+                    await js.InvokeVoidAsync("localStorage.setItem", key, JsonSerializer.Serialize(value, type));
         }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
-        {
-        }
-    }
+                // QuotaExceededError and SecurityError are JSExceptions already; InvalidOperationException is
+                // what a torn-down circuit throws. Anything else here would take the page down over a
+                // preference, which is the opposite of what this type promises.
+                catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+                {
+                }
+            }
 
-    public async Task RemoveAsync(string key)
-    {
-        try
-        {
-            await js.InvokeVoidAsync("localStorage.removeItem", key);
+            public async Task RemoveAsync(string key)
+            {
+                try
+                {
+                    await js.InvokeVoidAsync("localStorage.removeItem", key);
         }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
-        {
-        }
-    }
+                catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+                {
+                }
+            }
 }
 
 /// <summary>The Library's search and filters as they were left.</summary>

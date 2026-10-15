@@ -16,7 +16,7 @@
                 <div class="basic-badge-key">
                     <span class="pm-label basic-badge-label">Key & Mode</span>
                     <span class="basic-badge-value pm-morph-key" data-morph-target>@PrimaryHeadline</span>
-                    @if (Result.PrimaryScaleNoteNames() is { } scale)
+                    @if (Result.PrimaryScaleNoteNames() is { } scale && HasContent)
                     {
                         @* The scale spelled out — server-decided tonic + mode, Shared lookup for names. *@
                         <span class="basic-badge-scale">@string.Join(" · ", scale)</span>
@@ -25,8 +25,9 @@
                     {
                         <span class="basic-badge-sub" data-count-up>@($"{Result.PrimaryConfidence:P0} confidence")</span>
                     }
-                    @if (Visual.Evidence is not null || _stats is not null)
+                    @if (HasContent && (Visual.Evidence is not null || _stats is not null))
                     {
+                        @* No notes means no mode to argue for, so there is nothing to open. *@
                         <button class="basic-why-toggle" type="button" @onclick="ToggleWhy"
                                 aria-expanded="@(_whyOpen ? "true" : "false")" aria-haspopup="dialog">
                             Why this mode?
@@ -36,14 +37,23 @@
 
                 <div class="basic-badge-item">
                     <span class="pm-label basic-badge-label">Tempo</span>
-                    <span class="basic-badge-value" data-count-up>@($"{DisplayBpm:0} BPM")</span>
-                    @if (_liveBpm > 0)
+                    @if (HasContent)
+                    {
+                        <span class="basic-badge-value" data-count-up>@($"{DisplayBpm:0} BPM")</span>
+                    }
+                    else
+                    {
+                        @* The stat reads as a dash rather than a figure the pipeline never measured. *@
+                        <span class="basic-badge-value basic-badge-unknown">—</span>
+                        <span class="basic-badge-sub">nothing to measure</span>
+                    }
+                    @if (_liveBpm > 0 && HasContent)
                     {
                         @* Only while a tempo map is driving it, so a steady song does not gain a
                            badge that says nothing. *@
                         <span class="basic-badge-sub">live · this bar</span>
                     }
-                    else if (Result.TempoEstimated)
+                    else if (Result.TempoEstimated && HasContent)
                     {
                         <span class="basic-badge-sub">(estimated)</span>
                     }
@@ -51,8 +61,19 @@
 
                 <div class="basic-badge-item">
                     <span class="pm-label basic-badge-label">Length</span>
-                    <span class="basic-badge-value">@($"{Visual.DurationSec:0.0}s")</span>
-                    <span class="basic-badge-sub">@($"{Visual.Notes.Count} notes")</span>
+                    @if (HasContent)
+                    {
+                        <span class="basic-badge-value">@($"{Visual.DurationSec:0.0}s")</span>
+                        <span class="basic-badge-sub">@($"{Visual.Notes.Count} notes")</span>
+                    }
+                    else
+                    {
+                        @* The span the notes cover, not the file's length: on a file with no notes it
+                           read "0.0s" beside the player saying "4.0s of audio", which is a
+                           contradiction rather than a measurement. *@
+                        <span class="basic-badge-value">—</span>
+                        <span class="basic-badge-sub">no notes detected</span>
+                    }
                 </div>
             </div>
 
@@ -341,9 +362,19 @@
     /// </summary>
     private double DisplayBpm => _liveBpm > 0 ? _liveBpm : Result.TempoBpm;
 
-    private string PrimaryHeadline => Result.PrimaryMode is null
-        ? $"{Result.TonicName} · mode unclear"
-        : $"{Result.TonicName} {ScaleModes.DisplayName(Result.PrimaryMode.ToString())}";
+    /// <summary>
+    /// Whether the analysis found anything to report. Silence and near-silence used to be rendered
+    /// as a finished result — a key nobody sang, the fallback tempo, and a length of 0.0s beside a
+    /// player that knew the file was four seconds long. With no notes there is nothing to key off,
+    /// so the badges say so rather than inventing a reading.
+    /// </summary>
+    private bool HasContent => Visual.Notes.Count > 0;
+
+    private string PrimaryHeadline => !HasContent
+        ? "nothing detected"
+        : Result.PrimaryMode is null
+            ? $"{Result.TonicName} · mode unclear"
+            : $"{Result.TonicName} {ScaleModes.DisplayName(Result.PrimaryMode.ToString())}";
 
     /// <summary>Per planned stage, the executor that last ran it, else the one that was planned.</summary>
     private List<(ExecutionTier Tier, string Executor)> Executors => [.. Status.Plan.Select(stage =>

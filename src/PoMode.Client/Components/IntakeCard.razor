@@ -51,6 +51,10 @@
                               Click="@(() => OnStartRecording(beat: false))" Disabled="@_uploading" id="record-song"
                               title="Record from your microphone and analyze it" />
             }
+            @* Two separate questions, two separate answers. This used to be one @if with an @else, so
+               every session that was not a signed-in Microsoft account — which is every guest —
+               fell into the else and was told "Recording a song…" with a Stop button that did
+               nothing. Both blocks now test only what they mean. *@
             @if (Session.Current is { Kind: PoMode.Shared.Account.SessionKind.Microsoft, MicrosoftAvailable: true } && !_recording)
             {
                 @* Only for a Microsoft account: its OneDrive is where a phone's voice memos land. *@
@@ -58,11 +62,12 @@
                               Click="@FromOneDriveAsync" Disabled="@_uploading" id="from-onedrive"
                               title="Analyze a song stored in your OneDrive" />
             }
-            else
+            @if (_recording)
             {
                 @* One microphone, so one Stop: it says where the take is going. *@
                 <RadzenButton Text="@(_recordingBeat ? "Stop and open in Mode Lab" : "Stop and analyze")" Icon="stop"
-                              ButtonStyle="ButtonStyle.Danger" Click="@OnStopRecording" id="record-stop" />
+                              ButtonStyle="ButtonStyle.Danger" Click="@OnStopRecording" Disabled="@_stopping"
+                              id="record-stop" />
                 <RadzenText class="recording-hint" role="status"
                             Text="@(_recordingBeat ? "Recording a beat…" : "Recording a song…")" />
                 @* What the microphone is hearing, so a take that is too quiet or clipping shows before
@@ -147,6 +152,7 @@
     private long _uploadLoaded;
     private long _uploadTotal;
     private bool _recording;
+    private bool _stopping;
     private string? _recordError;
     private bool _pickedUp;
 
@@ -208,6 +214,13 @@
     /// </summary>
     private async Task UploadAsync(object source, string? name, bool asBeat = false)
     {
+        // A file dialog, a dropped file and a finished recording can all land inside one frame, and
+        // the disabled buttons only re-render after it. Without this guard two uploads ran at once
+        // and the second one's progress text and job won.
+        if (_uploading)
+        {
+            return;
+        }
         _uploading = true;
         _uploadResuming = false;
         _uploadError = null;
@@ -312,19 +325,29 @@
 
     private async Task OnStopRecording()
     {
-        if (_recorder is null)
+        // Stop waits on two JS round-trips and then starts the upload, and the button stays live
+        // through all of it. A second click ran stopRecording on an already-stopped recorder.
+        if (_recorder is null || _stopping)
         {
             return;
         }
-        _recording = false;
-        await _recorder.InvokeVoidAsync("stopRecording");
-        var wavBytes = await _recorder.InvokeAsync<byte[]>("getRecordedWavBytes");
-        if (wavBytes.Length <= 44) // header-only WAV: nothing was captured
+        _stopping = true;
+        try
         {
-            _recordError = "Nothing was recorded.";
-            return;
+            _recording = false;
+            await _recorder.InvokeVoidAsync("stopRecording");
+            var wavBytes = await _recorder.InvokeAsync<byte[]>("getRecordedWavBytes");
+            if (wavBytes.Length <= 44) // header-only WAV: nothing was captured
+            {
+                _recordError = "Nothing was recorded.";
+                return;
+            }
+            await UploadAsync(wavBytes, _recordingBeat ? "beat.wav" : "recording.wav", asBeat: _recordingBeat);
         }
-        await UploadAsync(wavBytes, _recordingBeat ? "beat.wav" : "recording.wav", asBeat: _recordingBeat);
+        finally
+        {
+            _stopping = false;
+        }
     }
 
     /// <summary>
