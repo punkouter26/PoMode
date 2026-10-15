@@ -23,6 +23,8 @@ export async function availability() {
  * only ever reached from a click.
  */
 export async function reply(system, messages, schema, sink) {
+    // The page sends the turns as a JSON string: Blazor would otherwise serialize them its own way.
+    messages = typeof messages === 'string' ? JSON.parse(messages) : messages;
     const session = await self.LanguageModel.create({
         ...LANGUAGES,
         initialPrompts: [{ role: 'system', content: system }, ...messages.slice(0, -1)],

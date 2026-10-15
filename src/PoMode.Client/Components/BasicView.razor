@@ -303,7 +303,13 @@
         _whyOpen = true;
         StateHasChanged();
         await Dialogs.OpenSideAsync<ModeWhyPanel>("Why this mode?",
-            new Dictionary<string, object?> { [nameof(ModeWhyPanel.Evidence)] = Visual.Evidence, [nameof(ModeWhyPanel.Stats)] = _stats },
+            new Dictionary<string, object?>
+            {
+                [nameof(ModeWhyPanel.Evidence)] = Visual.Evidence,
+                [nameof(ModeWhyPanel.Stats)] = _stats,
+                [nameof(ModeWhyPanel.Result)] = Result,
+                [nameof(ModeWhyPanel.JobId)] = Status.JobId,
+            },
             Drawer);
         _whyOpen = false;
         StateHasChanged();

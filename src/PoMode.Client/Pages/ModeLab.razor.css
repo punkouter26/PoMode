@@ -64,6 +64,25 @@
     font-weight: 600;
 }
 
+/* --- Describe it in words --- */
+.describe-row {
+    display: flex;
+    gap: var(--pm-space-2);
+    align-items: center;
+    min-width: 0;
+}
+
+.describe-row ::deep .describe-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.describe-said {
+    margin: 0;
+    color: var(--pm-fg-muted);
+    font-size: var(--pm-text-sm);
+}
+
 /* --- The backing settings --- */
 .studio-top-bar {
     display: flex;

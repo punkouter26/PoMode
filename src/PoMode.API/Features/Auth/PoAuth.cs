@@ -91,7 +91,14 @@ public static class PoAuth
                 },
                 ConfigureSessionCookie,
                 OpenIdConnectDefaults.AuthenticationScheme,
-                SessionScheme);
+                SessionScheme)
+                // Tokens for Graph, so a Microsoft account can bring songs in from its OneDrive. No
+                // scope is asked for at sign-in: Files.Read is requested only when the person chooses
+                // OneDrive (AuthEndpoints, ?onedrive=true). In memory: a restart costs one more
+                // consent round trip, which the OneDrive picker handles.
+                .EnableTokenAcquisitionToCallDownstreamApi()
+                .AddMicrosoftGraph(options => options.Scopes = [OneDrive.OneDriveEndpoints.Scope])
+                .AddInMemoryTokenCaches();
         }
         else
         {

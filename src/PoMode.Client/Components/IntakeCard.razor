@@ -3,6 +3,8 @@
 @inject NavigationManager Navigation
 @inject NotificationService Notifications
 @inject IJSRuntime JS
+@inject SessionState Session
+@inject DialogService Dialogs
 @implements IAsyncDisposable
 
 @* Every way audio gets in: choose or record a song, choose or record a beat, a file shared from
@@ -48,6 +50,13 @@
                 <RadzenButton Text="Record a song" Icon="mic" ButtonStyle="ButtonStyle.Light"
                               Click="@(() => OnStartRecording(beat: false))" Disabled="@_uploading" id="record-song"
                               title="Record from your microphone and analyze it" />
+            }
+            @if (Session.Current is { Kind: PoMode.Shared.Account.SessionKind.Microsoft, MicrosoftAvailable: true } && !_recording)
+            {
+                @* Only for a Microsoft account: its OneDrive is where a phone's voice memos land. *@
+                <RadzenButton Text="From OneDrive" Icon="cloud" ButtonStyle="ButtonStyle.Light"
+                              Click="@FromOneDriveAsync" Disabled="@_uploading" id="from-onedrive"
+                              title="Analyze a song stored in your OneDrive" />
             }
             else
             {
@@ -243,6 +252,27 @@
         }
         catch (JSException)
         {
+        }
+    }
+
+    private async Task FromOneDriveAsync()
+    {
+        var picked = await Dialogs.OpenAsync<OneDrivePicker>("Choose from OneDrive",
+            options: new DialogOptions { Width = "min(34rem, 100vw)", CloseDialogOnOverlayClick = true });
+        if (picked is not OneDriveFileDto file)
+        {
+            return;
+        }
+        try
+        {
+            _uploader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/upload/resumable-upload.js");
+            await using var blob = await _uploader.InvokeAsync<IJSObjectReference>(
+                "fetchRemote", $"api/onedrive/items/{Uri.EscapeDataString(file.Id)}/content");
+            await UploadAsync(blob, file.Name);
+        }
+        catch (JSException ex)
+        {
+            Refused(ex.Message.Split('\n')[0]);
         }
     }
 

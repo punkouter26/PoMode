@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using PoMode.API.Features.Analysis;
 using PoMode.API.Features.Auth;
 using PoMode.API.Features.Export;
+using PoMode.API.Platform;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.ModalMelodies;
@@ -20,6 +21,12 @@ public static class ModalMelodyEndpoints
         })
         .WithName("GetModalProgressions")
         .WithSummary("Retrieves standard chord progression presets across genres and modes.");
+
+        // "Darker and slower": the lab's settings from a description (ModeLabDescriber). Rules first,
+        // a language model only for a phrase the rules find nothing in, so it carries the interpret limit.
+        group.MapPost("/describe", async (ModeLabDescriptionRequest request, ModeLabDescriber describer, CancellationToken ct) =>
+            TypedResults.Ok(await describer.DescribeAsync(request.Text[..Math.Min(request.Text.Length, 200)], request.Current, ct)))
+            .RequireRateLimiting(PoRateLimits.InterpretPolicy);
 
         group.MapPost("/generate", (ModalMelodyRequest request, ModalMelodyGenerator generator) =>
         {

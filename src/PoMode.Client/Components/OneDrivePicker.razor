@@ -1,0 +1,59 @@
+@using PoMode.Shared.Analysis
+@inject AnalysisClient Analysis
+@inject DialogService Dialogs
+@inject NavigationManager Navigation
+
+@* The audio in the person's OneDrive, newest first; picking one closes the dialog with it, and the
+   intake card uploads it like a file chosen from disk. When Microsoft has not yet been asked for
+   read access to the files (or the server lost the token on a restart), the one button sends the
+   person through sign-in again with that access requested. *@
+<div class="onedrive">
+    @if (_files is null && !_needsConsent)
+    {
+        <div class="pm-skeleton onedrive-skeleton" aria-hidden="true"></div>
+        <p class="onedrive-note" role="status">Looking in your OneDrive…</p>
+    }
+    else if (_needsConsent)
+    {
+        <p class="onedrive-note">PoMode needs your permission to read files in your OneDrive. You will come straight back here.</p>
+        <RadzenButton Text="Allow OneDrive access" Icon="cloud" ButtonStyle="ButtonStyle.Primary" Click="@Consent" />
+    }
+    else if (_files is { Count: 0 })
+    {
+        <p class="onedrive-note">No .mp3, .wav or .m4a files were found in your OneDrive.</p>
+    }
+    else if (_files is { } files)
+    {
+        <ul class="onedrive-list" aria-label="Audio in your OneDrive">
+            @foreach (var file in files)
+            {
+                <li>
+                    <button type="button" class="onedrive-item" @onclick="@(() => Dialogs.Close(file))">
+                        <span class="onedrive-name">@file.Name</span>
+                        <span class="onedrive-meta">@($"{file.Size / 1048576.0:0.0} MB")@(file.Modified is { } when ? $" · {when.ToLocalTime():yyyy-MM-dd}" : "")</span>
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private List<OneDriveFileDto>? _files;
+    private bool _needsConsent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            (_files, _needsConsent) = await Analysis.GetOneDriveAudioAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            _files = [];
+        }
+    }
+
+    private void Consent()
+        => Navigation.NavigateTo($"auth/login/microsoft?onedrive=true&returnUrl={Uri.EscapeDataString("/")}", forceLoad: true);
+}

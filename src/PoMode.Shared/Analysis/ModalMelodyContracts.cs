@@ -57,6 +57,12 @@ public static class ProgressionCatalog
         => catalog.FirstOrDefault(p => p.RootsOn == HarmonicRoot.ParentTonic);
 }
 
+/// <summary>A description of how the Mode Lab's loop should sound, and the settings it is applied to.</summary>
+public sealed record ModeLabDescriptionRequest(string Text, ModalMelodyRequest Current);
+
+/// <summary>The settings the description asked for, and the server's sentence saying what changed.</summary>
+public sealed record ModeLabDescriptionDto(ModalMelodyRequest Request, string Sentence, bool Changed);
+
 public sealed record ModalMelodyRequest(
     int TonicPitchClass,
     ScaleMode Mode,

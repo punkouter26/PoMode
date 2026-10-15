@@ -125,3 +125,9 @@
         padding: var(--pm-space-2);
     }
 }
+
+.why-second {
+    margin-top: var(--pm-space-3);
+    padding-top: var(--pm-space-2);
+    border-top: 1px solid var(--pm-border);
+}

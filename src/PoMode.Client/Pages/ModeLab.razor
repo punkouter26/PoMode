@@ -75,6 +75,19 @@
     </div>
 
     <div class="studio-top-bar pm-panel">
+        @* The settings below, by description: "darker and slower", "funky, in D". Read by the server
+           (ModeLabDescriber), which says what it changed; the controls then show it. *@
+        <form class="describe-row" @onsubmit="DescribeAsync" @onsubmit:preventDefault>
+            <RadzenTextBox @bind-Value="_description" Placeholder="Describe it: darker, slower, funky, in D…"
+                           aria-label="Describe how the loop should sound" class="describe-input" MaxLength="200" />
+            <RadzenButton ButtonType="ButtonType.Submit" Text="@(_describing ? "Reading…" : "Apply")" Icon="auto_awesome"
+                          Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
+                          Disabled="@(_describing || string.IsNullOrWhiteSpace(_description))" />
+        </form>
+        @if (_describeSentence is { } said)
+        {
+            <p class="describe-said" role="status">@said</p>
+        }
         <BackingControls Tonic="_selectedTonic" TonicChanged="OnTonicPickedAsync"
                          ProgressionId="@_selectedProgressionId" ProgressionIdChanged="OnProgressionPickedAsync"
                          Progressions="_progressions"
@@ -296,6 +309,58 @@
             _midiOutside++;
         }
         StateHasChanged();
+    }
+
+    private string? _description;
+    private string? _describeSentence;
+    private bool _describing;
+
+    /// <summary>Applies a described change through the same paths the controls use, so "Match to mode"
+    /// still moves the harmony with a new mode; the described tempo is set after it.</summary>
+    private async Task DescribeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_description) || _describing)
+        {
+            return;
+        }
+        _describing = true;
+        try
+        {
+            if (await Analysis.DescribeModeLabAsync(_description, CurrentRequest()) is not { } described)
+            {
+                _describeSentence = "That could not be read just now.";
+                return;
+            }
+            _describeSentence = described.Sentence;
+            if (!described.Changed)
+            {
+                return;
+            }
+            var next = described.Request;
+            if (next.Mode != _selectedMode)
+            {
+                _selectedMode = next.Mode;
+                ApplyModeHarmony(next.Mode);
+            }
+            _selectedTonic = next.TonicPitchClass;
+            _selectedStyle = next.Style;
+            _targetPurity = next.TargetPurity;
+            _seed = next.Seed;
+            if (Math.Abs(next.Bpm - CurrentRequest().Bpm) > 0.5 || described.Sentence.Contains("BPM", StringComparison.Ordinal))
+            {
+                _bpm = next.Bpm;
+            }
+            _description = null;
+            await OnConfigChanged();
+        }
+        catch (HttpRequestException)
+        {
+            _describeSentence = "The server could not be reached.";
+        }
+        finally
+        {
+            _describing = false;
+        }
     }
 
     /// <summary>A newly picked beat sets the tempo it was played at; the drums are then cut to it.</summary>

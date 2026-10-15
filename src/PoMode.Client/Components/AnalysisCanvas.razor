@@ -17,6 +17,7 @@
             <span class="now-chord" data-part="chord" hidden></span>
             <span class="now-note" data-part="note" hidden></span>
             <span class="now-section" data-part="section" hidden></span>
+            <span class="now-lyric" data-part="lyric" hidden></span>
         </div>
     </div>
     @if (Describe && Model is { Windows.Count: > 0 } described)
@@ -180,6 +181,7 @@
         {
             _chromaFor = jobId;
             await _module.InvokeVoidAsync("loadChroma", _canvas, jobId);
+            await _module.InvokeVoidAsync("loadLyrics", _canvas, jobId);
         }
         if (_sentSelection != SelectedWindowIndex)
         {

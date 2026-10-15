@@ -4,6 +4,7 @@
 @using PoMode.Client.Services
 @inject AnalysisClient Client
 @inject IJSRuntime JS
+@inject BrowserPrefs Prefs
 @implements IAsyncDisposable
 
 @* Song statistics and the conversation about them.
@@ -182,29 +183,31 @@
                interpreter is never given the audio, the title or the artist. An answer it could not find
                in the data is labelled as such rather than hidden. *@
             <section class="ask" aria-labelledby="ask-heading">
+                @* Which writer answers is a setting (Settings, "Written interpretation"), at the best
+                   one available by default; the source of every answer is named on it. *@
                 <div class="ask-head">
                     <h2 class="pm-label stats-label" id="ask-heading">Ask about this song</h2>
-                    @* Radzen rather than a bare <select>: every other chooser in the app is a
-                       RadzenDropDown. An interpreter that is not installed stays visible and unpickable,
-                       because its absence is the answer to "why is this write-up so plain". *@
-                    @if (InterpreterChoices is { Count: > 1 } choices)
-                    {
-                        <RadzenDropDown TValue="string" Data="@choices" @bind-Value="_chosen"
-                                        TextProperty="Text" ValueProperty="Value"
-                                        DisabledProperty="Unavailable"
-                                        Disabled="@(_busy || _asking)" class="interpreter-select"
-                                        aria-label="Which interpreter answers" />
-                    }
                 </div>
 
                 @* The summary turn, shown as it is written and replaced by the checked result when it lands. *@
-                @if (_interpretation is not null || (_busy && _draft.Count > 0))
+                @if (_interpretation is not null || (_busy && (_draft.Count > 0 || _quickRead is not null)))
                 {
-                    var plain = _interpretation?.Text ?? _draft.GetValueOrDefault(InterpretationPrompt.PlainField) ?? "";
-                    var theory = _interpretation is { } done ? done.TheoryText : _draft.GetValueOrDefault(InterpretationPrompt.TheoryField);
+                    @* While a model writes, the rule-based read stands in for it, so the answer is never
+                       a blank box; the model's first words replace it. *@
+                    var provisional = _interpretation is null && _draft.Count == 0 ? _quickRead : null;
+                    var plain = _interpretation?.Text ?? provisional?.Text ?? _draft.GetValueOrDefault(InterpretationPrompt.PlainField) ?? "";
+                    var theory = _interpretation is { } done ? done.TheoryText
+                        : provisional is not null ? provisional.TheoryText
+                        : _draft.GetValueOrDefault(InterpretationPrompt.TheoryField);
                     <div class="ask-turn">
                         <p class="ask-question">@SummaryStarter</p>
-                        <div class="ask-answer" aria-busy="@(_interpretation is null ? "true" : "false")">
+                        <div class="ask-answer" aria-busy="@(_interpretation is null ? "true" : "false")" data-quick-read="@(provisional is not null ? "shown" : "")">
+                            @if (provisional is not null)
+                            {
+                                <p class="interpretation-source">
+                                    Quick read <span class="interpretation-tag">rule-based · the model's version is being written</span>
+                                </p>
+                            }
                             @if (_interpretation is { } interpretation)
                             {
                                 <p class="interpretation-source">
@@ -320,6 +323,9 @@
     private bool _voiceLoading;
     private List<InterpreterOptionDto>? _interpreters;
     private SongInterpretationDto? _interpretation;
+
+    /// <summary>The rule-based summary, shown while a model writes its own.</summary>
+    private SongInterpretationDto? _quickRead;
     private string? _chosen;
     private string? _error;
     private bool _busy;
@@ -338,6 +344,7 @@
         _voice = null;
         _voiceFit = null;
         _interpretation = null;
+        _quickRead = null;
         _error = null;
         // A different song is a different conversation; carrying the transcript over would put
         // answers about one recording under another.
@@ -356,7 +363,13 @@
             {
                 _interpreters = await Client.GetInterpretersAsync();
                 _chosen = _interpreters?.FirstOrDefault(option => option.IsDefault)?.Name;
-                await OfferBrowserModelAsync();
+                await OfferBrowserModelsAsync();
+                // A writer picked on the Settings page wins, when it can run here.
+                if (await Prefs.GetAsync(BrowserPrefs.InterpreterKey, PrefsJsonContext.Default.String) is { } picked
+                    && _interpreters?.FirstOrDefault(option => option.Name == picked) is { Available: true })
+                {
+                    _chosen = picked;
+                }
             }
             catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
             {
@@ -401,7 +414,8 @@
         _error = null;
         try
         {
-            var result = _chosen == BrowserInterpreter && Stats is { } stats
+            await ReadQuicklyAsync();
+            var result = BrowserInterpreters.IsBrowser(_chosen) && Stats is { } stats
                 ? await BrowserAsync(InterpretationPrompt.For(stats), null)
                 : null;
             // The browser model failing or inventing a figure falls back to the server's default, as
@@ -422,6 +436,29 @@
         {
             _busy = false;
             _draft.Clear();
+        }
+    }
+
+    /// <summary>
+    /// When a model is about to write, the rule-based summary first: it takes a moment, and it means
+    /// the reader has something true to read for the tens of seconds a local model takes.
+    /// </summary>
+    private async Task ReadQuicklyAsync()
+    {
+        _quickRead = null;
+        if (_interpreters?.FirstOrDefault(option => !option.UsesLlm) is not { } template
+            || _interpreters.FirstOrDefault(option => option.Name == _chosen) is not { UsesLlm: true })
+        {
+            return;
+        }
+        await foreach (var item in Client.StreamInterpretationAsync(JobId, template.Name))
+        {
+            if (item.Summary is { } summary)
+            {
+                _quickRead = summary;
+                StateHasChanged();
+                return;
+            }
         }
     }
 
@@ -456,42 +493,53 @@
     // The page builds the same prompt the server sends Ollama (both live in Shared) and runs the same
     // GroundingCheck on the reply, so a figure it invents is caught here exactly as it is there.
 
-    private const string BrowserInterpreter = "BrowserSongInterpreter";
+    /// <summary>Each browser model's answer: available, downloadable, downloading or unavailable.</summary>
+    private readonly Dictionary<string, string> _browserLlm = [];
 
-    /// <summary>The Prompt API's answer: available, downloadable, downloading or unavailable.</summary>
-    private string _browserLlm = "unavailable";
-
-    private IJSObjectReference? _llmModule;
+    private readonly Dictionary<string, IJSObjectReference> _llmModules = [];
     private DotNetObjectReference<SongStatsPanel>? _self;
     private ReplyReader? _browserReply;
 
-    /// <summary>The server-side interpreter to ask: the one picked, unless the pick is the browser's.</summary>
-    private string? ServerInterpreter => _chosen == BrowserInterpreter ? null : _chosen;
+    /// <summary>The server-side interpreter to ask: the one picked, unless the pick runs in the page.</summary>
+    private string? ServerInterpreter => BrowserInterpreters.IsBrowser(_chosen) ? null : _chosen;
 
-    private async Task OfferBrowserModelAsync()
+    private async Task<IJSObjectReference> ModuleAsync(string name)
     {
-        try
+        if (!_llmModules.TryGetValue(name, out var module))
         {
-            _llmModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/browser-llm.js");
-            _browserLlm = await _llmModule.InvokeAsync<string>("availability");
+            _llmModules[name] = module = await JS.InvokeAsync<IJSObjectReference>("import", BrowserInterpreters.ModuleFor(name));
         }
-        catch (JSException)
-        {
-            return;
-        }
-        if (_interpreters is null || _browserLlm == "unavailable")
-        {
-            return;
-        }
+        return module;
+    }
 
-        var template = _interpreters.FindIndex(option => !option.UsesLlm);
-        _interpreters.Insert(template < 0 ? _interpreters.Count : template, new InterpreterOptionDto(
-            BrowserInterpreter, ExecutionTier.ClientDelegated, Available: true, IsDefault: false, UsesLlm: true));
-        // Ready to run and the server has no model: the browser's beats the template. One that still
-        // has to download gigabytes waits to be picked.
-        if (_browserLlm == "available" && _interpreters.FirstOrDefault(option => option.IsDefault) is { UsesLlm: false })
+    /// <summary>
+    /// Offers the models that run in the page, ranked where the planner puts a browser tier: after a
+    /// real server model, before the template. Ready to run while the server has no model, the
+    /// browser's beats the template; one that still has to download waits to be picked in Settings.
+    /// </summary>
+    private async Task OfferBrowserModelsAsync()
+    {
+        foreach (var name in new[] { BrowserInterpreters.PromptApi, BrowserInterpreters.WebLlm })
         {
-            _chosen = BrowserInterpreter;
+            try
+            {
+                _browserLlm[name] = await (await ModuleAsync(name)).InvokeAsync<string>("availability");
+            }
+            catch (JSException)
+            {
+                _browserLlm[name] = "unavailable";
+            }
+            if (_interpreters is null || _browserLlm[name] == "unavailable")
+            {
+                continue;
+            }
+            var template = _interpreters.FindIndex(option => !option.UsesLlm);
+            _interpreters.Insert(template < 0 ? _interpreters.Count : template, new InterpreterOptionDto(
+                name, ExecutionTier.ClientDelegated, Available: true, IsDefault: false, UsesLlm: true));
+            if (_browserLlm[name] == "available" && _interpreters.FirstOrDefault(option => option.Name == _chosen) is { UsesLlm: false })
+            {
+                _chosen = name;
+            }
         }
     }
 
@@ -504,13 +552,14 @@
     {
         _draft.Clear();
         var reply = _browserReply = new ReplyReader();
+        var name = _chosen!;
         try
         {
-            _llmModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/browser-llm.js");
+            var module = await ModuleAsync(name);
             _self ??= DotNetObjectReference.Create(this);
             var messages = new JsonArray([.. prompt.Messages.Select(message =>
                 (JsonNode)new JsonObject { ["role"] = message.Role, ["content"] = message.Content })]);
-            await _llmModule.InvokeVoidAsync("reply", prompt.System, messages.ToJsonString(), prompt.Schema, _self);
+            await module.InvokeVoidAsync("reply", prompt.System, messages.ToJsonString(), prompt.Schema, _self);
         }
         catch (JSException)
         {
@@ -531,10 +580,10 @@
 
         return question is null
             ? new InterpretationEvent(Summary: new SongInterpretationDto(
-                BrowserInterpreter, ExecutionTier.ClientDelegated, true, written.Trim(),
+                name, ExecutionTier.ClientDelegated, true, written.Trim(),
                 string.IsNullOrWhiteSpace(theory) ? null : theory.Trim()))
             : new InterpretationEvent(Answer: new SongAnswerDto(
-                question, written.Trim(), BrowserInterpreter, ExecutionTier.ClientDelegated, true,
+                question, written.Trim(), name, ExecutionTier.ClientDelegated, true,
                 Grounded: !bool.TryParse(reply[QuestionPrompt.InDataField], out var inData) || inData));
     }
 
@@ -565,11 +614,11 @@
     public async ValueTask DisposeAsync()
     {
         _self?.Dispose();
-        if (_llmModule is not null)
+        foreach (var module in _llmModules.Values)
         {
             try
             {
-                await _llmModule.DisposeAsync();
+                await module.DisposeAsync();
             }
             catch (JSDisconnectedException)
             {
@@ -622,7 +671,7 @@
         {
             // The history goes with the question because the server holds none; it is trimmed there,
             // so a long conversation costs the prompt rather than the measurements.
-            var result = _chosen == BrowserInterpreter && Stats is { } stats
+            var result = BrowserInterpreters.IsBrowser(_chosen) && Stats is { } stats
                 ? await BrowserAsync(QuestionPrompt.For(stats, _conversation, asked), asked)
                 : null;
             result ??= await ConsumeAsync(Client.StreamAnswerAsync(JobId, asked, _conversation, ServerInterpreter));
@@ -658,32 +707,13 @@
         }
     }
 
-    private static string Kind(bool usedLlm, ExecutionTier tier)
-        => !usedLlm ? "rule-based, no model"
-            : tier == ExecutionTier.ClientDelegated ? "model in this browser"
-            : "local model";
-
-    private string Label(InterpreterOptionDto option)
+    private static string Kind(bool usedLlm, ExecutionTier tier) => (usedLlm, tier) switch
     {
-        var kind = !option.UsesLlm ? "rule-based"
-            : option.Tier != ExecutionTier.ClientDelegated ? "local model"
-            : _browserLlm == "available" ? "in this browser"
-            : "in this browser, downloads first";
-        var name = ExecutorNames.Rated(option.Name);
-        return option.Available ? $"{name} ({kind})" : $"{name} — unavailable";
-    }
-
-    /// <summary>
-    /// One row per interpreter, shaped the way <see cref="RadzenDropDown{TValue}"/> binds: a value,
-    /// a rendered label and a disabled flag. The flag is the inverse of the DTO's
-    /// <c>Available</c>, and it is a projection rather than a property on the DTO because
-    /// PoMode.Shared holds contracts, not presentation.
-    /// </summary>
-    private sealed record InterpreterChoice(string Value, string Text, bool Unavailable);
-
-    private List<InterpreterChoice>? InterpreterChoices => _interpreters?
-        .Select(option => new InterpreterChoice(option.Name, Label(option), !option.Available))
-        .ToList();
+        (false, _) => "rule-based, no model",
+        (_, ExecutionTier.ClientDelegated) => "model in this browser",
+        (_, ExecutionTier.Cloud) => "cloud model",
+        _ => "local model",
+    };
 
     private static string Clock(double seconds) => $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
 

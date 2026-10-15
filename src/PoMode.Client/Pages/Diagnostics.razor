@@ -31,8 +31,32 @@
                 <dt>Azure hosted</dt><dd>@YesNo(report.IsAzureHosted)</dd>
                 <dt>Secret source</dt><dd>@report.SecretSource @(report.SecretFellBack ? "(fell back)" : "")</dd>
                 <dt>Jobs queued</dt><dd>@report.QueueDepth</dd>
+                @if (report.Operational is { } operational)
+                {
+                    <dt>Rate limits</dt><dd>@YesNo(operational.RateLimitsEnabled)</dd>
+                    <dt>Push notifications</dt><dd>@YesNo(operational.PushAvailable)</dd>
+                    <dt>Telemetry export</dt><dd>@YesNo(operational.TelemetryEnabled)</dd>
+                }
             </dl>
         </section>
+
+        @* How each writer has done since start-up: a rising retry count is a model drifting from the
+           prompt; falling through is a broken one that the template has been quietly covering for. *@
+        @if (report.Interpreters is { Count: > 0 } writers)
+        {
+            <section class="diag-section" aria-label="Interpreters">
+                <h3 class="pm-label diag-title">Interpreters since start-up</h3>
+                <table class="diag-models">
+                    <thead><tr><th>Interpreter</th><th>Passed</th><th>Sent back</th><th>Fell through</th></tr></thead>
+                    <tbody>
+                        @foreach (var writer in writers)
+                        {
+                            <tr><td>@ExecutorNames.Display(writer.Name)</td><td>@writer.Replies</td><td>@writer.GroundingRetries</td><td>@writer.FellThrough</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
 
         <section class="diag-section" aria-label="Execution plan">
             <h3 class="pm-label diag-title">Execution plan (defaults)</h3>

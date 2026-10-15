@@ -108,6 +108,15 @@
     color: var(--pm-fg-muted);
 }
 
+/* The line being sung, as Whisper heard it: its own row, italic, so it never reads as a label. */
+.now-lyric {
+    flex-basis: 100%;
+    max-width: 22rem;
+    font-style: italic;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
 :root[data-fx="off"] .now-chip {
     background: var(--pm-surface);
     -webkit-backdrop-filter: none;

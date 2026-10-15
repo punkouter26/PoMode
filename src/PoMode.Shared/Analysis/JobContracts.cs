@@ -122,6 +122,9 @@ public sealed record JobStatusDto(
     TakeOrigin? Origin = null);
 
 /// <summary>One row in the song library: a persisted job plus its headline analysis once complete.</summary>
+/// <summary>An audio file in the signed-in person's OneDrive, offered for import.</summary>
+public sealed record OneDriveFileDto(string Id, string Name, long Size, DateTimeOffset? Modified);
+
 /// <summary>Seconds a running analysis has left, from how long the same executors took on earlier
 /// songs on this server; null when any remaining one has never been timed here.</summary>
 public sealed record EtaDto(double? SecondsLeft);

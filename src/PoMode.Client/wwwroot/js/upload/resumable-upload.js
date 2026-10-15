@@ -178,6 +178,18 @@ export async function unsentName() {
     return unsent?.blob instanceof Blob ? unsent.name : null;
 }
 
+/// A file from the person's OneDrive, fetched through the server as a Blob, so it goes through the
+/// same decode-and-upload path as a file chosen from disk. Rejects with a sentence fit to show.
+export async function fetchRemote(url) {
+    const response = await fetch(url, { credentials: 'same-origin' });
+    if (!response.ok) {
+        throw new Error(response.status === 401
+            ? 'OneDrive access has expired. Choose "From OneDrive" again to reconnect.'
+            : 'That file could not be fetched from OneDrive.');
+    }
+    return await response.blob();
+}
+
 export function unsentIsBeat() {
     return !!unsent?.beat;
 }

@@ -1,5 +1,6 @@
 @using System.Globalization
 @using PoMode.Shared.Analysis
+@inject IJSRuntime JS
 
 @* "Why this mode?" in one place. The page used to answer it three times — the evidence sentences
    under the key badge, a mode-vote chart and a scale-degree chart further down in the statistics —
@@ -78,6 +79,26 @@
             </div>
         </div>
     }
+
+    @* An independent reading, on request: Essentia's major/minor key finder over the mix, in this
+       browser (js/infer/key-check.js). The sentence about how it stands against the mode is the
+       server-side KeyAgreement's. *@
+    @if (Result is not null && JobId is { Length: > 0 })
+    {
+        <div class="why-second" data-second-opinion="@(_second is null ? "" : "read")">
+            <span class="pm-label why-title">A second opinion</span>
+            @if (_second is { } second)
+            {
+                <p class="why-caption" role="status">@second</p>
+            }
+            else
+            {
+                <RadzenButton Text="@(_secondBusy ? "Listening…" : "Ask Essentia")" Icon="hearing" Size="ButtonSize.Small"
+                              ButtonStyle="ButtonStyle.Light" Click="@SecondOpinionAsync" Disabled="@_secondBusy"
+                              title="Essentia, an open-source audio library, reads the key from the mix in your browser (about 3 MB, once)" />
+            }
+        </div>
+    }
 </section>
 
 @code {
@@ -85,6 +106,36 @@
 
     /// <summary>The song's statistics, once loaded; the charts wait for them, the sentences do not.</summary>
     [Parameter] public SongStats? Stats { get; set; }
+
+    /// <summary>The analysis the second opinion is set against.</summary>
+    [Parameter] public ModalResult? Result { get; set; }
+
+    [Parameter] public string? JobId { get; set; }
+
+    private string? _second;
+    private bool _secondBusy;
+
+    private sealed record EssentiaKey(int PitchClass, bool Major, double Strength);
+
+    private async Task SecondOpinionAsync()
+    {
+        _secondBusy = true;
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/infer/key-check.js");
+            _second = await module.InvokeAsync<EssentiaKey?>("read", JobId) is { } key && Result is { } result
+                ? KeyAgreement.Describe(result, key.PitchClass, key.Major, key.Strength)
+                : "Essentia could not read a key from this recording.";
+        }
+        catch (JSException)
+        {
+            _second = "Essentia could not be loaded in this browser.";
+        }
+        finally
+        {
+            _secondBusy = false;
+        }
+    }
 
     /// <summary>One plain sentence on how decisive the vote was, so a bar chart is not read blind.</summary>
     private static string ModeVerdict(SongStats stats)

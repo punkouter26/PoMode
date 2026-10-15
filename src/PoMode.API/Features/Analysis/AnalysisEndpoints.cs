@@ -119,6 +119,15 @@ public static class AnalysisEndpoints
         .RequireRateLimiting(PoRateLimits.UploadPolicy)
         .AddEndpointFilter<QueueCapacityFilter>();
 
+        // The lyrics Whisper read off the separated vocal, written in the background after the job
+        // finished (JobAftercare). 204 until then, or when there was no vocal to read; a list, possibly
+        // empty, once it has been read.
+        group.MapGet("/{jobId}/lyrics", async Task<Results<Ok<List<LyricLineDto>>, NoContent>> (
+            string jobId, JobStore store, CancellationToken ct) =>
+            await store.ReadArtifactAsync<List<LyricLineDto>>(jobId, "lyrics.json", ct) is { } lines
+                ? TypedResults.Ok(lines)
+                : TypedResults.NoContent());
+
         // How long a running job has left (EtaEstimator). Asked once per stage change, never polled.
         group.MapGet("/{jobId}/eta", async Task<Results<Ok<EtaDto>, NotFound>> (
             string jobId, JobStore store, EtaEstimator eta, CancellationToken ct) =>

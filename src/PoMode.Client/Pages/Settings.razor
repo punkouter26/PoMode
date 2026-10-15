@@ -187,6 +187,27 @@
                 option.Name, option.Available ? $"{ExecutorNames.Rated(option.Name)} ({(option.UsesLlm ? "model" : "rule-based")})"
                     : $"{ExecutorNames.Rated(option.Name)} — unavailable"))];
             _interpreter = await Prefs.GetAsync(BrowserPrefs.InterpreterKey, PrefsJsonContext.Default.String);
+            // The models that run in this page, where this browser can run them, before the template.
+            foreach (var (name, label) in new[]
+            {
+                (BrowserInterpreters.PromptApi, "This browser's built-in model"),
+                (BrowserInterpreters.WebLlm, "WebLLM in this browser"),
+            })
+            {
+                try
+                {
+                    await using var module = await JS.InvokeAsync<IJSObjectReference>("import", BrowserInterpreters.ModuleFor(name));
+                    var state = await module.InvokeAsync<string>("availability");
+                    if (state != "unavailable")
+                    {
+                        _interpreters.Insert(_interpreters.Count - 1, new InterpreterChoice(name,
+                            state == "available" ? $"{label} (model)" : $"{label} (downloads about 1 GB first)"));
+                    }
+                }
+                catch (JSException)
+                {
+                }
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
         {

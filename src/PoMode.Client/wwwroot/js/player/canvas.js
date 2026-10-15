@@ -748,6 +748,32 @@ function drawTension(state, ctx, width, laneHeight) {
     ctx.restore();
 }
 
+/// The lyrics Whisper read off the vocal, shown in the now-playing chip as the line being sung. They
+/// are written in the background after the job finishes, so a song opened the moment it completes
+/// may not have them yet: one more look a little later picks them up.
+export async function loadLyrics(canvas, jobId, retry = true) {
+    const state = states.get(canvas);
+    if (!state || !jobId) {
+        return;
+    }
+    try {
+        const response = await fetch(`api/analysis/${jobId}/lyrics`);
+        if (states.get(canvas) !== state) {
+            return;
+        }
+        if (response.status === 200) {
+            state.lyrics = await response.json();
+            canvas.dataset.lyricLines = String(state.lyrics.length);
+            state.chipKey = null;
+            invalidate(state);
+        } else if (response.status === 204 && retry) {
+            setTimeout(() => loadLyrics(canvas, jobId, false), 45000);
+        }
+    } catch {
+        // No lyrics is the ordinary case for an instrumental; nothing to report.
+    }
+}
+
 /// Fetches the band's chroma for this job and keeps the rendered image; drawn from the next frame.
 export async function loadChroma(canvas, jobId) {
     const state = states.get(canvas);
@@ -874,7 +900,10 @@ function updateChip(state, revealing) {
         }
     }
     const section = model && !revealing ? sectionAt(state, t) : null;
-    const key = `${chord?.symbol ?? ''}|${note?.label ?? ''}|${section?.label ?? ''}`;
+    const lyric = state.lyrics && !revealing
+        ? state.lyrics.find(line => t >= line.startSec && t < line.endSec) ?? null
+        : null;
+    const key = `${chord?.symbol ?? ''}|${note?.label ?? ''}|${section?.label ?? ''}|${lyric?.text ?? ''}`;
     if (key === state.chipKey) {
         return;
     }
@@ -889,10 +918,11 @@ function updateChip(state, revealing) {
     set('chord', chord?.symbol ?? '');
     set('note', note?.label ?? '');
     set('section', section?.label ?? '');
+    set('lyric', lyric?.text ?? '');
     tintForSection(state, section);
     chip.dataset.nowChord = chord?.symbol ?? '';
     chip.dataset.nowNote = note?.pitchLabel ?? '';
-    chip.dataset.empty = chord || note || section ? '0' : '1';
+    chip.dataset.empty = chord || note || section || lyric ? '0' : '1';
 }
 
 /// The analysis card takes a faint wash of the colour of the mode of the section being heard (the
@@ -1094,6 +1124,7 @@ export function init(canvas, dotNetRef, chip) {
         sectionLaneHeight: 0,
         chroma: null,
         chromaJob: null,
+        lyrics: null,
         sectionTint: null,
         highlightEvidence: false,
         frame: null,

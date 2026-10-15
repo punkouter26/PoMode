@@ -102,8 +102,20 @@ public static class ModelCatalog
         Url: "https://huggingface.co/musetric/chordmini-onnx/resolve/086162411b8c4772774392be195e5c6f065d67ad/cqt-plan.bin",
         Sha256: "c31f0a6fd2d582d753be6628b5daecdee58acba53cba93b2bc2b5c75dee2ba48");
 
-    public static readonly IReadOnlyList<ModelDescriptor> All =
-        [BasicPitch, HtDemucs, BeatThis, BeatThisMelFilterbank, Rmvpe, ChordMini, ChordMiniCqtPlan];
+    /// <summary>
+    /// Whisper base.en (OpenAI, MIT) as whisper.cpp's ggml file, 5-bit quantised, for the lyrics read
+    /// off the separated vocal (<c>LyricsTranscriber</c>, run through Whisper.net). From
+    /// <c>ggerganov/whisper.cpp</c> pinned to commit <c>5359861c739e955e79d9a303bcbc70fb988958b1</c>;
+    /// 59,721,011 bytes; the SHA-256 is the LFS object id that commit publishes. base.en rather than
+    /// small.en: a third the size and several times faster on a CPU, for a line under the canvas
+    /// rather than a transcript anyone would quote.
+    /// </summary>
+    public static readonly ModelDescriptor WhisperBaseEn = new(
+        Key: "whisper-base-en",
+        FileName: "ggml-base.en-q5_1.bin",
+        Url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en-q5_1.bin",
+        Sha256: "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f");
+
 
     /// <summary>
     /// onnxruntime-web 1.27.0, pinned to the immutable npm-versioned jsdelivr URLs (npm packages
@@ -184,4 +196,11 @@ public static class ModelCatalog
 
     public static readonly IReadOnlyList<ModelDescriptor> WebRuntime =
         [OrtBundle, OrtWasm, OrtWasmJsep, OrtWasmGlue, OrtWasmJsepGlue, BasicPitch, MdxVocals];
+
+    /// <summary>Every model the server downloads at start-up and /diag reports. Declared last: static
+    /// fields initialise in textual order, and this list names fields declared above it.</summary>
+    /// <remarks><see cref="MdxVocals"/> is here as well as in <see cref="WebRuntime"/>: the server runs
+    /// it too (MdxStemSeparator), so it downloads with the rest.</remarks>
+    public static readonly IReadOnlyList<ModelDescriptor> All =
+        [BasicPitch, HtDemucs, BeatThis, BeatThisMelFilterbank, Rmvpe, ChordMini, ChordMiniCqtPlan, WhisperBaseEn, MdxVocals];
 }

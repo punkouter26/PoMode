@@ -114,7 +114,7 @@ public static class SongStatsEndpoints
     /// The beat grid is optional by design: it only ever adds the rhythm and harmonic-rhythm figures,
     /// and both degrade to "not available" rather than to a wrong number.
     /// </summary>
-    private static async Task<SongStats?> BuildAsync(string jobId, JobStore store, CancellationToken ct)
+    internal static async Task<SongStats?> BuildAsync(string jobId, JobStore store, CancellationToken ct)
     {
         var result = await store.ReadArtifactAsync<ModalResult>(jobId, "result.json", ct);
         if (result is null)

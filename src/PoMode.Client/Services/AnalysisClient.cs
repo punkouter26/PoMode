@@ -140,6 +140,27 @@ public sealed class AnalysisClient(HttpClient http)
     public Task<List<SimilarSongDto>?> GetSimilarAsync(string jobId)
         => http.GetFromJsonAsync<List<SimilarSongDto>>($"api/library/{jobId}/similar");
 
+    /// <summary>The audio in the signed-in person's OneDrive, or NeedsConsent when Microsoft has not
+    /// (or no longer) granted read access to their files.</summary>
+    public async Task<(List<OneDriveFileDto>? Files, bool NeedsConsent)> GetOneDriveAudioAsync()
+    {
+        using var response = await http.GetAsync("api/onedrive/audio");
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            return (null, true);
+        }
+        return response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<List<OneDriveFileDto>>() ?? [], false)
+            : ([], false);
+    }
+
+    /// <summary>The Mode Lab's settings from a description such as "darker and slower".</summary>
+    public async Task<ModeLabDescriptionDto?> DescribeModeLabAsync(string text, ModalMelodyRequest current)
+    {
+        using var response = await http.PostAsJsonAsync("api/modal-melodies/describe", new ModeLabDescriptionRequest(text, current));
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ModeLabDescriptionDto>() : null;
+    }
+
     /// <summary>Deletes every job the caller owns; answers how many went.</summary>
     public async Task<int> DeleteMyDataAsync()
     {

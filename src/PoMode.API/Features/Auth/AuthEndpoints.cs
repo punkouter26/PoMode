@@ -40,10 +40,18 @@ public static class AuthEndpoints
             .WithSummary("Starts a persistent guest session, or returns the current one if already signed in.");
 
         // A top-level navigation, not a fetch: the OIDC round trip leaves this origin.
-        app.MapGet("/auth/login/microsoft", (string? returnUrl, PoAuthOptions options) =>
+        // ?onedrive=true asks for read access to the person's files as well (incremental consent),
+        // which only the OneDrive picker sends them here for.
+        app.MapGet("/auth/login/microsoft", (string? returnUrl, bool? onedrive, PoAuthOptions options) =>
                 options.MicrosoftAvailable
                     ? Results.Challenge(
-                        new AuthenticationProperties { RedirectUri = LocalOnly(returnUrl) },
+                        onedrive == true
+                            ? new OpenIdConnectChallengeProperties
+                            {
+                                RedirectUri = LocalOnly(returnUrl),
+                                Scope = ["openid", "profile", "offline_access", OneDrive.OneDriveEndpoints.Scope],
+                            }
+                            : new AuthenticationProperties { RedirectUri = LocalOnly(returnUrl) },
                         [OpenIdConnectDefaults.AuthenticationScheme])
                     : Results.Redirect(LocalOnly(returnUrl)))
             .AllowAnonymous()

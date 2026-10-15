@@ -36,6 +36,7 @@ public static class ExecutorNames
     {
         ["OnnxStemSeparator"] = "HTDemucs",
         ["ClientDelegatedStemSeparator"] = "UVR MDX-Net, in your browser",
+        ["MdxStemSeparator"] = "UVR MDX-Net",
         ["FakeStemSeparator"] = "Placeholder separation",
         ["SkippedDryVocal"] = "Skipped (solo voice)",
         ["RmvpePitchTracker"] = "RMVPE",
@@ -55,6 +56,8 @@ public static class ExecutorNames
         ["OllamaSongInterpreter"] = "Ollama",
         ["TemplateSongInterpreter"] = "Built-in writer",
         ["BrowserSongInterpreter"] = "Browser's built-in model",
+        ["WebLlmSongInterpreter"] = "WebLLM in your browser",
+        ["AzureOpenAiSongInterpreter"] = "Azure OpenAI",
     };
 
     /// <summary>
@@ -67,6 +70,7 @@ public static class ExecutorNames
     {
         ["OnnxStemSeparator"] = 9,
         ["ClientDelegatedStemSeparator"] = 8,
+        ["MdxStemSeparator"] = 8,
         ["RmvpePitchTracker"] = 9,
         ["OnnxPitchTracker"] = 6,
         ["ClientDelegatedPitchTracker"] = 6,

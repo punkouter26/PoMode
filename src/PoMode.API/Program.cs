@@ -9,8 +9,10 @@ using PoMode.API.Features.ChordRecognition;
 using PoMode.API.Features.Demo;
 using PoMode.API.Features.Diagnostics;
 using PoMode.API.Features.Export;
+using PoMode.API.Features.Lyrics;
 using PoMode.API.Features.ModalAnalysis;
 using PoMode.API.Features.ModalMelodies;
+using PoMode.API.Features.OneDrive;
 using PoMode.API.Features.PitchTracking;
 using PoMode.API.Features.Push;
 using PoMode.API.Features.SongStatistics;
@@ -66,6 +68,8 @@ builder.Services.AddSingleton<JobRerun>();
 builder.Services.AddSingleton<EtaEstimator>();
 builder.Services.AddSingleton<JobCancellationRegistry>();
 builder.Services.AddSingleton<IStemSeparator, OnnxStemSeparator>();
+// After HTDemucs on purpose: same rank, so registration order keeps HTDemucs the default.
+builder.Services.AddSingleton<IStemSeparator, MdxStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, ClientDelegatedStemSeparator>();
 builder.Services.AddSingleton<IStemSeparator, FakeStemSeparator>();
 // RMVPE and Basic Pitch share a rank (both local models), so registration order decides the default:
@@ -93,6 +97,7 @@ builder.Services.AddSingleton<ISongInterpreter, OllamaSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, AzureOpenAiSongInterpreter>();
 builder.Services.AddSingleton<ISongInterpreter, TemplateSongInterpreter>();
 builder.Services.AddSingleton<InterpreterStats>();
+builder.Services.AddSingleton<ModeLabDescriber>();
 builder.Services.AddSingleton<SongInterpreterSelector>();
 builder.Services.AddSingleton<ClientWorkRegistry<IReadOnlyList<PoMode.Shared.Analysis.NoteEvent>>>();
 builder.Services.AddSingleton<ClientWorkRegistry<ClientStems>>();
@@ -103,7 +108,11 @@ builder.Services.AddSingleton<IAnalysisNotifier, SignalRAnalysisNotifier>();
 builder.Services.AddSingleton(sp => PushSettings.Resolve(
     builder.Configuration, builder.Environment, sp.GetRequiredService<ILogger<PushSettings>>()));
 builder.Services.AddSingleton<PushSubscriptionStore>();
-builder.Services.AddSingleton<IJobOutcomeNotifier, WebPushOutcomeNotifier>();
+builder.Services.AddSingleton<WebPushOutcomeNotifier>();
+builder.Services.AddSingleton<LyricsTranscriber>();
+builder.Services.AddSingleton<JobAftercare>();
+builder.Services.AddHostedService(services => services.GetRequiredService<JobAftercare>());
+builder.Services.AddSingleton<IJobOutcomeNotifier, OutcomeFanOut>();
 // Bounded: a push service that hangs must not hold the worker slot for HttpClient's default 100s.
 builder.Services.AddHttpClient(WebPushOutcomeNotifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<AnalysisPipeline>();
@@ -202,6 +211,7 @@ app.MapVoiceProfile();
 app.MapSongStructure();
 app.MapPush();
 app.MapAccount();
+app.MapOneDrive();
 app.MapHub<AnalysisHub>("/hubs/analysis");
 
 // The share target's fallback. Normally the service worker answers this POST and never lets it

@@ -67,4 +67,7 @@ public sealed record WaveformPeaksDto(double DurationSec, string Source, IReadOn
 /// tonic so the home note sits at the bottom of the strip. What the chord reading was made from,
 /// shown as it was heard.
 /// </summary>
+/// <summary>One sung line, as Whisper heard it on the separated vocal, with when it was sung.</summary>
+public sealed record LyricLineDto(double StartSec, double EndSec, string Text);
+
 public sealed record ChromaDto(double FramesPerSecond, int Frames, int TonicPitchClass, string Energy);
