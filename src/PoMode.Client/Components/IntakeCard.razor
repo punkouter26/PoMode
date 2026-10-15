@@ -65,6 +65,12 @@
                               ButtonStyle="ButtonStyle.Danger" Click="@OnStopRecording" id="record-stop" />
                 <RadzenText class="recording-hint" role="status"
                             Text="@(_recordingBeat ? "Recording a beat…" : "Recording a song…")" />
+                @* What the microphone is hearing, so a take that is too quiet or clipping shows before
+                   it is uploaded (audio-recorder.js watchLevel). Red when it hits full scale. *@
+                <div class="record-meter" @ref="_meter" role="meter" aria-label="Microphone level"
+                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-clip="0">
+                    <span class="record-meter-fill"></span>
+                </div>
             }
         </div>
         @if (_recordError is not null)
@@ -147,8 +153,19 @@
     /// <summary>Which of the two recordings is running: a beat goes to the Mode Lab, a song is analysed.</summary>
     private bool _recordingBeat;
 
+    private ElementReference _meter;
+
+    /// <summary>Set when a recording starts, so the render that draws the meter can hand it to the
+    /// recorder exactly once.</summary>
+    private bool _meterPending;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_meterPending && _recording && _recorder is not null)
+        {
+            _meterPending = false;
+            await _recorder.InvokeVoidAsync("watchLevel", _meter);
+        }
         if (!Probed || _pickedUp)
         {
             return;
@@ -285,6 +302,7 @@
             _recorder ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/capture/audio-recorder.js");
             await _recorder.InvokeVoidAsync("startRecording");
             _recording = true;
+            _meterPending = true;
         }
         catch (JSException)
         {

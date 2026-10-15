@@ -44,6 +44,31 @@
     color: var(--pm-note-outside);
 }
 
+/* The microphone's level while recording: -60 to 0 dBFS left to right, filled from --level (0..1),
+   which audio-recorder.js writes each frame. Red while the take is clipping. */
+.record-meter {
+    flex: 1 1 100%;
+    max-width: 22rem;
+    height: 0.6rem;
+    border: 1px solid var(--pm-border);
+    border-radius: 999px;
+    background: var(--pm-surface-alt);
+    overflow: hidden;
+}
+
+.record-meter-fill {
+    display: block;
+    height: 100%;
+    width: calc(var(--level, 0) * 100%);
+    border-radius: inherit;
+    background: var(--pm-ok-edge);
+    transition: background-color 120ms linear;
+}
+
+.record-meter[data-clip="1"] .record-meter-fill {
+    background: var(--pm-danger-edge);
+}
+
 .upload-hero {
     display: flex;
     flex-direction: column;

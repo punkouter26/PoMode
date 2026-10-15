@@ -418,7 +418,17 @@
     private async Task RefreshMelodyAsync()
     {
         var request = CurrentRequest();
-        var melody = await Analysis.GenerateModalMelodyAsync(request);
+        GeneratedMelodyDto? melody;
+        try
+        {
+            melody = await Analysis.GenerateModalMelodyAsync(request);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            // The server restarting under an open lab: say so and keep the loop that is on screen.
+            NotificationService.Notify(NotificationSeverity.Warning, "Mode Lab", "The server could not be reached. Try again in a moment.");
+            return;
+        }
         if (request != CurrentRequest())
         {
             return; // superseded by a later slider step; its own refresh will land

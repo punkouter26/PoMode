@@ -231,9 +231,24 @@ else if (_loadError is { } loadError)
     private double LoopSeconds
         => _melody is { Chords.Count: > 0 } melody ? melody.Chords[^1].EndSec : 0;
 
+    /// <summary>The server down or restarting is the page's own message, not the app's error panel:
+    /// reloading in a moment is all it takes.</summary>
+    private const string Unreachable = "The server could not be reached. Reload the page in a moment.";
+
+    private static bool IsUnreachable(Exception ex)
+        => ex is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException;
+
     protected override async Task OnInitializedAsync()
     {
-        _progressions = await Analysis.GetModalProgressionsAsync() ?? [];
+        try
+        {
+            _progressions = await Analysis.GetModalProgressionsAsync() ?? [];
+        }
+        catch (Exception ex) when (IsUnreachable(ex))
+        {
+            _loadError = Unreachable;
+            return;
+        }
         if (_progressions.Count == 0)
         {
             _loadError = "No chord progressions are available.";
@@ -386,7 +401,16 @@ else if (_loadError is { } loadError)
         DiscardTakeState();
 
         var request = CurrentRequest();
-        var melody = await Analysis.GenerateModalMelodyAsync(request);
+        GeneratedMelodyDto? melody;
+        try
+        {
+            melody = await Analysis.GenerateModalMelodyAsync(request);
+        }
+        catch (Exception ex) when (IsUnreachable(ex))
+        {
+            _loadError = Unreachable;
+            return;
+        }
         if (request != CurrentRequest())
         {
             // A slider drag fires one reload per step; only the latest may set the chords, or a
