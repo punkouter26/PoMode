@@ -121,13 +121,18 @@ static async Task CaptureAsync(string outDir, string baseUrl)
                     if (el.getBoundingClientRect().height < 23.5) { tiny++; if (examples.length < 4) examples.push(label(el)); }
                 }
                 if (tiny) out.push(`${tiny} target(s) under 24px tall, e.g. ${examples.join(' | ')}`);
-                let clipped = 0;
+                let clipped = 0; const clips = [];
                 for (const el of document.querySelectorAll('body *')) {
                     if (!visible(el)) continue;
                     const s = getComputedStyle(el);
-                    if ((s.overflowX === 'hidden' || s.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) clipped++;
+                    // A progress bar's moving stripe is clipped on purpose; it is not content.
+                    if (el.closest('[role=progressbar], .rz-progressbar')) continue;
+                    if ((s.overflowX === 'hidden' || s.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) {
+                        clipped++;
+                        if (clips.length < 3) clips.push(`${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 2).join('.')} '${label(el)}'`);
+                    }
                 }
-                if (clipped) out.push(`${clipped} element(s) clip their own content`);
+                if (clipped) out.push(`${clipped} element(s) clip their own content, e.g. ${clips.join(' | ')}`);
                 if (window.__cls > 0.1) out.push(`layout shift after load: CLS ${window.__cls.toFixed(3)}`);
                 return out; }", route.MayScroll);
             findings = [.. findings, .. errors.Distinct().Take(3).Select(e => $"console error: {e[..Math.Min(e.Length, 160)]}")];

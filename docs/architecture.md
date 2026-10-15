@@ -52,14 +52,23 @@ reload (tus fingerprint in localStorage); a recording or shared Blob resumes wit
 
 A recording, a shared file or a converted `.m4a` is a Blob that exists only in the page, so the
 uploader keeps the one most recent unsent Blob in IndexedDB (`pm-uploads`) under a fingerprint of its
-size and name. `Home.razor` asks for it once the page is idle (`unsentName` / `takeUnsent`, the same
+content (a SHA-256 prefix: every recording is "recording.wav", and two takes of one length used to
+resume one onto the other's bytes). A beat left unsent is remembered as a beat. `Home.razor` asks for it once the page is idle (`unsentName` / `takeUnsent`, the same
 reference hand-off as the share target) and the upload carries on from the byte the server last
 confirmed. It is dropped on success and on a 4xx, which no retry would change.
 
 A decoded file is written as stereo 44.1 kHz WAV when that fits the 100 MB cap, as mono when only
 that fits, and is refused as too long past that - never as "too large", a size the picked file did
-not have. The MP3 header sniff, here and in `AudioFormatValidator`, requires a non-zero layer so raw
-AAC (ADTS, same sync bits) is not passed off as MP3.
+not have. The browser decides whether to decode from the file's declared type only (WAV and MP3 go up
+as they are); `AudioFormatValidator` is the one judge of the bytes. Its MP3 sniff requires a non-zero
+layer so raw AAC (ADTS, same sync bits) is not passed off as MP3, and an MP4 container that reaches it
+undecoded is refused as `CannotConvert` with a sentence pointing at Chrome or Edge.
+
+**Beats are kept, not analysed.** `?beat=true` on the hand-off routes to `AnalysisIntake.KeepBeatAsync`:
+an ordinary library job (restart-safe, mirrored, listed) stamped `TakeOrigin.Beat` and Complete at
+once, with no plan and nothing queued. Running separation, pitch and chords on a drum take held the
+single worker for minutes and filled the library with "songs" nobody read. The library opens a beat in
+the Mode Lab; it cannot be previewed, compared or re-run.
 
 ## Push notifications
 
@@ -102,6 +111,16 @@ the harmony treats as home. The client's "Match to mode" toggle (default on) swa
 switched off, which restores the older one-progression-under-all-modes lesson. The melody pitch pool
 is the mode's own scale, not the parent's — identical for the seven diatonic modes, and the reason a
 pentatonic card no longer sounds the two notes its scale exists to omit.
+
+## Mode Lab layout
+
+The page is a stack of strips, each its own component: the transport (sticky under the header, its
+offset measured by `js/shell/layout.js` as `--pm-header-height`), the backing settings with a
+"Describe it" box, `DrumStrip`, `ModeCards`, `GravityPanel` and the roll. A MIDI keyboard can play
+along (`js/player/midi-in.js`, Web MIDI, notes only, asked for on a click): each key sounds through the
+player's room and lights its body on the home-note view, and the readout counts notes outside the
+mode. The interface's own sounds are voiced in the lab's mode (`ModeNames.Pitches` → `sfx.setPalette`),
+as they are in the song's key on an analysis page.
 
 ## Hum takes (the shared recording path)
 
@@ -347,19 +366,18 @@ because a beat cut to a tempo nothing else is playing at answers no question the
 no importer and no recorder of its own for it. The Library's intake row is four buttons, "Choose a
 beat", "Record a beat", "Choose a song", "Record a song"; the two recordings share
 `audio-recorder.js` and one Stop button, and differ only in where the take goes. A beat goes up over
-the same tus upload as a song, becomes an ordinary library job, and then opens
-`/modes?beat={jobId}` instead of its own analysis page. Picking a beat sets the lab's tempo: `drum-loop.js`
+the same tus upload as a song, is kept as a library job without being analysed (`KeepBeatAsync`, see
+Resumable uploads), and opens `/modes?beat={jobId}`. Picking a beat sets the lab's tempo: `drum-loop.js`
 `playedBpm` reads the take's own tempo (the pulse read as whichever note value lands nearest 120),
 the lab moves to the nearest whole BPM inside the slider's 50 to 180, the chords and melody are
 regenerated there and the drums are cut to the same figure. The slider still changes it afterwards. The strip's dropdown lists the
-library (the demo aside), so an earlier upload or recording can be picked too. The beat's job is
-still analysed in the background like any other upload; nothing reads the result.
+library's finished jobs, beats first (the demo aside), so an earlier upload or recording can be picked too.
 
 `player/drum-loop.js` fetches the job's original audio back (`stems/mix`), decodes it on
 `modal-player.js`'s AudioContext and starts the loop from that player's own downbeat (`sync`), the
-same shared-clock reason `hum-recorder.js` has: two clocks cannot be held in step. `ModeLab.razor`
-recuts in `RefreshMelodyAsync` (every setting that moves the tempo passes through it) and calls
-`sync` after play, pause, stop and seek, so the three parts start, stop and jump together. A drum
+same shared-clock reason `hum-recorder.js` has: two clocks cannot be held in step. The strip is its own
+component (`DrumStrip.razor`), which recuts whenever the lab's `Bpm` parameter moves; the lab calls its
+`SyncAsync` after play, pause, stop and seek, so the three parts start, stop and jump together. A drum
 loop whose bar count divides the progression's stays on its bar one; any other length drifts round
 it as a polymeter, which is what was asked for by picking it. The first cut waits for the render
 that gives the canvas its size. The canvas draws the loop on its bar and beat grid with a sync
@@ -386,16 +404,10 @@ Bars follows what was played until it is typed in. The export is `drum-loop-{bpm
 
 Analyze takes any audio the browser can decode, because phone voice memos are `.m4a`: the server's
 rule is still WAV or MP3 by header, and `resumable-upload.js` (`asWavOrMp3`) decodes anything else
-and uploads it as WAV. That applies to every way in, the share target included. The decode is
-the browser's own, so a browser without AAC (an editor's built-in browser, some Linux Chromium
-builds) cannot do it; an MP4-container file then goes up as recorded and
-`ResumableUploads.StartAnalysisAsync` converts it with the host's `ffmpeg` (`FfmpegTranscoder`), so
-the job's input is still a WAV. **Nothing installs ffmpeg**: a developer machine usually has one, the
-Azure host does not, and there the upload is refused with a sentence saying to use Chrome or Edge.
-That is the same shape as the removed yt-dlp ingest and is tolerated only because it is a fallback
-behind a path that works everywhere real users are. A managed decoder was tried first: Azure is Linux
-(no Media Foundation), and SharpJaad.AAC 0.1.1 throws inside its SBR path on HE-AAC, which is what
-Android's recorder writes.
+and uploads it as WAV. That applies to every way in, the share target and OneDrive included. The decode
+is the browser's own, so a browser without AAC (an editor's built-in browser, some Linux Chromium
+builds) cannot do it, and says so. The server-side ffmpeg fallback that used to cover that case is
+gone (see removed.md).
 
 Checked by `node tests/loop-cut.check.mjs` (a synthetic take at 93 BPM with jittered hits, spliced to
 100), not by an E2EUI test: that suite is at its cap.
@@ -494,14 +506,118 @@ workers' blobs, and a wrong one fails silently in production.
 
 - `L` loops the section under the playhead (`mixer.js` `toggleLoop`, `data-loop-section`; the mixer's
   "Loop section" button is the same toggle). A seek out of the section ends the loop.
-- What the browser remembers, all in localStorage and all optional: the theme and effect level, the
-  Library's filters (`pm-library-filters`), Practice's key, mode, progression and tempo
-  (`pm-practice-backing`) and the pinned analysis models (`pm-executor-pins`, kept only while the
-  server still lists that executor). The Mode Lab is not remembered: its settings move each other.
+- What the browser remembers, all in localStorage and all optional, all through one typed helper
+  (`Services/BrowserPrefs.cs`, JSON through its own source-generated context; anything unreadable reads
+  as nothing remembered): the Library's search (`pm-library-filters`), Practice's backing
+  (`pm-practice-backing`), the pinned analysis models (`pm-executor-pins`, kept only while the server
+  still lists that executor) and the chosen writer (`pm-interpreter`). The theme, effect level, sound
+  and spatial-audio flags stay in `theme.js` / `prefs.js`, which stamp them before first paint. The
+  Mode Lab is not remembered: its settings move each other.
 
 - The home page (`/`, and `/library` for old links) is the Library: the intake card, then
   `LibraryList` with the caller's songs, filters and the one-tick preview / two-tick comparison. A
   job being run or shown replaces both, as it replaced the intake card before.
+
+## Settings, the palette and the menu
+
+Every optional choice lives on `/settings`, each already at its best value: theme, effects, interface
+sounds, spatial audio, the analysis-model pins, the written-interpretation writer, push notifications,
+the keyboard shortcuts and the person's data. The pages people use carry only what they act on: the
+home page names a pinned model in one line ("2 analysis models pinned · change") rather than showing
+the choosers, and the analysis page's ask box has no writer dropdown. The header's ⋯ menu keeps only
+places to go (account, Settings, "Go to…", Diagnostics, Install). `ThemeState` is shared by the header's
+quick toggle and Settings so each shows what the other set.
+
+Ctrl+K (`js/shell/palette.js` → `CommandPalette.razor`) opens a combobox over a listbox of pages,
+settings and every finished song and beat in the library; each typed word must appear in the row.
+
+**Your data** (`Features/Account`): `GET /api/account/export` zips every job folder the caller owns
+(written to a temp file, streamed with DeleteOnClose); `DELETE /api/account/data` cancels and deletes
+every job they own and forgets their push subscriptions. The demo ledger keeps their name, so an
+emptied library stays empty.
+
+## Library: one search box, tiles, likeness, offline
+
+`LibraryQuery` reads the one search box word by word: a mode (or three letters of one), a key, a tempo
+or a range, a kind (beats, takes, demo), else a word of the file name; each recognised filter is shown
+back as a removable chip. `SongTile` draws each row's analysis as a picture (ground = main mode's hue,
+stripes = tempo, angle = key), from facts the row already carries. The date column is the first to go
+under 900px.
+
+`GET /api/library/{id}/similar` (`SongSimilarity`) scores the caller's other analysed songs by the
+cosine of their mode-time profiles, with tempo and a shared tonic as tie-breakers, and words the reason
+claiming only what holds. Shown under a single-song preview.
+
+"Keep offline" (`js/shell/offline.js`) fetches a song's readings and stems into the `pomode-v1-saved`
+cache, which the network-first service worker's fallback finds like any other; the library badges kept
+songs. Opening a song from the library morphs its key into the analysis headline (View Transitions,
+`js/shell/transitions.js`), the one page transition, and it carries a fact.
+
+## The analysis page, after the fact
+
+- **Chroma under the chords** (`GET /{id}/chroma`, cached as `chroma.json`): the DSP chord reader's own
+  `ChromaExtractor` over the instrumental stem, quantised to a byte per pitch class per frame, rows
+  rotated so the tonic is at the bottom. `js/player/chroma-layer.js` renders the whole song once (WebGPU
+  fragment shader where available, a 2D ramp otherwise) and `canvas.js` slices it to the view.
+- **Tension ribbon**: `VisualWindow.Tension` is the share of sung time on non-chord tones, from the
+  roles the notes are coloured by; drawn along the foot of the note lane, glowing where the playhead is.
+- **Section wash**: the card takes a faint inset glow of the playing section's mode token, through the
+  registered `--pm-section-tint` so the change is a browser-animated cross-fade.
+- **Lyrics** (`Features/Lyrics`): Whisper base.en through Whisper.net on `vocals.wav`, after the job,
+  written as `lyrics.json`; the now-playing chip shows the line being sung. Segments under 0.4 of
+  Whisper's own probability and bracketed sound labels are dropped. Only from a separated vocal.
+- **Drawers**: "Why this mode?" and "How were the sections found?" open as Radzen side dialogs, so the
+  canvas stays where it was while reading why. The why drawer offers Essentia's major/minor key reading
+  (`js/infer/key-check.js`, in the browser) worded against the mode by `KeyAgreement`. Essentia.js is
+  AGPL-3.0 and is loaded from jsDelivr on that click only; anyone redistributing PoMode should weigh
+  that licence before keeping the feature.
+- **Phone dock**: once the mixer's transport scrolls away on a phone, a slim fixed bar carries
+  Play/Pause and the key (`js/player/dock.js`, an IntersectionObserver), never both at once.
+- **Try another model** (`JobRerun`, `POST /{id}/rerun?stage=&executor=`): a new job holding only what
+  the stages before the chosen one produced (`JobStore.CopyAsync`'s include filter, so nothing later
+  reaches the copy or its blob mirror), the chosen stage pinned. Ordinary uploads only.
+- **Time left** (`EtaEstimator`, `GET /{id}/eta`): seconds per audio second for each executor, the
+  median of this server's finished stages, times the song's length; null when any remaining executor
+  has never been timed here. Fetched once per stage change.
+
+## Aftercare: work done before anyone asks
+
+`JobAftercare` (a background channel, one job at a time) runs after every finished job except beats and
+the demo template: it writes the default interpreter's summary into its cache, then the lyrics. The
+pipeline's single `IJobOutcomeNotifier` is `OutcomeFanOut`, which enqueues aftercare and sends the Web
+Push.
+
+## Interpretation tiers and the describer
+
+Server order (`SongInterpreterSelector.Rank`): a local model (Ollama), then the optional cloud model
+(`AzureOpenAiSongInterpreter`, `ExecutionTier.Cloud`, managed identity, no key; available only when
+`PoMode:AzureOpenAI:Endpoint` and `:Deployment` are set, which the Bicep does when
+`enableCloudInterpreter` is true), then the template. In the page: Chrome's Prompt API and WebLLM
+(`js/infer/web-llm.js`, Qwen2.5 1.5B on WebGPU, about 1 GB, downloaded on first use), both through the
+same prompt and `GroundingCheck`. While a model writes, the template's summary stands in as a "quick
+read". `InterpreterStats` counts each writer's passes, grounding retries and fall-throughs for `/diag`.
+The system prompt carries three worked examples of what the grounding check accepts and rejects.
+
+The Mode Lab's "Describe it" box (`ModeLabDescriber`, `POST /api/modal-melodies/describe`) reads plain
+rules first (darker/brighter along the brightness order, faster/slower, mode names, "in D" as the mode's
+home note, styles, purity, "new melody") and only sends a phrase the rules find nothing in to a model,
+held to a JSON schema of the five settings; it counts only what actually changes.
+
+## Separation on the server, two ways
+
+`MdxStemSeparator` runs UVR's MDX-Net Voc_FT on the CPU through `MdxDemix`, the C# twin of
+`js/infer/mdx.js` (kept line for line). Registered after HTDemucs so HTDemucs stays the default; about
+three times faster than real time on the reference machine against HTDemucs's minutes, and pickable in
+Settings or through "Try another model".
+
+## OneDrive
+
+A Microsoft account can bring songs in from its OneDrive (`Features/OneDrive`): Graph with the person's
+own delegated token, Files.Read asked for only when they choose OneDrive (`/auth/login/microsoft?
+onedrive=true`, incremental consent). `GET /api/onedrive/audio` lists mp3/wav/m4a files;
+`/items/{id}/content` streams one through the server, and the page hands the Blob to the ordinary
+upload path. Tokens are cached in memory, so a restart costs one more consent round trip, which the
+picker handles. The app registration is created by `scripts/setup-microsoft-signin.ps1`.
 
 ## Infrastructure notes
 
@@ -520,4 +636,8 @@ workers' blobs, and a wrong one fails silently in production.
   for someone else's, and the rate limiter partitions by it (never by display name — every guest is
   "Guest nnnn"). Per-job reads stay open to the unguessable id, as before. `MainLayout` renders no
   page until `SessionState.EnsureAsync` has a session, so no first-render API call lands ownerless.
+- Telemetry (`Platform/Telemetry.cs`): the Azure Monitor OpenTelemetry distro, on only where
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` is set (the Bicep sets it for the deployed app), signing in
+  with the managed identity (`monitoring-role.bicep` grants Monitoring Metrics Publisher). `/diag`
+  reports it as a boolean.
 - E2EUI's `AppFixture` boots the real app and uploads real WAVs generated by `TestCommon`'s `TestAudio`; E2EAPI uses `AuthedFactory` (in-process, FakeAuth headers). `TestCommon` holds shared audio/fixture helpers, not an app fixture.

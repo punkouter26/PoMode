@@ -88,6 +88,31 @@ onto `data-*` for Playwright.
   run up from zero to the measured figure. The text node is written in place, so Blazor's later
   updates (the live tempo) still reach it.
 - **Placed auditions**: a note tapped in the home-note view is panned to where its body sits.
+- **Onset bursts** (`canvas.js`): sized by the note's length, largest for the notes the mode's verdict
+  rests on, so the burst is the note's weight in the analysis.
+- **Chroma heat** (`chroma-layer.js`): the band's pitch-class energy under the chord labels, tonic at
+  the bottom; drawn once per song (WebGPU where available), never per frame.
+- **Tension ribbon**: the server's per-window share of singing off the chord, glowing where the
+  playhead is.
+- **Section wash**: the analysis card's inset glow eases to the playing section's mode colour.
+- **Drum hit flashes** (`drum-loop.js`): each marker glows as its hit sounds.
+- **Practice comet**: the voice's leading edge during a take, in the playhead's colour, not the
+  agree/pass pair, so it marks where the voice is and never how it sits.
+- **Song tiles** (`SongTile.razor`): a row's analysis as a picture - mode hue, tempo stripes, key angle.
+- **The key morph**: opening a song from the library moves its key into the headline (View
+  Transitions). The one page transition, and it carries the key.
+
+## Layout additions
+
+- **Settings** (`/settings`) holds every optional choice, each at its best value; the menu keeps only
+  places to go. Ctrl+K opens the palette.
+- **`.pm-label`** is the one small-caps caption (section titles, figure labels); a component adds only
+  what differs (a colour, a weight).
+- **Fluid type**: `--pm-text-sm`, `-md`, `-lg`, `-xl` are `clamp()`s that never go under the 12px floor.
+- **Drawers**: explanations that would push the canvas down open beside it (Radzen side dialogs).
+- **Phone dock**: Play/Pause and the key dock at the foot of a phone's screen once the mixer's own
+  transport has scrolled away, and only then.
+- **Sticky transport**: the Mode Lab's transport sticks under the header (`--pm-header-height`).
 
 Two documents are deliberately taller than a phone: the finished analysis page and the Mode Lab.
 Both are content that exists to be read and compared, and the alternative to scrolling them is

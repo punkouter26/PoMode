@@ -180,8 +180,10 @@
    This file had no width breakpoint. Nothing overflowed, but four full-width control rows stacked
    above a chord row, a plot and three buttons spent more height than a phone has. */
 @media (max-width: 640px) {
+    /* 88px, not 110: at 110 the page ran 19px past a 390x844 phone, and the plot reads an octave
+       and a half at either height. */
     .take-plot {
-        height: 110px;
+        height: 88px;
     }
 
     /* One tap target per row rather than three squeezed onto one. */

@@ -2,10 +2,12 @@
 
 Each of these existed and was removed, with the reason, so nobody rebuilds one by accident:
 
-- **`ExecutionTier.Cloud`** — an execution tier with zero implementations, threaded through the
+- **`ExecutionTier.Cloud`** (since returned, for one thing only) — an execution tier with zero implementations, threaded through the
   planner's ranking, the user-selectable predicate, the pipeline, the tier badge and four paragraphs
   of this file. There was never a paid executor to rank. `EffectiveRank` is now local model → browser
-  → classic model-less DSP → placeholder, which is the order the code actually has.
+  → classic model-less DSP → placeholder, which is the order the code actually has. It came back,
+  appended, when the optional Azure OpenAI interpreter was built: it tiers that writer and nothing in
+  the pipeline, whose ranking still has no cloud rank. See ai-cost.md.
 - **A second opinion from MusicBrainz / AcousticBrainz** — 700 server lines and 26 unit cases against
   a community dataset frozen since 2022, where a miss was the common case.
 - **URL ingest (yt-dlp)** — the server shelled out to a binary that no Bicep file, CI step or
@@ -36,7 +38,9 @@ Each of these existed and was removed, with the reason, so nobody rebuilds one b
 - **A long Ollama keep-alive** — thirty minutes left three 3–4 GB models resident and HTDemucs failed
   to allocate on a 16 GB machine.
 - **Nine of eleven `fx-*` modules and the OpenTelemetry export** — decoration, and instruments with
-  no collector configured anywhere. `js/shell/prefs.js` survives because it still governs motion and
+  no collector configured anywhere. (The export has since come back as the Azure Monitor distro: the
+  collector existed all along, the App Service carried its connection string, and the export now signs
+  in with the managed identity. Platform/Telemetry.cs.) `js/shell/prefs.js` survives because it still governs motion and
   sound; which executor really ran is still recorded, in `StageHistory`, where the UI can show it.
   The effects that came back afterwards (see "Effects that carry data") are held to a rule these
   failed: each one draws something the analysis measured.
@@ -55,6 +59,19 @@ Each of these existed and was removed, with the reason, so nobody rebuilds one b
   The drum loop is a strip in the Mode Lab, cut to the lab's tempo and played in step with its chords
   and melody; a second place to cut the same loop would be a second tempo to keep in agreement.
 
+- **The server-side ffmpeg fallback** (`FfmpegTranscoder`) - it converted an MP4 that a browser
+  without AAC had sent as recorded, but only where a developer had ffmpeg on the PATH: nothing
+  installed it, so on Azure it never ran. The same shape as the removed yt-dlp ingest. An undecodable
+  MP4 is now refused with a sentence pointing at Chrome or Edge.
+- **The analysis-model choosers on the home page, the writer dropdown in the ask box, and the
+  effects, sound and notification rows in the ⋯ menu** - moved, not lost: every optional choice is on
+  the Settings page at its best value, so the pages people use carry only what they act on.
+- **The keyboard-shortcuts modal** - the list is a section of Settings; Ctrl+K is the way to anywhere.
+- **The Library's key and mode dropdowns** - one search box reads "dorian 120" as two filters and
+  shows them back as chips.
+- **Running a beat through the analysis** - a beat is kept, not analysed (architecture.md, Resumable
+  uploads).
+
 ## The cloud cost audit (`ai-cost-audit.md`)
 
 It compared cloud stem-separation providers (Replicate, LALAL.AI) and a "copilot", and recommended
@@ -67,5 +84,6 @@ on — has now been deleted as well. A cost audit of spend that cannot occur is 
 because it sends the next reader looking for a tier to extend rather than for the one that exists.
 
 The costs that are real are all local and none of them bill: CPU time for HTDemucs (stem separation)
-and Basic Pitch (melody), and whatever model Ollama has installed for the written interpretation. If
-a paid tier is ever added, the audit belongs here again — written against code that is in the repo.
+and Basic Pitch (melody), and whatever model Ollama has installed for the written interpretation. A
+paid tier has since been added (the optional Azure OpenAI interpreter), and its audit is in
+ai-cost.md, written against the code that is in the repo.

@@ -8,5 +8,7 @@ the working rules; everything about how the app is built lives here, once.
 - [ui-rules.md](ui-rules.md) - the look-and-layout rules and the rule every effect is held to.
 - [removed.md](removed.md) - what existed and was taken out, with the reason. Read it before
   proposing a feature: several obvious ones are on it.
+- [ai-cost.md](ai-cost.md) - what the AI costs: everything free and local, and the one optional paid
+  writer (Azure OpenAI), off by default, with its arithmetic.
 
 Nothing here should describe code that does not exist.
