@@ -111,10 +111,7 @@ jobs:
 
       # F1 gives the app about 60 CPU-minutes a day. Once they are spent Azure stops the site
       # (usageState Exceeded) until 00:00 UTC, and OneDeploy fails with a bare "Site Disabled
-      # (CODE: 403)" that reads like a broken setting. Checked before Bicep, not after: on 2026-09-25
-      # Bicep rewrote the settings of a site that then refused the package, so the old build ran
-      # under settings it crashes on, crash-looped through the quota every day, and blocked every
-      # deploy after it.
+      # (CODE: 403)" that reads like a broken setting. Say what it actually is.
       - name: Check the F1 daily CPU quota
         run: |
           usage=$(az webapp show -g PoMode -n ${{ env.AZURE_WEBAPP_NAME }} --query usageState -o tsv)
@@ -123,11 +120,29 @@ jobs:
             exit 1
           fi
 
+      - name: Package and zip deploy
+        run: |
+          cd publish
+          zip -r ../webapp.zip . -q
+          cd ..
+
+      # Code first, settings second. The other way round, a package the site refuses leaves new
+      # settings on old code: on 2026-09-25 Bicep switched the site to Production, the package then
+      # failed, and the old build, which threw on start in Production, crash-looped through the F1
+      # quota every day for three weeks and blocked every deploy after it. In this order a refused
+      # package stops the job before any setting changes, so the site keeps a pair that works.
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: webapp.zip
+
       # Always, not only when infra/ changed. Bicep is the source of truth for the app settings the
       # code depends on, and it is idempotent, so running it costs a minute and removes an outage
       # path: a push that did not touch infra/ used to skip this and leave whatever settings the App
-      # Service happened to carry. That matters because Production refuses to start without
-      # Jobs__Storage__AccountUri, which only this template sets.
+      # Service happened to carry. A setting the new code needs therefore lands a minute after the
+      # code does; the code must start without it (missing Jobs__Storage__AccountUri, for one,
+      # marks /health unhealthy rather than throwing), and the smoke test below runs after both.
       - name: Provision infra (Bicep)
         run: |
           az deployment sub create \
@@ -136,18 +151,6 @@ jobs:
             --name pomode-${{ github.run_id }} \
             --parameters assignStorageRole=false \
             -o none
-
-      - name: Package and zip deploy
-        run: |
-          cd publish
-          zip -r ../webapp.zip . -q
-          cd ..
-
-      - name: Deploy to App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: webapp.zip
 
       - name: Smoke test the deployed site
         run: |
