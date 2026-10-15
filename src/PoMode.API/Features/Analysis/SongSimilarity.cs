@@ -1,4 +1,3 @@
-using System.Globalization;
 using PoMode.Shared.Analysis;
 
 namespace PoMode.API.Features.Analysis;
@@ -70,8 +69,7 @@ public static class SongSimilarity
         {
             var (ps, po) = (Profile(song), Profile(other));
             var overlap = ps.Zip(po, Math.Min).Sum();
-            var overlapPercent = (overlap * 100).ToString("0", CultureInfo.InvariantCulture);
-            parts.Add($"{overlapPercent}% of their time in the same modes");
+            parts.Add($"{Percents.Of(overlap)} of their time in the same modes");
         }
         var apart = Math.Abs(song.TempoBpm - other.TempoBpm);
         if (apart < 0.5)

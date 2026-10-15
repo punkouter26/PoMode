@@ -42,7 +42,7 @@ else
             }
             else
             {
-                <span class="inspect-mode">@($"{Selected.ModeTag} ({Selected.ModeConfidence:P0})")</span>
+                <span class="inspect-mode">@($"{Selected.ModeTag} ({Percents.Of(Selected.ModeConfidence)})")</span>
                 @if (Selected.Evidence is { } evidence)
                 {
                     @* Present only when this window settles the question on its own. *@
@@ -55,7 +55,7 @@ else
                     }
                     else
                     {
-                        <text>Close: @string.Join(" · ", Selected.Alternatives.Select(a => $"{ScaleModes.DisplayName(a.Mode.ToString())} {a.Confidence:P0}"))</text>
+                        <text>Close: @string.Join(" · ", Selected.Alternatives.Select(a => $"{ScaleModes.DisplayName(a.Mode.ToString())} {Percents.Of(a.Confidence)}"))</text>
                     }
                 </p>
             }

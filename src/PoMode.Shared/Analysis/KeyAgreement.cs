@@ -11,7 +11,7 @@ public static class KeyAgreement
 {
     public static string Describe(ModalResult result, int pitchClass, bool major, double strength)
     {
-        var reading = $"Essentia reads {ScaleModes.NoteName(pitchClass)} {(major ? "major" : "minor")} ({strength:P0} sure)";
+        var reading = $"Essentia reads {ScaleModes.NoteName(pitchClass)} {(major ? "major" : "minor")} ({Percents.Of(strength)} sure)";
         if (result.PrimaryMode is not { } mode)
         {
             return $"{reading}. The modal analysis named no mode to compare it with.";

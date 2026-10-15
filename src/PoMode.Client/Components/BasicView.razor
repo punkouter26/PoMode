@@ -23,7 +23,7 @@
                     }
                     @if (Result.PrimaryMode is not null)
                     {
-                        <span class="basic-badge-sub" data-count-up>@($"{Result.PrimaryConfidence:P0} confidence")</span>
+                        <span class="basic-badge-sub" data-count-up>@($"{Percents.Of(Result.PrimaryConfidence)} confidence")</span>
                     }
                     @if (HasContent && (Visual.Evidence is not null || _stats is not null))
                     {
