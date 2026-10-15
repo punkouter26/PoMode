@@ -26,7 +26,6 @@
 }
 
 .drums-field ::deep .drums-bars {
-    width: 6rem;
     min-width: 0;
 }
 

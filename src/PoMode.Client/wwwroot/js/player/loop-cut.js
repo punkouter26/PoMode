@@ -21,6 +21,20 @@ const FADE_SEC = 0.003;         // every slice ends on a short fade, so a cut ne
 const TAIL_SEC = 0.25;          // decay past the last bar, folded over the start of the loop
 export const STEPS_PER_BAR = 16;    // ponytail: straight sixteenths in 4/4; swing and triplets get squared off. A grid choice if someone needs them
 
+/// The lengths a loop may be: phrases come in 1, 2, 4 and 8 bars, and a loop of any other length
+/// drifts against the chords as a polymeter that nobody asked for by recording three bars of drums.
+export const LOOP_BARS = Object.freeze([1, 2, 4, 8]);
+
+/// The loop length for a take of `played` bars: the longest allowed length that the take fills, so a
+/// three-bar take loops its first two bars rather than padding a fourth with silence.
+export function loopBars(played) {
+    let bars = LOOP_BARS[0];
+    for (const allowed of LOOP_BARS) {
+        if (allowed <= played) bars = allowed;
+    }
+    return bars;
+}
+
 export function loopFrameCount(bpm, bars, sampleRate) {
     return Math.round(bars * 4 * 60 / bpm * sampleRate);
 }

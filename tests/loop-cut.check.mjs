@@ -1,6 +1,6 @@
 // node tests/loop-cut.check.mjs — the drum loop's splice, checked against a take whose hits are known.
 import assert from 'node:assert/strict';
-import { buildLoop, findOnsets, layOut, loopFrameCount }
+import { buildLoop, findOnsets, layOut, loopBars, loopFrameCount }
     from '../src/PoMode.Client/wwwroot/js/player/loop-cut.js';
 
 const rate = 48000;
@@ -40,6 +40,9 @@ for (const step of steps.slice(0, -1)) {
     }
     assert.ok(first >= line && first - line < 0.006 * rate, `step ${step} lands ${first - line} frames off`);
 }
+
+// Loops come in 1, 2, 4 or 8 bars: the longest the take fills.
+assert.deepEqual([1, 2, 3, 4, 5, 7, 8, 12].map(loopBars), [1, 2, 2, 4, 4, 4, 8, 8]);
 
 // Silence has nothing to cut.
 assert.equal(findOnsets(new Float32Array(rate), rate).length, 0);

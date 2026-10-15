@@ -7,7 +7,7 @@
 
 import { encodeWav } from '../capture/wav.js';
 import { peaks, toMono } from './buffers.js';
-import { STEPS_PER_BAR, buildLoop, findOnsets, layOut, pulseBpm } from './loop-cut.js';
+import { STEPS_PER_BAR, buildLoop, findOnsets, layOut, loopBars, pulseBpm } from './loop-cut.js';
 import { getPlaybackStartTime, getSharedContext } from './modal-player.js';
 import * as prefs from '../shell/prefs.js';
 
@@ -72,15 +72,15 @@ export async function load(jobId) {
     return 'ok';
 }
 
-/// Splices the loaded recording to `bpm`. `bars` 0 keeps every bar that was played; a number keeps
-/// that many from the start. Cheap enough to run again on every tempo change, and it picks the
+/// Splices the loaded recording to `bpm`. `bars` 0 keeps the longest of 1, 2, 4 or 8 bars that the
+/// take fills (loopBars); a number keeps that many from the start. Cheap enough to run again on every tempo change, and it picks the
 /// transport back up if the lab is playing.
 export function build(bpm, bars, canvasElement) {
     stop();
     canvas = canvasElement;
     if (!take) return false;
     const layout = layOut(take.onsets, take.rate, bpm, take.pulse);
-    const length = bars > 0 ? bars : layout.bars;
+    const length = bars > 0 ? bars : loopBars(layout.bars);
     const kept = layout.slices.filter((slice) => slice.step < length * STEPS_PER_BAR);
     const loop = buildLoop(take.samples, take.rate, bpm, layout.slices, length);
     // Built once per splice; every play and seek after that starts a new source over the same buffer.

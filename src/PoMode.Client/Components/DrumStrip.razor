@@ -26,9 +26,18 @@
         {
             <div class="drums-field">
                 <span class="pm-label drums-label" id="drums-bars-label">Bars</span>
-                <RadzenNumeric TValue="int" Value="@_bars" Change="@OnBarsChangedAsync" Min="1" Max="MaxBars"
-                               class="drums-bars" id="drums-bars" aria-labelledby="drums-bars-label"
-                               title="How many bars to keep from the start. Set from what was played; fewer drops the rest." />
+                @* 1, 2, 4 or 8: the lengths a phrase comes in, so the loop sits on the chords' own bar
+                   lines. Set from what was played (the longest the take fills); a longer one repeats
+                   nothing, it leaves the bars after the take silent. *@
+                <RadzenSelectBar TValue="int" Value="@_bars" Change="@OnBarsChangedAsync" Size="ButtonSize.Small"
+                                 class="drums-bars" id="drums-bars" aria-labelledby="drums-bars-label">
+                    <Items>
+                        @foreach (var length in LoopBars)
+                        {
+                            <RadzenSelectBarItem Text="@length.ToString()" Value="@length" />
+                        }
+                    </Items>
+                </RadzenSelectBar>
             </div>
             <RadzenButton Text="Export WAV" Icon="download" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light"
                           Click="@ExportAsync" id="drums-export"
@@ -51,7 +60,8 @@
 @code {
     private sealed record DrumChoice(string JobId, string Label);
 
-    private const int MaxBars = 16;
+    /// <summary>The loop lengths offered: loop-cut.js's LOOP_BARS.</summary>
+    private static readonly int[] LoopBars = [1, 2, 4, 8];
 
     /// <summary>Where a beat's tempo is looked for: its pulse is read as the note value that lands
     /// nearest this, so a take comes out between about 85 and 170 BPM.</summary>
@@ -181,7 +191,7 @@
 
     private async Task OnBarsChangedAsync(int bars)
     {
-        _bars = Math.Clamp(bars, 1, MaxBars);
+        _bars = LoopBars.Contains(bars) ? bars : LoopBars[0];
         _barsAuto = false;
         await CutAsync();
     }

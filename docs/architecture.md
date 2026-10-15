@@ -399,7 +399,7 @@ one leaves silence, and the last slice's decay is folded over beat one so the se
 Straight sixteenths only: swing is squared off, and rises under 15% of the loudest stay inside the
 slice before them - the first detector, hop-to-hop on a 1.3 ms envelope, heard 97 hits in a 31-hit take.
 
-Bars follows what was played until it is typed in. The export is `drum-loop-{bpm}bpm-{bars}bar.wav`,
+A loop is 1, 2, 4 or 8 bars, the lengths a phrase comes in, so it sits on the chords' bar lines instead of drifting round them: the longest of those the take fills (`loopBars`, so a three-bar take loops its first two), until another is picked. The export is `drum-loop-{bpm}bpm-{bars}bar.wav`,
 16-bit mono, the drums alone.
 
 Analyze takes any audio the browser can decode, because phone voice memos are `.m4a`: the server's
